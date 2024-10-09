@@ -1,6 +1,7 @@
+use core::str;
 use std::{env, fs, process::Command};
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let paths = fs::read_dir("src/shaders/").unwrap();
 
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -16,11 +17,23 @@ fn main() {
 
         let outfile = out_dir.clone() + "/" + path.file_name().to_str().unwrap() + ".spv";
 
-        Command::new("glslc")
+        let output = Command::new("glslc")
             .args(&[&infile, "-o", &outfile])
-            .status()
-            .unwrap();
+            .output()?;
+
+        if !output.status.success() {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "failed to compile {}\n\n{}",
+                    path.file_name().to_string_lossy(),
+                    str::from_utf8(&output.stderr).unwrap()
+                ),
+            ))?;
+        }
+
+        println!("cargo::rerun-if-changed=src/shaders/{infile}")
     }
 
-    println!("cargo::rerun-if-changed=src/shaders")
+    Ok(())
 }

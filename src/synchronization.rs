@@ -1,15 +1,15 @@
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
 
 pub struct Fence {
     fence: vk::Fence,
-    device: ash::Device,
+    device: Rc<ash::Device>,
 }
 
 impl Fence {
-    pub fn new(device: ash::Device) -> Self {
+    pub fn new(device: Rc<ash::Device>) -> Self {
         let fence_create_info =
             vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
 
@@ -37,11 +37,11 @@ impl Drop for Fence {
 
 pub struct Semaphore {
     semaphore: vk::Semaphore,
-    device: ash::Device,
+    device: Rc<ash::Device>,
 }
 
 impl Semaphore {
-    pub fn new(device: ash::Device) -> Self {
+    pub fn new(device: Rc<ash::Device>) -> Self {
         let semaphore_create_info = vk::SemaphoreCreateInfo::default();
 
         Self {

@@ -37,7 +37,7 @@ impl DebugMessenger {
         let msg = format!("{message_type:?} [{message_id_name} ({message_id_number})]: {message}");
 
         println!(
-            "{}",
+            "{}\n",
             match message_severity {
                 vk::DebugUtilsMessageSeverityFlagsEXT::INFO => msg.white().dimmed(),
                 vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => msg.white(),

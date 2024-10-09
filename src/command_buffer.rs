@@ -1,113 +1,46 @@
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
 
-use crate::{device::Device, pipeline::Pipeline, swapchain::Swapchain};
+use crate::device::Device;
 
-pub struct CommandPool {
-    device: ash::Device,
-    command_pool: vk::CommandPool,
-    pub command_buffers: Vec<CommandBuffer>,
-}
-
-#[derive(Clone)]
 pub struct CommandBuffer {
-    device: ash::Device,
+    device: Rc<ash::Device>,
     command_buffer: vk::CommandBuffer,
+    recording: bool,
 }
 
 impl CommandBuffer {
-    pub fn record(&self, image_index: u32, pipeline: &Pipeline, swapchain: &Swapchain) {
-        unsafe {
-            self.device
-                .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
-                .unwrap();
+    pub fn begin(&mut self, flags: vk::CommandBufferUsageFlags) {
+        assert!(self.recording == false);
 
-            let begin_info = vk::CommandBufferBeginInfo::default();
+        self.recording = true;
+        unsafe {
+            // No need to reset a buffer if we've definitely never used it
+            if !flags.contains(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT) {
+                self.device
+                    .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
+                    .unwrap();
+            }
+
+            let begin_info = vk::CommandBufferBeginInfo::default().flags(flags);
             self.device
                 .begin_command_buffer(self.command_buffer, &begin_info)
                 .unwrap();
-
-            let clear_color = [vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [0.0, 0.0, 0.0, 1.0],
-                },
-            }];
-
-            let render_pass_info = vk::RenderPassBeginInfo::default()
-                .render_pass(*pipeline.render_pass)
-                .framebuffer(swapchain.images[image_index as usize].framebuffer.unwrap())
-                .render_area(vk::Rect2D {
-                    offset: vk::Offset2D { x: 0, y: 0 },
-                    extent: swapchain.extent,
-                })
-                .clear_values(&clear_color);
-
-            let device = &self.device;
-
-            device.cmd_begin_render_pass(
-                self.command_buffer,
-                &render_pass_info,
-                vk::SubpassContents::INLINE,
-            );
-
-            device.cmd_bind_pipeline(
-                self.command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                **pipeline,
-            );
-
-            let viewport = [vk::Viewport::default()
-                .x(0.0)
-                .y(0.0)
-                .width(swapchain.extent.width as f32)
-                .height(swapchain.extent.height as f32)
-                .min_depth(0.0)
-                .max_depth(1.0)];
-
-            device.cmd_set_viewport(self.command_buffer, 0, &viewport);
-
-            let scissor = [vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent: vk::Extent2D {
-                    width: swapchain.extent.width,
-                    height: swapchain.extent.height,
-                },
-            }];
-
-            device.cmd_set_scissor(self.command_buffer, 0, &scissor);
-
-            device.cmd_draw(self.command_buffer, 3, 1, 0, 0);
-
-            device.cmd_end_render_pass(self.command_buffer);
-
-            device
-                .end_command_buffer(self.command_buffer)
-                .expect("failed to record command buffer");
         }
     }
 
-    pub fn submit(
-        &self,
-        queue: vk::Queue,
-        wait_semaphore: &[vk::Semaphore],
-        signal_semaphore: &[vk::Semaphore],
-        fence: vk::Fence,
-    ) {
-        let command_buffer = [self.command_buffer];
+    pub fn end(&mut self) {
+        assert!(self.recording == true);
 
-        let submit_info = vk::SubmitInfo::default()
-            .wait_semaphores(&wait_semaphore)
-            .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-            .command_buffers(&command_buffer)
-            .signal_semaphores(&signal_semaphore);
+        self.recording = false;
 
         unsafe {
             self.device
-                .queue_submit(queue, &[submit_info], fence)
-                .unwrap()
-        }
+                .end_command_buffer(self.command_buffer)
+                .expect("failed to record command buffer")
+        };
     }
 }
 
@@ -119,8 +52,13 @@ impl Deref for CommandBuffer {
     }
 }
 
+pub struct CommandPool {
+    command_pool: vk::CommandPool,
+    device: Rc<ash::Device>,
+}
+
 impl CommandPool {
-    pub fn push_command_buffer(&mut self) {
+    pub fn create_command_buffer(&self) -> CommandBuffer {
         let alloc_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(self.command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -129,10 +67,11 @@ impl CommandPool {
         let command_buffer =
             unsafe { self.device.allocate_command_buffers(&alloc_info) }.unwrap()[0];
 
-        self.command_buffers.push(CommandBuffer {
+        CommandBuffer {
             device: self.device.clone(),
             command_buffer,
-        })
+            recording: false,
+        }
     }
 
     pub fn new(device: &Device) -> Self {
@@ -141,9 +80,8 @@ impl CommandPool {
             .queue_family_index(device.queue_family_index);
 
         Self {
-            device: (*device).clone(),
+            device: device.device.clone(),
             command_pool: unsafe { device.create_command_pool(&pool_create_info, None).unwrap() },
-            command_buffers: Vec::new(),
         }
     }
 }

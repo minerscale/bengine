@@ -1,4 +1,4 @@
-use std::{mem::ManuallyDrop, ops::Deref};
+use std::{ops::Deref, rc::Rc};
 
 use ash::{khr, vk};
 use log::info;
@@ -6,11 +6,12 @@ use log::info;
 use crate::{device::Device, pipeline::Pipeline};
 
 pub struct SwapchainImage {
-    device: ash::Device,
     pub image: vk::Image,
     pub view: vk::ImageView,
     pub framebuffer: Option<vk::Framebuffer>,
     pub extent: vk::Extent2D,
+
+    device: Rc<ash::Device>,
 }
 
 impl SwapchainImage {
@@ -34,12 +35,12 @@ impl SwapchainImage {
     }
 
     fn new(
-        device: &ash::Device,
+        device: Rc<ash::Device>,
         swapchain_loader: &khr::swapchain::Device,
         swapchain: vk::SwapchainKHR,
         surface_format: vk::SurfaceFormatKHR,
         extent: vk::Extent2D,
-    ) -> Vec<ManuallyDrop<Self>> {
+    ) -> Vec<Self> {
         let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain).unwrap() };
 
         swapchain_images
@@ -62,13 +63,13 @@ impl SwapchainImage {
                         layer_count: 1,
                     })
                     .image(image);
-                ManuallyDrop::new(Self {
+                Self {
                     device: device.clone(),
                     image,
                     view: unsafe { device.create_image_view(&create_view_info, None).unwrap() },
                     framebuffer: None,
                     extent,
-                })
+                }
             })
             .collect()
     }
@@ -89,7 +90,7 @@ impl Drop for SwapchainImage {
 pub struct Swapchain {
     pub device: khr::swapchain::Device,
     pub swapchain: vk::SwapchainKHR,
-    pub images: Vec<ManuallyDrop<SwapchainImage>>,
+    pub images: Vec<SwapchainImage>,
     pub surface_format: vk::SurfaceFormatKHR,
     pub extent: vk::Extent2D,
 }
@@ -173,8 +174,13 @@ impl Swapchain {
                 .unwrap()
         };
 
-        let images =
-            SwapchainImage::new(device, &swapchain_loader, swapchain, surface_format, extent);
+        let images = SwapchainImage::new(
+            device.device.clone(),
+            &swapchain_loader,
+            swapchain,
+            surface_format,
+            extent,
+        );
 
         Self {
             device: swapchain_loader.clone(),
@@ -221,9 +227,7 @@ impl Deref for Swapchain {
 impl Drop for Swapchain {
     fn drop(&mut self) {
         unsafe {
-            for image in &mut self.images {
-                ManuallyDrop::drop(image)
-            }
+            self.images.clear(); // Drop images first
 
             info!("dropped swapchain");
             self.device.destroy_swapchain(self.swapchain, None)

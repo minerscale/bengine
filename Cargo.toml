@@ -5,8 +5,13 @@ edition = "2021"
 
 [dependencies]
 colored = "2.1.0"
-env_logger = "0.11.5"
+glam = "0.29.0"
 log = "0.4.22"
+
+[dependencies.env_logger]
+version = "0.11.5"
+default-features = false
+features = ["auto-color"]
 
 [dependencies.image]
 version = "0.25.2"
@@ -15,8 +20,14 @@ features = ["png"]
 
 [dependencies.ash]
 version = "0.38.0"
-features = ["linked"]
+default-features = false
+features = ["linked", "debug", "std"]
 
 [dependencies.sdl2]
 version = "0.37.0"
+default-features = false
 features = ["raw-window-handle"]
+
+[build-dependencies]
+anyhow = "1.0.89"
+colored = "2.1.0"

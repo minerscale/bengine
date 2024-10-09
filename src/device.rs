@@ -1,15 +1,15 @@
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 
 use ash::{khr, vk};
 use log::info;
 
 pub struct Device {
-    device: ash::Device,
+    pub device: Rc<ash::Device>,
 
     pub physical_device: vk::PhysicalDevice,
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub queue_family_index: u32,
-    pub present_queue: vk::Queue,
+    pub queue: vk::Queue,
 }
 
 impl Device {
@@ -70,17 +70,18 @@ impl Device {
             .enabled_extension_names(&device_extension_names)
             .enabled_features(&features);
 
-        let device =
-            unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap();
+        let device = Rc::new(
+            unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap(),
+        );
 
-        let presentation_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
+        let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
 
         Self {
             device,
             physical_device,
             device_memory_properties,
             queue_family_index,
-            present_queue: presentation_queue,
+            queue,
         }
     }
 }

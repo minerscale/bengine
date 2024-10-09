@@ -1,21 +1,22 @@
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
 
-use crate::{device::Device, render_pass::RenderPass, shader_module::spv, swapchain::Swapchain};
+use crate::{render_pass::RenderPass, shader_module::spv, swapchain::Swapchain, Vertex};
 
 pub struct Pipeline {
-    device: ash::Device,
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
     pub render_pass: RenderPass,
+
+    device: Rc<ash::Device>,
 }
 
 impl Pipeline {
-    pub fn new(device: &Device, swapchain: &Swapchain) -> Self {
-        let vert_shader_module = spv!(*device, "shader.vert");
-        let frag_shader_module = spv!(*device, "shader.frag");
+    pub fn new(device: Rc<ash::Device>, swapchain: &Swapchain) -> Self {
+        let vert_shader_module = spv!(device.clone(), "shader.vert");
+        let frag_shader_module = spv!(device.clone(), "shader.frag");
 
         let shader_stages = [
             vk::PipelineShaderStageCreateInfo::default()
@@ -32,7 +33,12 @@ impl Pipeline {
         let dynamic_state =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
 
-        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
+        let vertex_binding_descriptions = [Vertex::get_binding_description()];
+        let vertex_attribute_descriptions = Vertex::get_attribute_descriptions();
+        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_binding_descriptions(&vertex_binding_descriptions)
+            .vertex_attribute_descriptions(&vertex_attribute_descriptions);
+
         let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
@@ -95,7 +101,7 @@ impl Pipeline {
                 .unwrap()
         };
 
-        let render_pass = RenderPass::new(&device, &swapchain);
+        let render_pass = RenderPass::new(device.clone(), &swapchain);
 
         let pipeline_info = [vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
@@ -117,7 +123,7 @@ impl Pipeline {
         };
 
         Self {
-            device: (*device).clone(),
+            device,
             pipeline,
             pipeline_layout,
             render_pass,

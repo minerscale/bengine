@@ -1,17 +1,17 @@
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
 
-use crate::{device::Device, swapchain::Swapchain};
+use crate::swapchain::Swapchain;
 
 pub struct RenderPass {
-    device: ash::Device,
     render_pass: vk::RenderPass,
+    device: Rc<ash::Device>,
 }
 
 impl RenderPass {
-    pub fn new(device: &Device, swapchain: &Swapchain) -> Self {
+    pub fn new(device: Rc<ash::Device>, swapchain: &Swapchain) -> Self {
         let color_attachment = [vk::AttachmentDescription::default()
             .format(swapchain.surface_format.format)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -35,13 +35,15 @@ impl RenderPass {
             .attachments(&color_attachment)
             .subpasses(&subpass);
 
+        let render_pass = unsafe {
+            device
+                .create_render_pass(&render_pass_create_info, None)
+                .unwrap()
+        };
+
         Self {
-            device: (*device).clone(),
-            render_pass: unsafe {
-                device
-                    .create_render_pass(&render_pass_create_info, None)
-                    .unwrap()
-            },
+            device,
+            render_pass,
         }
     }
 }

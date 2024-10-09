@@ -1,11 +1,11 @@
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
 
 pub struct ShaderModule {
     shader: vk::ShaderModule,
-    device: ash::Device,
+    device: Rc<ash::Device>,
 }
 
 macro_rules! spv {
@@ -25,14 +25,14 @@ macro_rules! spv {
                     )
                     .expect("failed to build shader module!")
             },
-            $device.clone(),
+            $device,
         )
     }};
 }
 pub(crate) use spv;
 
 impl ShaderModule {
-    pub fn new(shader: vk::ShaderModule, device: ash::Device) -> Self {
+    pub fn new(shader: vk::ShaderModule, device: Rc<ash::Device>) -> Self {
         ShaderModule { shader, device }
     }
 }
