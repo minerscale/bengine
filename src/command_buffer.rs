@@ -8,14 +8,10 @@ use crate::device::Device;
 pub struct CommandBuffer {
     device: Rc<ash::Device>,
     command_buffer: vk::CommandBuffer,
-    recording: bool,
 }
 
 impl CommandBuffer {
-    pub fn begin(&mut self, flags: vk::CommandBufferUsageFlags) {
-        assert!(self.recording == false);
-
-        self.recording = true;
+    pub fn begin(&self, flags: vk::CommandBufferUsageFlags) {
         unsafe {
             // No need to reset a buffer if we've definitely never used it
             if !flags.contains(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT) {
@@ -31,11 +27,7 @@ impl CommandBuffer {
         }
     }
 
-    pub fn end(&mut self) {
-        assert!(self.recording == true);
-
-        self.recording = false;
-
+    pub fn end(&self) {
         unsafe {
             self.device
                 .end_command_buffer(self.command_buffer)
@@ -70,14 +62,13 @@ impl CommandPool {
         CommandBuffer {
             device: self.device.clone(),
             command_buffer,
-            recording: false,
         }
     }
 
     pub fn new(device: &Device) -> Self {
         let pool_create_info = vk::CommandPoolCreateInfo::default()
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-            .queue_family_index(device.queue_family_index);
+            .queue_family_index(device.graphics_index);
 
         Self {
             device: device.device.clone(),

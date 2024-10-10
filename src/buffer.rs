@@ -23,7 +23,7 @@ impl<T: Copy> Buffer<T> {
         usage: vk::BufferUsageFlags,
         properties: vk::MemoryPropertyFlags,
     ) -> Self {
-        let mut command_buffer = command_pool.create_command_buffer();
+        let command_buffer = command_pool.create_command_buffer();
 
         command_buffer.begin(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 

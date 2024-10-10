@@ -6,6 +6,8 @@ use std::{
 use ash::{ext, vk};
 use log::info;
 
+use crate::ENABLE_VALIDATION_LAYERS;
+
 pub struct Instance {
     instance: ash::Instance,
 }
@@ -14,7 +16,11 @@ impl Instance {
     pub fn new(entry: &ash::Entry, window: &sdl2::video::Window) -> Self {
         let app_name = c"Space Game";
 
-        let layer_names = [c"VK_LAYER_KHRONOS_validation"];
+        let layer_names: &[&std::ffi::CStr] = if ENABLE_VALIDATION_LAYERS {
+            &[c"VK_LAYER_KHRONOS_validation"]
+        } else {
+            &[]
+        };
         let layers_names_raw: Vec<*const c_char> = layer_names
             .iter()
             .map(|raw_name| raw_name.as_ptr())
@@ -32,14 +38,17 @@ impl Instance {
             .iter()
             .map(|s| s.as_ptr())
             .collect::<Vec<_>>();
-        extension_names.push(ext::debug_utils::NAME.as_ptr());
+
+        if ENABLE_VALIDATION_LAYERS {
+            extension_names.push(ext::debug_utils::NAME.as_ptr());
+        }
 
         let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
             .application_version(vk::make_api_version(0, 1, 0, 0))
             .engine_name(c"No Engine")
             .engine_version(vk::make_api_version(0, 1, 0, 0))
-            .api_version(vk::API_VERSION_1_0);
+            .api_version(vk::API_VERSION_1_3);
 
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)

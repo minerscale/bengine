@@ -24,10 +24,11 @@ use pipeline::Pipeline;
 use sdl2::{keyboard::Keycode, sys::SDL_Vulkan_GetDrawableSize};
 use surface::Surface;
 use swapchain::Swapchain;
+use swapchain::SwapchainImage;
 use synchronization::{Fence, Semaphore};
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
-const ENABLE_VALIDATION_LAYERS: bool = true;
+const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
 
 use glam::Vec2;
 use glam::Vec3;
@@ -62,73 +63,6 @@ impl Vertex {
                 offset: offset_of!(Self, color) as u32,
             },
         ]
-    }
-}
-
-pub fn record_command_buffer(
-    command_buffer: &mut CommandBuffer,
-    device: &Device,
-    image_index: u32,
-    pipeline: &Pipeline,
-    swapchain: &Swapchain,
-    vertex_buffer: &Buffer<Vertex>,
-    index_buffer: &Buffer<u16>,
-) {
-    unsafe {
-        command_buffer.begin(vk::CommandBufferUsageFlags::empty());
-
-        let clear_color = [vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 0.0, 1.0],
-            },
-        }];
-
-        let render_pass_info = vk::RenderPassBeginInfo::default()
-            .render_pass(*pipeline.render_pass)
-            .framebuffer(swapchain.images[image_index as usize].framebuffer.unwrap())
-            .render_area(vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent: swapchain.extent,
-            })
-            .clear_values(&clear_color);
-
-        let handle = **command_buffer;
-
-        device.cmd_begin_render_pass(handle, &render_pass_info, vk::SubpassContents::INLINE);
-
-        device.cmd_bind_pipeline(handle, vk::PipelineBindPoint::GRAPHICS, **pipeline);
-
-        let viewport = [vk::Viewport::default()
-            .x(0.0)
-            .y(0.0)
-            .width(swapchain.extent.width as f32)
-            .height(swapchain.extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0)];
-
-        device.cmd_set_viewport(handle, 0, &viewport);
-
-        let scissor = [vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: vk::Extent2D {
-                width: swapchain.extent.width,
-                height: swapchain.extent.height,
-            },
-        }];
-
-        device.cmd_set_scissor(handle, 0, &scissor);
-
-        let vertex_buffers = [vertex_buffer.buffer];
-        let offsets = [vk::DeviceSize::from(0u64)];
-
-        device.cmd_bind_vertex_buffers(handle, 0, &vertex_buffers, &offsets);
-        device.cmd_bind_index_buffer(handle, index_buffer.buffer, 0, vk::IndexType::UINT16);
-
-        device.cmd_draw_indexed(handle, 6, 1, 0, 0, 0);
-
-        device.cmd_end_render_pass(handle);
-
-        command_buffer.end();
     }
 }
 
@@ -170,7 +104,7 @@ fn main() {
         Buffer::copy_buffer(
             &gfx.instance,
             gfx.device.physical_device,
-            gfx.device.queue,
+            gfx.device.graphics_queue,
             &gfx.command_pool,
             &staging_buffer,
             vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
@@ -191,7 +125,7 @@ fn main() {
         Buffer::copy_buffer(
             &gfx.instance,
             gfx.device.physical_device,
-            gfx.device.queue,
+            gfx.device.graphics_queue,
             &gfx.command_pool,
             &staging_buffer,
             vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
@@ -230,14 +164,13 @@ fn main() {
 
             gfx.device.reset_fences(fence).unwrap();
 
-            let command_buffer = &mut gfx.command_buffers[current_frame];
+            let command_buffer = &gfx.command_buffers[current_frame];
 
             record_command_buffer(
-                command_buffer,
                 &gfx.device,
-                image_index,
                 &gfx.pipeline,
-                &gfx.swapchain,
+                command_buffer,
+                &gfx.swapchain.images[image_index as usize],
                 &vertex_buffer,
                 &index_buffer,
             );
@@ -254,7 +187,7 @@ fn main() {
 
             gfx.device
                 .queue_submit(
-                    gfx.device.queue,
+                    gfx.device.graphics_queue,
                     &[submit_info],
                     *gfx.in_flight_fences[current_frame],
                 )
@@ -271,7 +204,7 @@ fn main() {
             match gfx
                 .swapchain
                 .device
-                .queue_present(gfx.device.queue, &present_info)
+                .queue_present(gfx.device.present_queue, &present_info)
             {
                 Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => gfx.recreate_swapchain(),
                 Err(e) => panic!("{}", e),
@@ -290,6 +223,72 @@ fn main() {
     gfx.render_loop(f);
 
     gfx.wait_idle();
+}
+
+pub fn record_command_buffer(
+    device: &Device,
+    pipeline: &Pipeline,
+    command_buffer: &CommandBuffer,
+    image: &SwapchainImage,
+    vertex_buffer: &Buffer<Vertex>,
+    index_buffer: &Buffer<u16>,
+) {
+    unsafe {
+        command_buffer.begin(vk::CommandBufferUsageFlags::empty());
+
+        let clear_color = [vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0],
+            },
+        }];
+
+        let render_pass_info = vk::RenderPassBeginInfo::default()
+            .render_pass(*pipeline.render_pass)
+            .framebuffer(image.framebuffer.unwrap())
+            .render_area(vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: image.extent,
+            })
+            .clear_values(&clear_color);
+
+        let cmd_buf = **command_buffer;
+
+        device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
+
+        device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **pipeline);
+
+        let viewport = [vk::Viewport::default()
+            .x(0.0)
+            .y(0.0)
+            .width(image.extent.width as f32)
+            .height(image.extent.height as f32)
+            .min_depth(0.0)
+            .max_depth(1.0)];
+
+        device.cmd_set_viewport(cmd_buf, 0, &viewport);
+
+        let scissor = [vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: vk::Extent2D {
+                width: image.extent.width,
+                height: image.extent.height,
+            },
+        }];
+
+        device.cmd_set_scissor(cmd_buf, 0, &scissor);
+
+        let vertex_buffers = [vertex_buffer.buffer];
+        let offsets = [vk::DeviceSize::from(0u64)];
+
+        device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
+        device.cmd_bind_index_buffer(cmd_buf, index_buffer.buffer, 0, vk::IndexType::UINT16);
+
+        device.cmd_draw_indexed(cmd_buf, 6, 1, 0, 0, 0);
+
+        device.cmd_end_render_pass(cmd_buf);
+
+        command_buffer.end();
+    }
 }
 
 pub struct Graphics {
@@ -378,8 +377,11 @@ impl Graphics {
 
         let instance = Instance::new(&entry, &window);
 
-        let debug_callback =
-            ENABLE_VALIDATION_LAYERS.then_some(DebugMessenger::new(&entry, &instance));
+        let debug_callback = if ENABLE_VALIDATION_LAYERS {
+            Some(DebugMessenger::new(&entry, &instance))
+        } else {
+            None
+        };
 
         let surface = Surface::new(&entry, &window, &instance);
 
@@ -438,6 +440,9 @@ impl Graphics {
         let mut event_pump = self.sdl_context.event_pump().unwrap();
 
         use sdl2::event::Event;
+
+        //let mut frame_count = 0;
+        //let begin_time = std::time::Instant::now();
         'quit: loop {
             f(self);
 
@@ -474,7 +479,11 @@ impl Graphics {
                 }
             }
 
-            //std::thread::sleep(std::time::Duration::from_millis(100));
+            //frame_count += 1;
+            //let time_elapsed = std::time::Instant::now().duration_since(begin_time);
+
+            //let framerate = time_elapsed / frame_count;
+            //println!("{}", 1f64/framerate.as_secs_f64());
         }
     }
 }

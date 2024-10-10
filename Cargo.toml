@@ -3,6 +3,9 @@ name = "space-game"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+debug = true
+
 [dependencies]
 colored = "2.1.0"
 glam = "0.29.0"

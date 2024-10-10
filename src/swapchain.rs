@@ -149,7 +149,7 @@ impl Swapchain {
         let present_mode = present_modes
             .iter()
             .cloned()
-            .find(|&mode| mode == vk::PresentModeKHR::MAILBOX)
+            .find(|&mode| mode == vk::PresentModeKHR::FIFO_RELAXED)
             .unwrap_or(vk::PresentModeKHR::FIFO);
 
         let extent = vk::Extent2D { width, height };
