@@ -3,7 +3,10 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::{render_pass::RenderPass, shader_module::spv, swapchain::Swapchain, Vertex};
+use crate::{
+    device::Device, render_pass::RenderPass, shader_module::spv, swapchain::Swapchain,
+    PushConstants, Vertex,
+};
 
 pub struct Pipeline {
     pub pipeline: vk::Pipeline,
@@ -14,9 +17,9 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    pub fn new(device: Rc<ash::Device>, swapchain: &Swapchain) -> Self {
-        let vert_shader_module = spv!(device.clone(), "shader.vert");
-        let frag_shader_module = spv!(device.clone(), "shader.frag");
+    pub fn new(instance: &ash::Instance, device: &Device, swapchain: &Swapchain) -> Self {
+        let vert_shader_module = spv!(device.device.clone(), "shader.vert");
+        let frag_shader_module = spv!(device.device.clone(), "shader.frag");
 
         let shader_stages = [
             vk::PipelineShaderStageCreateInfo::default()
@@ -77,6 +80,13 @@ impl Pipeline {
             .rasterization_samples(vk::SampleCountFlags::TYPE_1)
             .min_sample_shading(1.0);
 
+        let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default()
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(vk::CompareOp::LESS)
+            .depth_bounds_test_enable(false)
+            .stencil_test_enable(false);
+
         let color_blend_attachment = [vk::PipelineColorBlendAttachmentState {
             blend_enable: vk::FALSE,
             src_color_blend_factor: vk::BlendFactor::ONE,
@@ -93,7 +103,12 @@ impl Pipeline {
             .logic_op(vk::LogicOp::COPY)
             .attachments(&color_blend_attachment);
 
-        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
+        let push_constant_ranges = [vk::PushConstantRange::default()
+            .offset(0)
+            .size(std::mem::size_of::<PushConstants>().try_into().unwrap())
+            .stage_flags(vk::ShaderStageFlags::VERTEX)];
+        let pipeline_layout_info =
+            vk::PipelineLayoutCreateInfo::default().push_constant_ranges(&push_constant_ranges);
 
         let pipeline_layout = unsafe {
             device
@@ -101,7 +116,7 @@ impl Pipeline {
                 .unwrap()
         };
 
-        let render_pass = RenderPass::new(device.clone(), swapchain);
+        let render_pass = RenderPass::new(instance, device, swapchain);
 
         let pipeline_info = [vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
@@ -110,6 +125,7 @@ impl Pipeline {
             .viewport_state(&viewport_state)
             .rasterization_state(&rasterizer)
             .multisample_state(&multisampling)
+            .depth_stencil_state(&depth_stencil)
             .color_blend_state(&color_blending)
             .dynamic_state(&dynamic_state)
             .layout(pipeline_layout)
@@ -123,7 +139,7 @@ impl Pipeline {
         };
 
         Self {
-            device,
+            device: device.device.clone(),
             pipeline,
             pipeline_layout,
             render_pass,

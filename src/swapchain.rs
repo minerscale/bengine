@@ -1,14 +1,19 @@
-use std::ops::Deref;
+use std::{mem::ManuallyDrop, ops::Deref, rc::Rc};
 
 use ash::{khr, vk};
 use log::info;
 
-use crate::{device::Device, image::Image, pipeline::Pipeline};
+use crate::{
+    device::Device,
+    image::{find_supported_format, Image, SwapchainImage},
+    pipeline::Pipeline,
+};
 
 pub struct Swapchain {
     pub device: khr::swapchain::Device,
     pub swapchain: vk::SwapchainKHR,
-    pub images: Vec<Image>,
+    pub images: Vec<SwapchainImage>,
+    pub depth: ManuallyDrop<Image>,
     pub surface_format: vk::SurfaceFormatKHR,
     pub extent: vk::Extent2D,
 }
@@ -16,8 +21,23 @@ pub struct Swapchain {
 impl Swapchain {
     pub fn attach_framebuffers(&mut self, pipeline: &Pipeline) {
         for image in &mut self.images {
-            image.create_framebuffer(pipeline);
+            image.attach_framebuffer(self.depth.view, pipeline);
         }
+    }
+
+    fn create_swapchain_images(
+        device: Rc<ash::Device>,
+        swapchain: vk::SwapchainKHR,
+        swapchain_loader: &khr::swapchain::Device,
+        format: vk::Format,
+        extent: vk::Extent2D,
+    ) -> Vec<SwapchainImage> {
+        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain).unwrap() };
+
+        swapchain_images
+            .iter()
+            .map(|&image| SwapchainImage::new(device.clone(), image, format, extent))
+            .collect()
     }
 
     pub fn new(
@@ -92,18 +112,39 @@ impl Swapchain {
                 .unwrap()
         };
 
-        let images = Image::new(
+        let images = Self::create_swapchain_images(
             device.device.clone(),
-            &swapchain_loader,
             swapchain,
-            surface_format,
+            &swapchain_loader,
+            surface_format.format,
             extent,
         );
+
+        let format = find_depth_format(instance, &device.physical_device);
+
+        fn has_stencil_component(format: vk::Format) -> bool {
+            format == vk::Format::D32_SFLOAT_S8_UINT || format == vk::Format::D24_UNORM_S8_UINT
+        }
+
+        has_stencil_component(format);
+
+        let depth = ManuallyDrop::new(Image::new(
+            instance,
+            &device.physical_device,
+            device.device.clone(),
+            extent,
+            format,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            vk::ImageAspectFlags::DEPTH,
+        ));
 
         Self {
             device: swapchain_loader.clone(),
             swapchain,
             images,
+            depth,
             surface_format,
             extent,
         }
@@ -145,10 +186,29 @@ impl Deref for Swapchain {
 impl Drop for Swapchain {
     fn drop(&mut self) {
         unsafe {
-            self.images.clear(); // Drop images first
+            // Drop images first
+            self.images.clear();
+            ManuallyDrop::drop(&mut self.depth);
 
             info!("dropped swapchain");
             self.device.destroy_swapchain(self.swapchain, None)
         }
     }
+}
+
+pub fn find_depth_format(
+    instance: &ash::Instance,
+    physical_device: &vk::PhysicalDevice,
+) -> vk::Format {
+    find_supported_format(
+        instance,
+        physical_device,
+        vec![
+            vk::Format::D32_SFLOAT,
+            vk::Format::D32_SFLOAT_S8_UINT,
+            vk::Format::D24_UNORM_S8_UINT,
+        ],
+        vk::ImageTiling::OPTIMAL,
+        vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
+    )
 }

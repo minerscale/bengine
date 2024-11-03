@@ -10,9 +10,8 @@ pub mod shader_module;
 pub mod surface;
 pub mod swapchain;
 pub mod synchronization;
-pub mod vertex;
 
-use std::mem::offset_of;
+use std::{fs::File, io::BufReader, mem::offset_of};
 
 use ash::vk;
 use buffer::{Buffer, StagedBuffer};
@@ -20,8 +19,9 @@ use command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSub
 
 use debug_messenger::DebugMessenger;
 use device::Device;
-use image::Image;
+use image::SwapchainImage;
 use instance::Instance;
+use obj::{load_obj, FromRawVertex, Obj};
 use pipeline::Pipeline;
 use sdl2::{keyboard::Keycode, sys::SDL_Vulkan_GetDrawableSize};
 use surface::Surface;
@@ -31,13 +31,33 @@ use synchronization::{Fence, Semaphore};
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
 
-use glam::Vec2;
-use glam::Vec3;
+use geometric_algebra::{rotor::Rotor, vector::Vector};
+
 #[derive(Clone, Copy, Debug)]
-#[repr(C)]
 pub struct Vertex {
-    pub pos: Vec2,
-    pub color: Vec3,
+    pub pos: Vector<f32>,
+    pub normal: Vector<f32>,
+}
+
+impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
+    fn process(
+        vertices: Vec<(f32, f32, f32, f32)>,
+        normals: Vec<(f32, f32, f32)>,
+        tex_coords: Vec<(f32, f32, f32)>,
+        polygons: Vec<obj::raw::object::Polygon>,
+    ) -> obj::ObjResult<(Vec<Self>, Vec<I>)> {
+        let (v, i) = obj::Vertex::process(vertices, normals, tex_coords, polygons)?;
+
+        Ok((
+            v.iter()
+                .map(|v| Vertex {
+                    pos: Vector::from_slice(v.position),
+                    normal: Vector::from_slice(v.normal),
+                })
+                .collect::<Vec<_>>(),
+            i,
+        ))
+    }
 }
 
 impl Vertex {
@@ -54,43 +74,48 @@ impl Vertex {
             vk::VertexInputAttributeDescription {
                 location: 0,
                 binding: 0,
-                format: vk::Format::R32G32_SFLOAT,
+                format: vk::Format::R32G32B32_SFLOAT,
                 offset: offset_of!(Self, pos) as u32,
             },
             vk::VertexInputAttributeDescription {
                 location: 1,
                 binding: 0,
                 format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(Self, color) as u32,
+                offset: offset_of!(Self, normal) as u32,
             },
         ]
     }
 }
 
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
+
+pub struct Context {
+    time: f32,
+}
+
+#[repr(C)]
+pub struct PushConstants {
+    camera_rotation: Rotor<f32>,
+    camera_position: Vector<f32>,
+    align: f32,
+    camera_scale: Vector<f32>,
+}
+
+impl Context {
+    fn new() -> Self {
+        Self { time: 0.0 }
+    }
+}
+
 fn main() {
     env_logger::init();
-    let mut gfx = Graphics::new(800, 600);
+    let mut gfx = Graphics::new(WIDTH, HEIGHT);
 
-    let indices: [u16; 6] = [0, 1, 2, 2, 3, 0];
-
-    let vertices = [
-        Vertex {
-            pos: Vec2::new(-0.5, -0.5),
-            color: Vec3::new(1.0, 0.0, 0.0),
-        },
-        Vertex {
-            pos: Vec2::new(0.5, -0.5),
-            color: Vec3::new(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            pos: Vec2::new(0.5, 0.5),
-            color: Vec3::new(0.0, 0.0, 1.0),
-        },
-        Vertex {
-            pos: Vec2::new(-0.5, 0.5),
-            color: Vec3::new(1.0, 1.0, 1.0),
-        },
-    ];
+    let teapot: Obj<Vertex, u32> = load_obj(BufReader::new(
+        File::open("newell_teaset/teapot-triangulated.obj").unwrap(),
+    ))
+    .unwrap();
 
     let staging_command_buffer = gfx.command_pool.create_one_time_submit_command_buffer();
 
@@ -100,7 +125,7 @@ fn main() {
         gfx.device.physical_device,
         &staging_command_buffer,
         vk::BufferUsageFlags::VERTEX_BUFFER,
-        &vertices,
+        &teapot.vertices,
     );
 
     let index_buffer = StagedBuffer::new(
@@ -109,12 +134,57 @@ fn main() {
         gfx.device.physical_device,
         &staging_command_buffer,
         vk::BufferUsageFlags::INDEX_BUFFER,
-        &indices,
+        &teapot.indices,
     );
 
     staging_command_buffer.submit(gfx.device.graphics_queue, &gfx.command_pool);
 
-    let f = |gfx: &mut Graphics| {
+    let f = |gfx: &mut Graphics, ctx: &mut Context| {
+        /*let transformed = {
+            ctx.time += 1.0 / 60.0;
+            ctx.camera_rotation = Vector::<f32>::E2.wedge(Vector::<f32>::E3).rotor(ctx.time);
+            ctx.camera_position.e1 = ctx.time.sin();
+
+            teapot
+                .vertices
+                .iter()
+                .map(|vtx| Vertex {
+                    pos: {
+                        let d = (vtx.pos - ctx.camera_position).rotate(ctx.camera_rotation);
+                        Vector::<f32>::new(
+                            ctx.camera_depth * (d.e1 / d.e3),
+                            ctx.camera_depth * (d.e2 / d.e3) * (gfx.swapchain.extent.width as f32)
+                                / (gfx.swapchain.extent.height as f32),
+                            d.e3,
+                        )
+                    },
+                    normal: vtx.normal,
+                })
+                .collect::<Vec<_>>()
+        };*/
+
+        ctx.time += 1.0 / 60.0;
+        let push_constants = PushConstants {
+            camera_position: Vector::<f32>::new(
+                10.0 * (ctx.time.cos()),
+                6.0,
+                10.0 * (-ctx.time.sin()),
+            ),
+            camera_rotation: Vector::<f32>::E2
+                .wedge(Vector::<f32>::E3)
+                .rotor(-std::f32::consts::PI / 8.0)
+                * Vector::<f32>::E3
+                    .wedge(Vector::<f32>::E1)
+                    .rotor(ctx.time + std::f32::consts::PI / 2.0),
+            align: 0.0,
+            camera_scale: Vector::<f32>::new(
+                (gfx.swapchain.extent.height as f32) / (gfx.swapchain.extent.width as f32),
+                1.0,
+                1.0 / 10.0,
+            )
+            .scalar_product(0.3),
+        };
+
         let current_frame = gfx.current_frame;
         unsafe {
             let fence = &[*gfx.in_flight_fences[current_frame]];
@@ -145,27 +215,33 @@ fn main() {
 
             gfx.device.reset_fences(fence).unwrap();
 
-            gfx.command_buffers[current_frame] = match gfx.command_buffers[current_frame].take() {
-                Some(command_buffer) => Some(
-                    record_command_buffer(
-                        &gfx.device,
-                        &gfx.pipeline,
-                        command_buffer.begin(),
-                        &gfx.swapchain.images[image_index as usize],
-                        &vertex_buffer,
-                        &index_buffer,
-                    )
-                    .end()
-                    .submit(
-                        gfx.device.graphics_queue,
-                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                        *gfx.image_avaliable_semaphores[current_frame],
-                        *gfx.render_finished_semaphores[current_frame],
-                        *gfx.in_flight_fences[current_frame],
-                    ),
-                ),
+            let command_buffer = match gfx.command_buffers[current_frame].take() {
+                Some(buf) => buf.begin(),
                 None => panic!("Attempt to begin an active command buffer!"),
             };
+
+            //vertex_buffer.upload_new(&transformed, 0, &command_buffer);
+
+            gfx.command_buffers[current_frame] = Some(
+                record_command_buffer(
+                    &gfx.device,
+                    &gfx.pipeline,
+                    command_buffer,
+                    &gfx.swapchain.images[image_index as usize],
+                    &vertex_buffer,
+                    &index_buffer,
+                    teapot.indices.len().try_into().unwrap(),
+                    push_constants,
+                )
+                .end()
+                .submit(
+                    gfx.device.graphics_queue,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    *gfx.image_avaliable_semaphores[current_frame],
+                    *gfx.render_finished_semaphores[current_frame],
+                    *gfx.in_flight_fences[current_frame],
+                ),
+            );
 
             let swapchains = [*gfx.swapchain];
             let indices: [u32; 1] = [image_index];
@@ -200,20 +276,30 @@ fn main() {
     gfx.wait_idle();
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn record_command_buffer(
     device: &Device,
     pipeline: &Pipeline,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
-    image: &Image,
+    image: &SwapchainImage,
     vertex_buffer: &Buffer<Vertex>,
-    index_buffer: &Buffer<u16>,
+    index_buffer: &Buffer<u32>,
+    index_count: u32,
+    push_constants: PushConstants,
 ) -> ActiveMultipleSubmitCommandBuffer {
     unsafe {
-        let clear_color = [vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 0.0, 1.0],
+        let clear_color = [
+            vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.0, 0.0, 0.0, 1.0],
+                },
             },
-        }];
+            vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [1.0, 0.0, 0.0, 0.0],
+                },
+            },
+        ];
 
         let render_pass_info = vk::RenderPassBeginInfo::default()
             .render_pass(*pipeline.render_pass)
@@ -254,9 +340,19 @@ pub fn record_command_buffer(
         let offsets = [vk::DeviceSize::from(0u64)];
 
         device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
-        device.cmd_bind_index_buffer(cmd_buf, index_buffer.buffer, 0, vk::IndexType::UINT16);
+        device.cmd_bind_index_buffer(cmd_buf, index_buffer.buffer, 0, vk::IndexType::UINT32);
 
-        device.cmd_draw_indexed(cmd_buf, 6, 1, 0, 0, 0);
+        device.cmd_push_constants(
+            cmd_buf,
+            pipeline.pipeline_layout,
+            vk::ShaderStageFlags::VERTEX,
+            0,
+            std::slice::from_raw_parts(
+                &push_constants as *const PushConstants as *const u8,
+                std::mem::size_of::<PushConstants>(),
+            ),
+        );
+        device.cmd_draw_indexed(cmd_buf, index_count, 1, 0, 0, 0);
 
         device.cmd_end_render_pass(cmd_buf);
 
@@ -275,10 +371,12 @@ pub struct Graphics {
 
     pub pipeline: Pipeline,
     pub swapchain: Swapchain,
+
     pub device: Device,
 
     pub surface: Surface,
 
+    //pub depth_image: Image,
     pub debug_callback: Option<DebugMessenger>,
     pub instance: Instance,
 
@@ -369,7 +467,7 @@ impl Graphics {
             None,
         );
 
-        let pipeline = Pipeline::new(device.device.clone(), &swapchain);
+        let pipeline = Pipeline::new(&instance, &device, &swapchain);
 
         swapchain.attach_framebuffers(&pipeline);
 
@@ -409,15 +507,17 @@ impl Graphics {
         }
     }
 
-    pub fn render_loop<F: Fn(&mut Graphics)>(&mut self, f: F) {
+    pub fn render_loop<F: Fn(&mut Graphics, &mut Context)>(&mut self, f: F) {
         let mut event_pump = self.sdl_context.event_pump().unwrap();
 
         use sdl2::event::Event;
 
         //let mut frame_count = 0;
         //let begin_time = std::time::Instant::now();
+        let mut context = Context::new();
+
         'quit: loop {
-            f(self);
+            f(self, &mut context);
 
             while let Some(event) = event_pump.poll_event() {
                 match event {

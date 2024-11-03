@@ -1,16 +1,18 @@
-use std::ops::{Add, Div, Mul, Neg, Sub};
+use std::ops::{Add, Div, Mul, Sub};
+
+use crate::{bivector::BiVector, rotor::Rotor, vector::Vector};
 
 // 3D Geometric Algebra in its full glory
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Number<T> {
-    e: T,
-    e1: T,
-    e2: T,
-    e3: T,
-    e12: T,
-    e31: T,
-    e23: T,
-    e123: T,
+    pub e: T,
+    pub e1: T,
+    pub e2: T,
+    pub e3: T,
+    pub e12: T,
+    pub e31: T,
+    pub e23: T,
+    pub e123: T,
 }
 
 impl<T: Copy + num_traits::ConstZero + num_traits::ConstOne> Number<T> {
@@ -82,18 +84,34 @@ impl<T: num_traits::Zero> Default for Number<T> {
     }
 }
 
+impl<T: Copy + num_traits::Zero> From<Vector<T>> for Number<T> {
+    fn from(v: Vector<T>) -> Self {
+        let z = num_traits::zero();
+        Number {
+            e: z,
+            e1: v.e1,
+            e2: v.e2,
+            e3: v.e3,
+            e12: z,
+            e31: z,
+            e23: z,
+            e123: z,
+        }
+    }
+}
+
 impl<T: Copy + num_traits::Zero> From<BiVector<T>> for Number<T> {
     fn from(bv: BiVector<T>) -> Self {
         let z = num_traits::zero();
         Number {
-        e: z,
-        e1: z,
-        e2: z,
-        e3: z,
-        e12: bv.e12,
-        e31: bv.e31,
-        e23: bv.e23,
-        e123: z
+            e: z,
+            e1: z,
+            e2: z,
+            e3: z,
+            e12: bv.e12,
+            e31: bv.e31,
+            e23: bv.e23,
+            e123: z,
         }
     }
 }
@@ -156,36 +174,6 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T>> Mul for Numb
     }
 }
 
-impl<T: Copy + Mul<Output = T>> Number<T> {
-    pub fn scalar_product(self, rhs: T) -> Self {
-        Self {
-            e: self.e * rhs,
-            e1: self.e1 * rhs,
-            e2: self.e2 * rhs,
-            e3: self.e3 * rhs,
-            e12: self.e12 * rhs,
-            e31: self.e31 * rhs,
-            e23: self.e23 * rhs,
-            e123: self.e123 * rhs,
-        }
-    }
-}
-
-impl<T: Copy + Div<Output = T>> Number<T> {
-    pub fn scalar_divide(self, rhs: T) -> Self {
-        Self {
-            e: self.e / rhs,
-            e1: self.e1 / rhs,
-            e2: self.e2 / rhs,
-            e3: self.e3 / rhs,
-            e12: self.e12 / rhs,
-            e31: self.e31 / rhs,
-            e23: self.e23 / rhs,
-            e123: self.e123 / rhs,
-        }
-    }
-}
-
 impl<T: Add<Output = T>> Add for Number<T> {
     type Output = Self;
 
@@ -220,134 +208,32 @@ impl<T: Sub<Output = T>> Sub for Number<T> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Vector<T> {
-    e1: T,
-    e2: T,
-    e3: T,
-}
-
-impl<T: Copy + num_traits::Zero> From<Vector<T>> for Number<T> {
-    fn from(v: Vector<T>) -> Self {
-        let z = num_traits::zero();
-        Number {
-        e: z,
-        e1: v.e1,
-        e2: v.e2,
-        e3: v.e3,
-        e12: z,
-        e31: z,
-        e23: z,
-        e123: z
-        }
-    }
-}
-
-#[rustfmt::skip]
-impl<T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T> + num_traits::Zero> Mul for Vector<T> {
-    type Output = Number<T>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let a = self;
-        let b = rhs;
-
-        let e = a.dot(b);
-        let bv = a.wedge(b);
-
-        let z = num_traits::zero();
-        Self::Output {
-            e,
-            e1: z,
-            e2: z,
-            e3: z,
-            e12: bv.e12,
-            e31: bv.e31,
-            e23: bv.e23,
-            e123: z   
-        }
-    }
-}
-
-impl<T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T> + num_traits::Zero> Vector<T> {
-    pub fn dot(self, rhs: Self) -> T {
-        let a = self;
-        let b = rhs;
-
-        a.e1 * b.e1 + a.e2 * b.e2 + a.e3 * b.e3
-    }
-
-    pub fn wedge(self, rhs: Self) -> BiVector<T> {
-        let a = self;
-        let b = rhs;
-
-        BiVector {
-            e12: a.e1 * b.e2 - a.e2 * b.e1,
-            e31: a.e3 * b.e1 - a.e1 * b.e3,
-            e23: a.e2 * b.e3 - a.e3 * b.e2,
-        }
-    }
-}
-
-impl<T: Copy + Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Neg<Output = T>> Vector<T> {
-    #[inline(never)]
-    pub fn rotate(self, rotor: Rotor<T>) -> Self {
-        let k = rotor.e;
-        let a = rotor.e12;
-        let b = rotor.e31;
-        let c = rotor.e23;
-
-        let x = self.e1;
-        let y = self.e2;
-        let z = self.e3;
-
-        let r = k*x + a*y - b*z;
-        let s = -a*x + k*y + c*z;
-        let t = b*x + k*z - c*y;
-        let u = c*x + b*y + a*z;
-
-        Vector {
-            e1:  r*k + s*a - t*b + u*c,
-            e2: -r*a + s*k + t*c + u*b,
-            e3:  r*b - s*c + t*k + u*a,
-        }
-    }
-}
-
-impl<T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T> + Neg<Output = T>> BiVector<T> {
-    pub fn dot(&self, rhs: Self) -> T {
-        let a = self;
-        let b = rhs;
-
-        -a.e12 * b.e12 - a.e31 * b.e31 - a.e23 * b.e23
-    }
-
-    pub fn cross(&self, rhs: Self) -> Self {
-        let a = self;
-        let b = rhs;
-
+impl<T: Copy + Mul<Output = T>> Number<T> {
+    pub fn scalar_product(self, rhs: T) -> Self {
         Self {
-            e12: a.e31 * b.e23 - a.e23 * b.e31,
-            e31: -a.e12 * b.e23 + a.e23 * b.e12,
-            e23: a.e12 * b.e31 - a.e31 * b.e12,
+            e: self.e * rhs,
+            e1: self.e1 * rhs,
+            e2: self.e2 * rhs,
+            e3: self.e3 * rhs,
+            e12: self.e12 * rhs,
+            e31: self.e31 * rhs,
+            e23: self.e23 * rhs,
+            e123: self.e123 * rhs,
         }
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Rotor<T> {
-    e: T,
-    e12: T,
-    e31: T,
-    e23: T
-}
-
-impl<T: std::ops::Neg<Output = T>> Rotor<T> {
-    pub fn conjugate(self) -> Rotor<T>{
-        Rotor{
-            e: self.e,
-            e12: -self.e12,
-            e31: -self.e31,
-            e23: -self.e23,
+impl<T: Copy + Div<Output = T>> Number<T> {
+    pub fn scalar_divide(self, rhs: T) -> Self {
+        Self {
+            e: self.e / rhs,
+            e1: self.e1 / rhs,
+            e2: self.e2 / rhs,
+            e3: self.e3 / rhs,
+            e12: self.e12 / rhs,
+            e31: self.e31 / rhs,
+            e23: self.e23 / rhs,
+            e123: self.e123 / rhs,
         }
     }
 }
@@ -356,99 +242,14 @@ impl<T: Copy + num_traits::Zero> From<Rotor<T>> for Number<T> {
     fn from(r: Rotor<T>) -> Self {
         let z = num_traits::zero();
         Number {
-        e: r.e,
-        e1: z,
-        e2: z,
-        e3: z,
-        e12: r.e12,
-        e31: r.e31,
-        e23: r.e23,
-        e123: z
+            e: r.e,
+            e1: z,
+            e2: z,
+            e3: z,
+            e12: r.e12,
+            e31: r.e31,
+            e23: r.e23,
+            e123: z,
         }
     }
-}
-
-impl<T: num_traits::Float + std::fmt::Debug> BiVector<T> {
-    pub fn rotor(&self, angle: T) -> Rotor<T> {
-        let two = T::one() + T::one();
-        let angle = -angle/two;
-
-        let bv = {
-            let norm = (self.e12*self.e12 + self.e31*self.e31 + self.e23*self.e23).sqrt().recip();
-            BiVector{
-                e12: angle*norm*self.e12,
-                e31: angle*norm*self.e31,
-                e23: angle*norm*self.e23
-            }
-        };
-
-        let norm = (bv.e12*bv.e12 + bv.e31*bv.e31 + bv.e23*bv.e23).sqrt();
-
-        let sine = norm.sin();
-        Rotor{e: norm.cos(), e12: bv.e12*sine, e31: bv.e31*sine, e23: bv.e23*sine }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct BiVector<T> {
-    e12: T,
-    e31: T,
-    e23: T,
-}
-
-fn main() {
-    let a = Number {
-        e: 2,
-        e1: 3,
-        e2: 5,
-        e3: 7,
-        e12: 11,
-        e31: 13,
-        e23: 17,
-        e123: 19,
-    };
-
-    let b = Number {
-        e: 23,
-        e1: 29,
-        e2: 31,
-        e3: 37,
-        e12: 41,
-        e31: 43,
-        e23: 47,
-        e123: 53,
-    };
-    assert!(a * b == a.dot(b) + a.cross(b));
-    assert!((a * b + b * a).scalar_divide(2) == a.dot(b));
-    assert!((a * b - b * a).scalar_divide(2) == a.cross(b));
-
-    let u = Vector {
-        e1: 2,
-        e2: -3,
-        e3: -1,
-    };
-
-    let v = Vector {
-        e1: 3,
-        e2: -2,
-        e3: 4,
-    };
-
-    let zero_bv = BiVector {
-        e12: 0,
-        e31: 0,
-        e23: 0,
-    };
-    assert!(u.dot(v) == v.dot(u));
-    assert!(u.wedge(u) == zero_bv);
-    assert!(v.wedge(v) == zero_bv);
-
-    let a = Vector::<f32>{e1: 0.7, e2: 0.8, e3: -0.9};
-    let b = Vector::<f32>{e1: 0.6, e2: -0.7, e3: 0.2};
-
-    let r = a.wedge(b).rotor(0.45);
-    let v = Vector::<f32>{e1: 1.1, e2: 1.3, e3: -0.4};
-
-    println!("{:?}", v.rotate(r));
-    println!("{:?}",Number::from(r) * v.into() * r.conjugate().into());
 }

@@ -103,6 +103,27 @@ pub struct Buffer<T: Copy> {
     phantom: PhantomData<T>,
 }
 
+pub fn find_memory_type(
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+    type_filter: u32,
+    properties: vk::MemoryPropertyFlags,
+) -> u32 {
+    let memory_properties =
+        unsafe { instance.get_physical_device_memory_properties(physical_device) };
+
+    for i in 0..memory_properties.memory_type_count {
+        if (type_filter & (1 << i) > 0)
+            && (memory_properties.memory_types[i as usize].property_flags & properties
+                == properties)
+        {
+            return i;
+        }
+    }
+
+    panic!("failed to find suitable memory type");
+}
+
 impl<T: Copy> Buffer<T> {
     pub fn copy(
         &self,
@@ -158,7 +179,7 @@ impl<T: Copy> Buffer<T> {
 
         let alloc_info = vk::MemoryAllocateInfo::default()
             .allocation_size(memory_requirements.size)
-            .memory_type_index(Self::find_memory_type(
+            .memory_type_index(find_memory_type(
                 instance,
                 physical_device,
                 memory_requirements.memory_type_bits,
@@ -203,27 +224,6 @@ impl<T: Copy> Buffer<T> {
             size,
             phantom: PhantomData,
         }
-    }
-
-    fn find_memory_type(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        type_filter: u32,
-        properties: vk::MemoryPropertyFlags,
-    ) -> u32 {
-        let memory_properties =
-            unsafe { instance.get_physical_device_memory_properties(physical_device) };
-
-        for i in 0..memory_properties.memory_type_count {
-            if (type_filter & (1 << i) > 0)
-                && (memory_properties.memory_types[i as usize].property_flags & properties
-                    == properties)
-            {
-                return i;
-            }
-        }
-
-        panic!("failed to find suitable memory type");
     }
 }
 

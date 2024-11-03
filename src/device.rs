@@ -99,7 +99,9 @@ impl Device {
         //    .dynamic_rendering(true)
         //    .synchronization2(true);
 
-        let features = vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
+        let features = vk::PhysicalDeviceFeatures::default()
+            //    .fill_mode_non_solid(true)
+            .shader_clip_distance(true);
 
         let priorities = [1.0];
 
