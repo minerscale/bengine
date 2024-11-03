@@ -66,7 +66,7 @@ impl DebugMessenger {
             )
             .pfn_user_callback(Some(Self::vulkan_debug_callback));
 
-        let debug_utils_loader = ext::debug_utils::Instance::new(&entry, &instance);
+        let debug_utils_loader = ext::debug_utils::Instance::new(entry, instance);
         let debug_callback =
             unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None) }.unwrap();
 

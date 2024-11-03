@@ -22,6 +22,7 @@ impl Device {
         physical_devices: Vec<vk::PhysicalDevice>,
     ) -> Option<(vk::PhysicalDevice, (u32, u32))> {
         physical_devices.iter().find_map(|physical_device| unsafe {
+            /*
             let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
             let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
             let mut features = vk::PhysicalDeviceFeatures2::default()
@@ -36,7 +37,7 @@ impl Device {
                 || features13.synchronization2 == 0
             {
                 return None;
-            }
+            }*/
 
             let mut graphics_index = Option::<u32>::None;
             let mut present_index = Option::<u32>::None;
@@ -82,7 +83,7 @@ impl Device {
     ) -> Self {
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
         let (physical_device, (graphics_index, present_index)) =
-            Self::pick_physical_device(&instance, &surface_loader, surface, physical_devices)
+            Self::pick_physical_device(instance, surface_loader, surface, physical_devices)
                 .expect("Couldn't find suitable device");
 
         let device_memory_properties =
@@ -90,13 +91,13 @@ impl Device {
 
         let device_extension_names = [khr::swapchain::NAME.as_ptr()];
 
-        let mut features12 = vk::PhysicalDeviceVulkan12Features::default()
-            .descriptor_indexing(true)
-            .buffer_device_address(true);
+        let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
+        //    .descriptor_indexing(true)
+        //    .buffer_device_address(true);
 
-        let mut features13 = vk::PhysicalDeviceVulkan13Features::default()
-            .dynamic_rendering(true)
-            .synchronization2(true);
+        let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+        //    .dynamic_rendering(true)
+        //    .synchronization2(true);
 
         let features = vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
 

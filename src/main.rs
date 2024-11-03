@@ -2,6 +2,7 @@ pub mod buffer;
 pub mod command_buffer;
 pub mod debug_messenger;
 pub mod device;
+pub mod image;
 pub mod instance;
 pub mod pipeline;
 pub mod render_pass;
@@ -14,17 +15,17 @@ pub mod vertex;
 use std::mem::offset_of;
 
 use ash::vk;
-use buffer::Buffer;
-use command_buffer::CommandBuffer;
-use command_buffer::CommandPool;
+use buffer::{Buffer, StagedBuffer};
+use command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer};
+
 use debug_messenger::DebugMessenger;
 use device::Device;
+use image::Image;
 use instance::Instance;
 use pipeline::Pipeline;
 use sdl2::{keyboard::Keycode, sys::SDL_Vulkan_GetDrawableSize};
 use surface::Surface;
 use swapchain::Swapchain;
-use swapchain::SwapchainImage;
 use synchronization::{Fence, Semaphore};
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -91,47 +92,27 @@ fn main() {
         },
     ];
 
-    let vertex_buffer = {
-        let staging_buffer = Buffer::new(
-            gfx.device.device.clone(),
-            &gfx.instance,
-            gfx.device.physical_device,
-            &vertices,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        );
+    let staging_command_buffer = gfx.command_pool.create_one_time_submit_command_buffer();
 
-        Buffer::copy_buffer(
-            &gfx.instance,
-            gfx.device.physical_device,
-            gfx.device.graphics_queue,
-            &gfx.command_pool,
-            &staging_buffer,
-            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        )
-    };
+    let vertex_buffer = StagedBuffer::new(
+        &gfx.instance,
+        gfx.device.device.clone(),
+        gfx.device.physical_device,
+        &staging_command_buffer,
+        vk::BufferUsageFlags::VERTEX_BUFFER,
+        &vertices,
+    );
 
-    let index_buffer = {
-        let staging_buffer = Buffer::new(
-            gfx.device.device.clone(),
-            &gfx.instance,
-            gfx.device.physical_device,
-            &indices,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        );
+    let index_buffer = StagedBuffer::new(
+        &gfx.instance,
+        gfx.device.device.clone(),
+        gfx.device.physical_device,
+        &staging_command_buffer,
+        vk::BufferUsageFlags::INDEX_BUFFER,
+        &indices,
+    );
 
-        Buffer::copy_buffer(
-            &gfx.instance,
-            gfx.device.physical_device,
-            gfx.device.graphics_queue,
-            &gfx.command_pool,
-            &staging_buffer,
-            vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        )
-    };
+    staging_command_buffer.submit(gfx.device.graphics_queue, &gfx.command_pool);
 
     let f = |gfx: &mut Graphics| {
         let current_frame = gfx.current_frame;
@@ -141,8 +122,8 @@ fn main() {
 
             let (image_index, recreate_swapchain) = match (
                 gfx.swapchain.device.acquire_next_image(
-                    gfx.swapchain.clone(),
-                    u64::max_value(),
+                    *gfx.swapchain,
+                    u64::MAX,
                     *gfx.image_avaliable_semaphores[current_frame],
                     vk::Fence::null(),
                 ),
@@ -164,40 +145,34 @@ fn main() {
 
             gfx.device.reset_fences(fence).unwrap();
 
-            let command_buffer = &gfx.command_buffers[current_frame];
-
-            record_command_buffer(
-                &gfx.device,
-                &gfx.pipeline,
-                command_buffer,
-                &gfx.swapchain.images[image_index as usize],
-                &vertex_buffer,
-                &index_buffer,
-            );
-
-            let image_avaliable_semaphore = [*gfx.image_avaliable_semaphores[current_frame]];
-            let render_finished_semaphore = [*gfx.render_finished_semaphores[current_frame]];
-            let command_buffer_list = [**command_buffer];
-
-            let submit_info = vk::SubmitInfo::default()
-                .wait_semaphores(&image_avaliable_semaphore)
-                .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
-                .command_buffers(&command_buffer_list)
-                .signal_semaphores(&render_finished_semaphore);
-
-            gfx.device
-                .queue_submit(
-                    gfx.device.graphics_queue,
-                    &[submit_info],
-                    *gfx.in_flight_fences[current_frame],
-                )
-                .unwrap();
+            gfx.command_buffers[current_frame] = match gfx.command_buffers[current_frame].take() {
+                Some(command_buffer) => Some(
+                    record_command_buffer(
+                        &gfx.device,
+                        &gfx.pipeline,
+                        command_buffer.begin(),
+                        &gfx.swapchain.images[image_index as usize],
+                        &vertex_buffer,
+                        &index_buffer,
+                    )
+                    .end()
+                    .submit(
+                        gfx.device.graphics_queue,
+                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                        *gfx.image_avaliable_semaphores[current_frame],
+                        *gfx.render_finished_semaphores[current_frame],
+                        *gfx.in_flight_fences[current_frame],
+                    ),
+                ),
+                None => panic!("Attempt to begin an active command buffer!"),
+            };
 
             let swapchains = [*gfx.swapchain];
             let indices: [u32; 1] = [image_index];
 
+            let wait_semaphore = [*gfx.render_finished_semaphores[current_frame]];
             let present_info = vk::PresentInfoKHR::default()
-                .wait_semaphores(&render_finished_semaphore)
+                .wait_semaphores(&wait_semaphore)
                 .swapchains(&swapchains)
                 .image_indices(&indices);
 
@@ -228,14 +203,12 @@ fn main() {
 pub fn record_command_buffer(
     device: &Device,
     pipeline: &Pipeline,
-    command_buffer: &CommandBuffer,
-    image: &SwapchainImage,
+    command_buffer: ActiveMultipleSubmitCommandBuffer,
+    image: &Image,
     vertex_buffer: &Buffer<Vertex>,
     index_buffer: &Buffer<u16>,
-) {
+) -> ActiveMultipleSubmitCommandBuffer {
     unsafe {
-        command_buffer.begin(vk::CommandBufferUsageFlags::empty());
-
         let clear_color = [vk::ClearValue {
             color: vk::ClearColorValue {
                 float32: [0.0, 0.0, 0.0, 1.0],
@@ -251,7 +224,7 @@ pub fn record_command_buffer(
             })
             .clear_values(&clear_color);
 
-        let cmd_buf = **command_buffer;
+        let cmd_buf = *command_buffer;
 
         device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
 
@@ -287,7 +260,7 @@ pub fn record_command_buffer(
 
         device.cmd_end_render_pass(cmd_buf);
 
-        command_buffer.end();
+        command_buffer
     }
 }
 
@@ -297,7 +270,7 @@ pub struct Graphics {
     pub render_finished_semaphores: Vec<Semaphore>,
     pub in_flight_fences: Vec<Fence>,
 
-    pub command_buffers: Vec<CommandBuffer>,
+    pub command_buffers: Vec<Option<MultipleSubmitCommandBuffer>>,
     pub command_pool: CommandPool,
 
     pub pipeline: Pipeline,
@@ -409,7 +382,7 @@ impl Graphics {
         let mut command_buffers = Vec::new();
 
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
-            command_buffers.push(command_pool.create_command_buffer());
+            command_buffers.push(Some(command_pool.create_command_buffer()));
 
             image_avaliable_semaphores.push(Semaphore::new(device.device.clone()));
             render_finished_semaphores.push(Semaphore::new(device.device.clone()));
@@ -452,29 +425,16 @@ impl Graphics {
                     Event::KeyDown {
                         timestamp: _,
                         window_id: _,
-                        keycode,
+                        keycode: Some(Keycode::Escape),
                         scancode: _,
                         keymod: _,
                         repeat: _,
-                    } => {
-                        if let Some(key) = keycode {
-                            match key {
-                                Keycode::Escape => break 'quit,
-                                _ => (),
-                            }
-                        }
-                    }
+                    } => break 'quit,
                     Event::Window {
                         timestamp: _,
                         window_id: _,
-                        win_event,
-                    } => match win_event {
-                        sdl2::event::WindowEvent::SizeChanged(_, _) => {
-                            self.framebuffer_resized = true
-                        }
-                        _ => (),
-                    },
-
+                        win_event: sdl2::event::WindowEvent::SizeChanged(_, _),
+                    } => self.framebuffer_resized = true,
                     _ => (),
                 }
             }

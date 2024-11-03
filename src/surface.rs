@@ -13,7 +13,7 @@ pub struct Surface {
 
 impl Surface {
     pub fn new(entry: &ash::Entry, window: &sdl2::video::Window, instance: &ash::Instance) -> Self {
-        let loader = khr::surface::Instance::new(&entry, &instance);
+        let loader = khr::surface::Instance::new(entry, instance);
 
         unsafe {
             let mut surface: MaybeUninit<sdl2::sys::VkSurfaceKHR> = MaybeUninit::uninit();

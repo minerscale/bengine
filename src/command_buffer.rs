@@ -5,42 +5,122 @@ use log::info;
 
 use crate::device::Device;
 
-pub struct CommandBuffer {
+pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {}
+
+pub struct OneTimeSubmitCommandBuffer {
     device: Rc<ash::Device>,
     command_buffer: vk::CommandBuffer,
 }
 
-impl CommandBuffer {
-    pub fn begin(&self, flags: vk::CommandBufferUsageFlags) {
-        unsafe {
-            // No need to reset a buffer if we've definitely never used it
-            if !flags.contains(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT) {
-                self.device
-                    .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
-                    .unwrap();
-            }
+impl ActiveCommandBuffer for OneTimeSubmitCommandBuffer {}
 
-            let begin_info = vk::CommandBufferBeginInfo::default().flags(flags);
-            self.device
-                .begin_command_buffer(self.command_buffer, &begin_info)
-                .unwrap();
-        }
+impl Deref for OneTimeSubmitCommandBuffer {
+    type Target = vk::CommandBuffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.command_buffer
     }
+}
 
-    pub fn end(&self) {
+impl OneTimeSubmitCommandBuffer {
+    pub fn submit(self, queue: vk::Queue, command_pool: &CommandPool) {
         unsafe {
             self.device
                 .end_command_buffer(self.command_buffer)
                 .expect("failed to record command buffer")
         };
+
+        let command_buffer_list = [self.command_buffer];
+
+        let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffer_list);
+        unsafe {
+            self.device
+                .queue_submit(queue, &[submit_info], vk::Fence::null())
+                .unwrap();
+
+            self.device.queue_wait_idle(queue).unwrap();
+
+            self.device
+                .free_command_buffers(**command_pool, &[self.command_buffer]);
+        };
     }
 }
 
-impl Deref for CommandBuffer {
+pub struct MultipleSubmitCommandBuffer {
+    device: Rc<ash::Device>,
+    command_buffer: vk::CommandBuffer,
+}
+
+impl MultipleSubmitCommandBuffer {
+    pub fn begin(self) -> ActiveMultipleSubmitCommandBuffer {
+        unsafe {
+            self.device
+                .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
+                .unwrap();
+
+            let begin_info = vk::CommandBufferBeginInfo::default();
+            self.device
+                .begin_command_buffer(self.command_buffer, &begin_info)
+                .unwrap();
+        }
+
+        ActiveMultipleSubmitCommandBuffer {
+            command_buffer: self,
+        }
+    }
+
+    pub fn submit(
+        self,
+        queue: vk::Queue,
+        dst_stage_mask: vk::PipelineStageFlags,
+        wait_semaphore: vk::Semaphore,
+        signal_semaphores: vk::Semaphore,
+        fence: vk::Fence,
+    ) -> Self {
+        let command_buffer_list = [self.command_buffer];
+        let wait_semaphore_list = [wait_semaphore];
+        let signal_semaphore_list = [signal_semaphores];
+        let dst_stage_mask_list = [dst_stage_mask];
+        let submit_info = vk::SubmitInfo::default()
+            .wait_semaphores(&wait_semaphore_list)
+            .wait_dst_stage_mask(&dst_stage_mask_list)
+            .command_buffers(&command_buffer_list)
+            .signal_semaphores(&signal_semaphore_list);
+
+        unsafe {
+            self.device
+                .queue_submit(queue, &[submit_info], fence)
+                .unwrap();
+        }
+
+        self
+    }
+}
+
+pub struct ActiveMultipleSubmitCommandBuffer {
+    command_buffer: MultipleSubmitCommandBuffer,
+}
+
+impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {}
+
+impl Deref for ActiveMultipleSubmitCommandBuffer {
     type Target = vk::CommandBuffer;
 
     fn deref(&self) -> &Self::Target {
-        &self.command_buffer
+        &self.command_buffer.command_buffer
+    }
+}
+
+impl ActiveMultipleSubmitCommandBuffer {
+    pub fn end(self) -> MultipleSubmitCommandBuffer {
+        unsafe {
+            self.command_buffer
+                .device
+                .end_command_buffer(self.command_buffer.command_buffer)
+                .expect("failed to record command buffer")
+        };
+
+        self.command_buffer
     }
 }
 
@@ -50,7 +130,7 @@ pub struct CommandPool {
 }
 
 impl CommandPool {
-    pub fn create_command_buffer(&self) -> CommandBuffer {
+    pub fn create_one_time_submit_command_buffer(&self) -> OneTimeSubmitCommandBuffer {
         let alloc_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(self.command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -59,7 +139,30 @@ impl CommandPool {
         let command_buffer =
             unsafe { self.device.allocate_command_buffers(&alloc_info) }.unwrap()[0];
 
-        CommandBuffer {
+        unsafe {
+            let begin_info = vk::CommandBufferBeginInfo::default()
+                .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+            self.device
+                .begin_command_buffer(command_buffer, &begin_info)
+                .unwrap();
+        }
+
+        OneTimeSubmitCommandBuffer {
+            device: self.device.clone(),
+            command_buffer,
+        }
+    }
+
+    pub fn create_command_buffer(&self) -> MultipleSubmitCommandBuffer {
+        let alloc_info = vk::CommandBufferAllocateInfo::default()
+            .command_pool(self.command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+
+        let command_buffer =
+            unsafe { self.device.allocate_command_buffers(&alloc_info) }.unwrap()[0];
+
+        MultipleSubmitCommandBuffer {
             device: self.device.clone(),
             command_buffer,
         }
@@ -74,6 +177,13 @@ impl CommandPool {
             device: device.device.clone(),
             command_pool: unsafe { device.create_command_pool(&pool_create_info, None).unwrap() },
         }
+    }
+
+    pub fn destroy_command_buffer(&self, command_buffer: MultipleSubmitCommandBuffer) {
+        unsafe {
+            self.device
+                .free_command_buffers(self.command_pool, &[command_buffer.command_buffer])
+        };
     }
 }
 

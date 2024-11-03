@@ -101,7 +101,7 @@ impl Pipeline {
                 .unwrap()
         };
 
-        let render_pass = RenderPass::new(device.clone(), &swapchain);
+        let render_pass = RenderPass::new(device.clone(), swapchain);
 
         let pipeline_info = [vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)

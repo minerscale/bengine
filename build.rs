@@ -2,23 +2,24 @@ use core::str;
 use std::{env, fs, process::Command};
 
 fn main() -> anyhow::Result<()> {
-    let paths = fs::read_dir("src/shaders/").unwrap();
+    let paths = fs::read_dir("src/shaders/")?;
 
-    let out_dir = env::var("OUT_DIR").unwrap();
+    let out_dir = env::var("OUT_DIR")?;
 
     for path in paths {
-        if path.as_ref().unwrap().file_type().unwrap().is_dir() {
+        let path = path?;
+        if path.file_type()?.is_dir() {
             unimplemented!("nested directories not yet supported")
         }
 
-        let path = &path.unwrap();
+        let path = &path;
         let in_path = path.path();
         let infile = in_path.to_string_lossy();
 
         let outfile = out_dir.clone() + "/" + path.file_name().to_str().unwrap() + ".spv";
 
         let output = Command::new("glslc")
-            .args(&[&infile, "-o", &outfile])
+            .args([&infile, "-o", &outfile])
             .output()?;
 
         if !output.status.success() {
@@ -27,7 +28,7 @@ fn main() -> anyhow::Result<()> {
                 format!(
                     "failed to compile {}\n\n{}",
                     path.file_name().to_string_lossy(),
-                    str::from_utf8(&output.stderr).unwrap()
+                    str::from_utf8(&output.stderr)?
                 ),
             ))?;
         }
