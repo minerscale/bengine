@@ -3,10 +3,7 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::{
-    device::Device,
-    swapchain::{find_depth_format, Swapchain},
-};
+use crate::{device::Device, swapchain::find_depth_format};
 
 pub struct RenderPass {
     render_pass: vk::RenderPass,
@@ -14,10 +11,10 @@ pub struct RenderPass {
 }
 
 impl RenderPass {
-    pub fn new(instance: &ash::Instance, device: &Device, swapchain: &Swapchain) -> Self {
+    pub fn new(instance: &ash::Instance, device: &Device, format: vk::Format) -> Self {
         let attachments = [
             vk::AttachmentDescription::default()
-                .format(swapchain.surface_format.format)
+                .format(format)
                 .samples(vk::SampleCountFlags::TYPE_1)
                 .load_op(vk::AttachmentLoadOp::CLEAR)
                 .store_op(vk::AttachmentStoreOp::STORE)

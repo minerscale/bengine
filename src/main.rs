@@ -11,7 +11,7 @@ pub mod surface;
 pub mod swapchain;
 pub mod synchronization;
 
-use std::{fs::File, io::BufReader, mem::offset_of};
+use std::{fs::File, io::BufReader, mem::offset_of, ptr::addr_of};
 
 use ash::vk;
 use buffer::{Buffer, StagedBuffer};
@@ -95,11 +95,21 @@ pub struct Context {
 }
 
 #[repr(C)]
-pub struct PushConstants {
+pub struct VertexPushConstants {
     camera_rotation: Rotor<f32>,
     camera_position: Vector<f32>,
-    align: f32,
-    camera_scale: Vector<f32>,
+}
+
+#[repr(C)]
+pub struct FragmentPushConstants {
+    camera_vector: Vector<f32>,
+}
+
+#[repr(C)]
+pub struct PushConstants {
+    vertex: VertexPushConstants,
+    _align: f32,
+    fragment: FragmentPushConstants,
 }
 
 impl Context {
@@ -163,26 +173,29 @@ fn main() {
                 .collect::<Vec<_>>()
         };*/
 
+        let camera_rotation = Vector::<f32>::E2
+            .wedge(Vector::<f32>::E3)
+            .rotor(-std::f32::consts::PI / 8.0)
+            * Vector::<f32>::E3
+                .wedge(Vector::<f32>::E1)
+                .rotor(ctx.time + std::f32::consts::PI / 2.0);
+
         ctx.time += 1.0 / 60.0;
         let push_constants = PushConstants {
-            camera_position: Vector::<f32>::new(
-                10.0 * (ctx.time.cos()),
-                6.0,
-                10.0 * (-ctx.time.sin()),
-            ),
-            camera_rotation: Vector::<f32>::E2
-                .wedge(Vector::<f32>::E3)
-                .rotor(-std::f32::consts::PI / 8.0)
-                * Vector::<f32>::E3
-                    .wedge(Vector::<f32>::E1)
-                    .rotor(ctx.time + std::f32::consts::PI / 2.0),
-            align: 0.0,
-            camera_scale: Vector::<f32>::new(
-                (gfx.swapchain.extent.height as f32) / (gfx.swapchain.extent.width as f32),
-                1.0,
-                1.0 / 10.0,
-            )
-            .scalar_product(0.3),
+            vertex: VertexPushConstants {
+                camera_position: Vector::<f32>::new(
+                    10.0 * (ctx.time.cos()),
+                    6.0,
+                    10.0 * (-ctx.time.sin()),
+                ),
+                camera_rotation,
+            },
+            _align: 0.0,
+            fragment: FragmentPushConstants {
+                camera_vector: Vector::<f32>::new(1.0, 1.0, 1.0)
+                    .norm()
+                    .rotate(camera_rotation.conjugate()),
+            },
         };
 
         let current_frame = gfx.current_frame;
@@ -225,7 +238,7 @@ fn main() {
             gfx.command_buffers[current_frame] = Some(
                 record_command_buffer(
                     &gfx.device,
-                    &gfx.pipeline,
+                    &gfx.swapchain.pipeline,
                     command_buffer,
                     &gfx.swapchain.images[image_index as usize],
                     &vertex_buffer,
@@ -348,8 +361,19 @@ pub fn record_command_buffer(
             vk::ShaderStageFlags::VERTEX,
             0,
             std::slice::from_raw_parts(
-                &push_constants as *const PushConstants as *const u8,
-                std::mem::size_of::<PushConstants>(),
+                addr_of!(push_constants.vertex) as *const u8,
+                std::mem::size_of::<VertexPushConstants>(),
+            ),
+        );
+
+        device.cmd_push_constants(
+            cmd_buf,
+            pipeline.pipeline_layout,
+            vk::ShaderStageFlags::FRAGMENT,
+            offset_of!(PushConstants, fragment) as u32,
+            std::slice::from_raw_parts(
+                addr_of!(push_constants.fragment) as *const u8,
+                std::mem::size_of::<FragmentPushConstants>(),
             ),
         );
         device.cmd_draw_indexed(cmd_buf, index_count, 1, 0, 0, 0);
@@ -369,7 +393,6 @@ pub struct Graphics {
     pub command_buffers: Vec<Option<MultipleSubmitCommandBuffer>>,
     pub command_pool: CommandPool,
 
-    pub pipeline: Pipeline,
     pub swapchain: Swapchain,
 
     pub device: Device,
@@ -414,7 +437,7 @@ impl Graphics {
 
         self.wait_idle();
 
-        let mut swapchain = Swapchain::new(
+        let swapchain = Swapchain::new(
             &self.instance,
             &self.device,
             &self.surface.loader,
@@ -422,8 +445,6 @@ impl Graphics {
             extent,
             Some(*self.swapchain),
         );
-
-        swapchain.attach_framebuffers(&self.pipeline);
 
         self.swapchain = swapchain;
     }
@@ -458,7 +479,7 @@ impl Graphics {
 
         let device = Device::new(&instance, &surface.loader, *surface);
 
-        let mut swapchain = Swapchain::new(
+        let swapchain = Swapchain::new(
             &instance,
             &device,
             &surface.loader,
@@ -466,10 +487,6 @@ impl Graphics {
             vk::Extent2D { width, height },
             None,
         );
-
-        let pipeline = Pipeline::new(&instance, &device, &swapchain);
-
-        swapchain.attach_framebuffers(&pipeline);
 
         let command_pool = CommandPool::new(&device);
 
@@ -493,7 +510,6 @@ impl Graphics {
             in_flight_fences,
             command_buffers,
             command_pool,
-            pipeline,
             swapchain,
             device,
             surface,

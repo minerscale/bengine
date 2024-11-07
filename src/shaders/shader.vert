@@ -5,33 +5,34 @@ layout(location = 1) in vec3 inColor;
 
 layout(location = 0) out vec3 fragColor;
 
+layout(constant_id = 0) const float scale_x = 0.0;
+layout(constant_id = 1) const float scale_y = 0.0;
+layout(constant_id = 2) const float scale_z = 0.0;
+
 layout( push_constant ) uniform constants
 {
     vec4 camera_rotation;
     vec3 camera_position;
     float align;
-    vec3 camera_scale;
 } PushConstants;
 
 vec3 rotate(vec3 vec, vec4 rotor) {
-    float k = rotor.x;
-    float a = rotor.y;
-    float b = rotor.z;
-    float c = rotor.w;
+    float x = rotor.x;
+    float y = rotor.y;
+    float z = rotor.z;
+    float w = rotor.w;
 
-    float x = vec.x;
-    float y = vec.y;
-    float z = vec.z;
-
-    float r = k * x + a * y - b * z;
-    float s = -a * x + k * y + c * z;
-    float t = b * x + k * z - c * y;
-    float u = c * x + b * y + a * z;
+    vec4 q = vec4(
+        dot(vec, vec3( x, y,-z)),
+        dot(vec, vec3(-y, x, w)),
+        dot(vec, vec3( z,-w, x)),
+        dot(vec, vec3( w, z, y))
+    );
 
     return vec3(
-        r * k + s * a - t * b + u * c,
-        -r * a + s * k + t * c + u * b,
-        r * b - s * c + t * k + u * a
+        dot(q, vec4(x, y,-z, w)),
+        dot(q, vec4(-y,x, w, z)),
+        dot(q, vec4(z,-w, x, y))
     );
 }
 
@@ -51,11 +52,12 @@ vec3 lighting(vec3 light, vec3 color) {
 
 void main() {
     vec3 rotated = rotate(inPosition - PushConstants.camera_position, PushConstants.camera_rotation);
-    vec3 transformed = -PushConstants.camera_scale*rotated;
+    vec3 transformed = -vec3(scale_x, scale_y, scale_z)*rotated;
     gl_Position = vec4(transformed, 1.0);
 
-    vec4 reverse = vec4(PushConstants.camera_rotation.x, -PushConstants.camera_rotation.yzw);
-    vec3 sunlight = normalize(rotate(sun, reverse));
-    vec3 backlight = normalize(rotate(back, reverse));
-    fragColor = teapot_color*(0.9*lighting(sunlight, sun_color) + 0.005*lighting(backlight, back_color));
+    //vec4 reverse = vec4(PushConstants.camera_rotation.x, -PushConstants.camera_rotation.yzw);
+    //vec3 sunlight = normalize(rotate(sun, reverse));
+    //vec3 backlight = normalize(rotate(back, reverse));
+    //fragColor = teapot_color*(0.9*lighting(sunlight, sun_color) + 0.005*lighting(backlight, back_color));
+    fragColor = inColor;
 }

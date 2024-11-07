@@ -129,6 +129,12 @@ impl<T: Copy + Mul<Output = T> + Add<Output = T> + Sub<Output = T> + num_traits:
     }
 }
 
+impl<T: Copy + num_traits::Float> Vector<T> {
+    pub fn norm(self) -> Self {
+        self.scalar_divide(self.dot(self).sqrt())
+    }
+}
+
 impl<T: Copy + Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Neg<Output = T>> Vector<T> {
     #[inline(never)]
     pub fn rotate(self, rotor: Rotor<T>) -> Self {

@@ -12,6 +12,7 @@ use crate::{
 pub struct Swapchain {
     pub device: khr::swapchain::Device,
     pub swapchain: vk::SwapchainKHR,
+    pub pipeline: Pipeline,
     pub images: Vec<SwapchainImage>,
     pub depth: ManuallyDrop<Image>,
     pub surface_format: vk::SurfaceFormatKHR,
@@ -19,12 +20,6 @@ pub struct Swapchain {
 }
 
 impl Swapchain {
-    pub fn attach_framebuffers(&mut self, pipeline: &Pipeline) {
-        for image in &mut self.images {
-            image.attach_framebuffer(self.depth.view, pipeline);
-        }
-    }
-
     fn create_swapchain_images(
         device: Rc<ash::Device>,
         swapchain: vk::SwapchainKHR,
@@ -112,7 +107,7 @@ impl Swapchain {
                 .unwrap()
         };
 
-        let images = Self::create_swapchain_images(
+        let mut images = Self::create_swapchain_images(
             device.device.clone(),
             swapchain,
             &swapchain_loader,
@@ -140,9 +135,16 @@ impl Swapchain {
             vk::ImageAspectFlags::DEPTH,
         ));
 
+        let pipeline = Pipeline::new(&instance, &device, &extent, surface_format.format);
+
+        for image in &mut images {
+            image.attach_framebuffer(depth.view, &pipeline);
+        }
+
         Self {
             device: swapchain_loader.clone(),
             swapchain,
+            pipeline,
             images,
             depth,
             surface_format,
