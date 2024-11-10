@@ -6,7 +6,7 @@ use std::{
 use ash::{ext, vk};
 use log::info;
 
-use crate::ENABLE_VALIDATION_LAYERS;
+use crate::debug_messenger::ENABLE_VALIDATION_LAYERS;
 
 pub struct Instance {
     instance: ash::Instance,

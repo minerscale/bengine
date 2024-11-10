@@ -1,7 +1,9 @@
-use std::{ops::Deref, rc::Rc};
+use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, rc::Rc};
 
 use ash::{khr, vk};
 use log::info;
+
+use crate::{instance::Instance, surface::Surface};
 
 pub struct Device {
     pub device: Rc<ash::Device>,
@@ -15,93 +17,168 @@ pub struct Device {
 }
 
 impl Device {
-    fn pick_physical_device(
-        instance: &ash::Instance,
-        surface_loader: &khr::surface::Instance,
-        surface: vk::SurfaceKHR,
-        physical_devices: Vec<vk::PhysicalDevice>,
-    ) -> Option<(vk::PhysicalDevice, (u32, u32))> {
-        physical_devices.iter().find_map(|physical_device| unsafe {
-            /*
-            let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
-            let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
-            let mut features = vk::PhysicalDeviceFeatures2::default()
-                .push_next(&mut features12)
-                .push_next(&mut features13);
+    pub fn new(instance: &Instance, surface: &Surface) -> Self {
+        fn pick_physical_device(
+            instance: &ash::Instance,
+            surface: &Surface,
+            physical_devices: Vec<vk::PhysicalDevice>,
+            requested_features: &vk::PhysicalDeviceFeatures,
+            requested_features12: &vk::PhysicalDeviceVulkan12Features,
+            requested_features13: &vk::PhysicalDeviceVulkan13Features,
+        ) -> Option<(vk::PhysicalDevice, (u32, u32))> {
+            fn feature_subset(
+                requested_features: &vk::PhysicalDeviceFeatures,
+                capabilities: &vk::PhysicalDeviceFeatures,
+            ) -> bool {
+                let features_len =
+                    size_of::<vk::PhysicalDeviceFeatures>() / size_of::<vk::Bool32>();
 
-            instance.get_physical_device_features2(*physical_device, &mut features);
+                // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
+                //         effectively making it an array and we can cast it accordingly.
+                let features_to_slice = |features: &vk::PhysicalDeviceFeatures| unsafe {
+                    slice_from_raw_parts(
+                        &features.robust_buffer_access as *const vk::Bool32,
+                        features_len,
+                    )
+                    .as_ref()
+                    .unwrap()
+                };
 
-            if features12.descriptor_indexing == 0
-                || features12.buffer_device_address == 0
-                || features13.dynamic_rendering == 0
-                || features13.synchronization2 == 0
-            {
-                return None;
-            }*/
+                !zip(
+                    features_to_slice(requested_features),
+                    features_to_slice(capabilities),
+                )
+                .any(|(&requested, &capability)| requested != 0 && capability == 0)
+            }
 
-            let mut graphics_index = Option::<u32>::None;
-            let mut present_index = Option::<u32>::None;
+            fn feature_subset12(
+                requested_features: &vk::PhysicalDeviceVulkan12Features,
+                capabilities: &vk::PhysicalDeviceVulkan12Features,
+            ) -> bool {
+                let features_len = (size_of::<vk::PhysicalDeviceVulkan12Features>()
+                    - offset_of!(
+                        vk::PhysicalDeviceVulkan12Features,
+                        sampler_mirror_clamp_to_edge
+                    ))
+                    / size_of::<vk::Bool32>();
 
-            instance
-                .get_physical_device_queue_family_properties(*physical_device)
-                .iter()
-                .enumerate()
-                .find_map(|(index, info)| {
-                    if graphics_index.is_none()
-                        && info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                    {
-                        graphics_index = Some(index as u32);
-                    }
+                // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
+                //         effectively making it an array and we can cast it accordingly.
+                let features_to_slice = |features: &vk::PhysicalDeviceVulkan12Features| unsafe {
+                    slice_from_raw_parts(
+                        &features.sampler_mirror_clamp_to_edge as *const vk::Bool32,
+                        features_len,
+                    )
+                    .as_ref()
+                    .unwrap()
+                };
 
-                    if present_index.is_none()
-                        && surface_loader
-                            .get_physical_device_surface_support(
-                                *physical_device,
-                                index as u32,
-                                surface,
-                            )
-                            .unwrap()
-                    {
-                        present_index = Some(index as u32);
-                    }
+                !zip(
+                    features_to_slice(requested_features),
+                    features_to_slice(capabilities),
+                )
+                .any(|(&requested, &capability)| requested != 0 && capability == 0)
+            }
 
-                    if let (Some(graphics_index), Some(present_index)) =
-                        (graphics_index, present_index)
-                    {
-                        Some((*physical_device, (graphics_index, present_index)))
-                    } else {
-                        None
-                    }
-                })
-        })
-    }
+            fn feature_subset13(
+                requested_features: &vk::PhysicalDeviceVulkan13Features,
+                capabilities: &vk::PhysicalDeviceVulkan13Features,
+            ) -> bool {
+                let features_len = (size_of::<vk::PhysicalDeviceVulkan13Features>()
+                    - offset_of!(vk::PhysicalDeviceVulkan13Features, robust_image_access))
+                    / size_of::<vk::Bool32>();
 
-    pub fn new(
-        instance: &ash::Instance,
-        surface_loader: &khr::surface::Instance,
-        surface: vk::SurfaceKHR,
-    ) -> Self {
+                // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
+                //         effectively making it an array and we can cast it accordingly.
+                let features_to_slice = |features: &vk::PhysicalDeviceVulkan13Features| unsafe {
+                    slice_from_raw_parts(
+                        &features.robust_image_access as *const vk::Bool32,
+                        features_len,
+                    )
+                    .as_ref()
+                    .unwrap()
+                };
+
+                !zip(
+                    features_to_slice(requested_features),
+                    features_to_slice(capabilities),
+                )
+                .any(|(&requested, &capability)| requested != 0 && capability == 0)
+            }
+
+            physical_devices.iter().find_map(|physical_device| unsafe {
+                let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+                let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
+                let mut features = vk::PhysicalDeviceFeatures2::default()
+                    .push_next(&mut features12)
+                    .push_next(&mut features13);
+
+                instance.get_physical_device_features2(*physical_device, &mut features);
+
+                if !(feature_subset(requested_features, &features.features)
+                    && feature_subset12(requested_features12, &features12)
+                    && feature_subset13(requested_features13, &features13))
+                {
+                    return None;
+                }
+
+                let mut graphics_index = Option::<u32>::None;
+                let mut present_index = Option::<u32>::None;
+
+                instance
+                    .get_physical_device_queue_family_properties(*physical_device)
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, info)| {
+                        if graphics_index.is_none()
+                            && info.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                        {
+                            graphics_index = Some(index as u32);
+                        }
+
+                        if present_index.is_none()
+                            && surface
+                                .loader
+                                .get_physical_device_surface_support(
+                                    *physical_device,
+                                    index as u32,
+                                    **surface,
+                                )
+                                .unwrap()
+                        {
+                            present_index = Some(index as u32);
+                        }
+
+                        if let (Some(graphics_index), Some(present_index)) =
+                            (graphics_index, present_index)
+                        {
+                            Some((*physical_device, (graphics_index, present_index)))
+                        } else {
+                            None
+                        }
+                    })
+            })
+        }
+
+        let features = vk::PhysicalDeviceFeatures::default();
+        let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
+        let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
-        let (physical_device, (graphics_index, present_index)) =
-            Self::pick_physical_device(instance, surface_loader, surface, physical_devices)
-                .expect("Couldn't find suitable device");
+        let (physical_device, (graphics_index, present_index)) = pick_physical_device(
+            instance,
+            surface,
+            physical_devices,
+            &features,
+            &features12,
+            &features13,
+        )
+        .expect("Couldn't find suitable device");
 
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
         let device_extension_names = [khr::swapchain::NAME.as_ptr()];
-
-        let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
-        //    .descriptor_indexing(true)
-        //    .buffer_device_address(true);
-
-        let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
-        //    .dynamic_rendering(true)
-        //    .synchronization2(true);
-
-        let features = vk::PhysicalDeviceFeatures::default()
-            //    .fill_mode_non_solid(true)
-            .shader_clip_distance(true);
 
         let priorities = [1.0];
 

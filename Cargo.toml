@@ -14,6 +14,7 @@ colored = "2.1.0"
 log = "0.4.22"
 geometric-algebra = { path = "geometric-algebra" }
 num-traits = "0.2.19"
+take_mut = "0.2.2"
 
 [dependencies.obj-rs]
 version = "0.7.4"

@@ -237,7 +237,7 @@ impl<T: Copy> Deref for Buffer<T> {
 
 impl<T: Copy> Drop for Buffer<T> {
     fn drop(&mut self) {
-        info!("dropped Buffer");
+        info!("dropped buffer");
         unsafe {
             self.device.destroy_buffer(self.buffer, None);
             self.device.free_memory(self.memory, None);

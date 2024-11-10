@@ -8,7 +8,7 @@ use crate::{buffer::find_memory_type, pipeline::Pipeline};
 pub struct SwapchainImage {
     pub image: vk::Image,
     pub view: vk::ImageView,
-    pub framebuffer: Option<vk::Framebuffer>,
+    pub framebuffer: vk::Framebuffer,
     pub extent: vk::Extent2D,
     device: Rc<ash::Device>,
 }
@@ -19,32 +19,31 @@ impl SwapchainImage {
         image: vk::Image,
         format: vk::Format,
         extent: vk::Extent2D,
+        attachment: vk::ImageView,
+        pipeline: &Pipeline
     ) -> Self {
         let view = create_image_view(&device, image, format, vk::ImageAspectFlags::COLOR);
+
+        let framebuffer = create_framebuffer(
+            &device,
+            pipeline,
+            &[view, attachment],
+            extent,
+        );
 
         SwapchainImage {
             image,
             view,
-            framebuffer: None,
+            framebuffer,
             extent,
             device,
         }
-    }
-
-    pub fn attach_framebuffer(&mut self, attachment: vk::ImageView, pipeline: &Pipeline) {
-        self.framebuffer = Some(create_framebuffer(
-            &self.device,
-            pipeline,
-            &[self.view, attachment],
-            self.extent,
-        ))
     }
 }
 
 pub struct Image {
     pub image: vk::Image,
     pub view: vk::ImageView,
-    pub framebuffer: Option<vk::Framebuffer>,
     pub memory: vk::DeviceMemory,
     pub extent: vk::Extent2D,
 
@@ -102,7 +101,6 @@ impl Image {
         Self {
             image,
             view: create_image_view(&device, image, format, aspect_flags),
-            framebuffer: None,
             memory,
             extent,
             device,
@@ -112,11 +110,6 @@ impl Image {
 
 impl Drop for Image {
     fn drop(&mut self) {
-        if let Some(framebuffer) = self.framebuffer {
-            info!("dropped framebuffer");
-            unsafe { self.device.destroy_framebuffer(framebuffer, None) };
-        }
-
         info!("dropped image view");
         unsafe { self.device.destroy_image_view(self.view, None) };
 
@@ -130,10 +123,8 @@ impl Drop for Image {
 
 impl Drop for SwapchainImage {
     fn drop(&mut self) {
-        if let Some(framebuffer) = self.framebuffer {
-            info!("dropped framebuffer");
-            unsafe { self.device.destroy_framebuffer(framebuffer, None) };
-        }
+        info!("dropped framebuffer");
+        unsafe { self.device.destroy_framebuffer(self.framebuffer, None) };
 
         info!("dropped image view");
         unsafe { self.device.destroy_image_view(self.view, None) };

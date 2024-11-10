@@ -112,6 +112,10 @@ impl Deref for ActiveMultipleSubmitCommandBuffer {
 }
 
 impl ActiveMultipleSubmitCommandBuffer {
+    pub fn record(self, f: impl FnOnce(Self) -> Self) -> Self {
+        f(self)
+    }
+
     pub fn end(self) -> MultipleSubmitCommandBuffer {
         unsafe {
             self.command_buffer

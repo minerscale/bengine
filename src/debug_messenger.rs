@@ -7,6 +7,8 @@ use ash::{ext, vk};
 use colored::Colorize;
 use log::info;
 
+pub const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
+
 pub struct DebugMessenger {
     debug_utils_loader: ext::debug_utils::Instance,
     debug_callback: vk::DebugUtilsMessengerEXT,
