@@ -120,12 +120,19 @@ impl Swapchain {
             ))
         };
 
-        let pipeline = Pipeline::new(&instance, &device, &extent, surface_format.format);
+        let pipeline = Pipeline::new(instance, device, &extent, surface_format.format);
 
         let images = unsafe { swapchain_loader.get_swapchain_images(swapchain).unwrap() }
             .iter()
             .map(|&image| {
-                SwapchainImage::new(device.device.clone(), image, surface_format.format, extent, depth.view, &pipeline)
+                SwapchainImage::new(
+                    device.device.clone(),
+                    image,
+                    surface_format.format,
+                    extent,
+                    depth.view,
+                    &pipeline,
+                )
             })
             .collect::<Vec<_>>();
 

@@ -1,11 +1,15 @@
+use std::cell::Cell;
+
 use ash::vk;
 use sdl2::sys::SDL_Vulkan_GetDrawableSize;
 
 use crate::{
-    command_buffer::{CommandPool, MultipleSubmitCommandBuffer},
+    command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer},
     debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
     device::Device,
+    image::SwapchainImage,
     instance::Instance,
+    pipeline::Pipeline,
     surface::Surface,
     swapchain::Swapchain,
     synchronization::{Fence, Semaphore},
@@ -42,6 +46,99 @@ pub struct Renderer {
 impl Renderer {
     pub fn wait_idle(&self) {
         unsafe { self.device.device_wait_idle().unwrap() };
+    }
+
+    pub fn draw<
+        F: FnMut(
+            &Device,
+            &Pipeline,
+            ActiveMultipleSubmitCommandBuffer,
+            &SwapchainImage,
+        ) -> ActiveMultipleSubmitCommandBuffer,
+    >(
+        &mut self,
+        mut record_command_buffer: F,
+        framebuffer_resized: &Cell<bool>,
+    ) {
+        unsafe {
+            let fence = &[*self.in_flight_fences[self.current_frame]];
+            self.device.wait_for_fences(fence, true, u64::MAX).unwrap();
+
+            let (image_index, recreate_swapchain) = match (
+                self.swapchain.loader.acquire_next_image(
+                    *self.swapchain,
+                    u64::MAX,
+                    *self.image_avaliable_semaphores[self.current_frame],
+                    vk::Fence::null(),
+                ),
+                framebuffer_resized.get(),
+            ) {
+                (Ok((image_index, true)), _) | (Ok((image_index, false)), true) => {
+                    (image_index, true)
+                }
+                (Ok((image_index, false)), false) => (image_index, false),
+                (Err(vk::Result::ERROR_OUT_OF_DATE_KHR), _) => {
+                    framebuffer_resized.set(false);
+                    self.recreate_swapchain();
+                    return;
+                }
+                (Err(_), _) => {
+                    panic!("failed to acquire swapchain image")
+                }
+            };
+
+            self.device.reset_fences(fence).unwrap();
+
+            take_mut::take(
+                self.command_buffers.get_mut(self.current_frame).unwrap(),
+                |command_buffer| {
+                    command_buffer
+                        .begin()
+                        .record(|command_buffer| {
+                            record_command_buffer(
+                                &self.device,
+                                &self.swapchain.pipeline,
+                                command_buffer,
+                                &self.swapchain.images[image_index as usize],
+                            )
+                        })
+                        .end()
+                        .submit(
+                            self.device.graphics_queue,
+                            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                            *self.image_avaliable_semaphores[self.current_frame],
+                            *self.render_finished_semaphores[self.current_frame],
+                            *self.in_flight_fences[self.current_frame],
+                        )
+                },
+            );
+
+            let swapchains = [*self.swapchain];
+            let indices: [u32; 1] = [image_index];
+
+            let wait_semaphore = [*self.render_finished_semaphores[self.current_frame]];
+            let present_info = vk::PresentInfoKHR::default()
+                .wait_semaphores(&wait_semaphore)
+                .swapchains(&swapchains)
+                .image_indices(&indices);
+
+            match self
+                .swapchain
+                .loader
+                .queue_present(self.device.present_queue, &present_info)
+            {
+                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_swapchain(),
+                Err(e) => panic!("{}", e),
+                _ => (),
+            };
+
+            if recreate_swapchain {
+                framebuffer_resized.set(false);
+                self.recreate_swapchain();
+            }
+        }
+
+        self.current_frame = (self.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     pub fn recreate_swapchain(&mut self) {

@@ -192,6 +192,14 @@ impl<T: Copy> Buffer<T> {
         (buffer, memory)
     }
 
+    pub fn len(&self) -> vk::DeviceSize {
+        self.size/vk::DeviceSize::try_from(size_of::<T>()).unwrap()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.size == 0
+    }
+
     pub fn new(
         device: Rc<ash::Device>,
         instance: &ash::Instance,

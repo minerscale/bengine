@@ -12,8 +12,9 @@ pub mod shader_module;
 pub mod surface;
 pub mod swapchain;
 pub mod synchronization;
+pub mod vertex;
 
-use std::{fs::File, io::BufReader, mem::offset_of, ptr::addr_of};
+use std::{cell::Cell, fs::File, io::BufReader, mem::offset_of, ptr::addr_of};
 
 use ash::vk;
 use buffer::{Buffer, StagedBuffer};
@@ -22,65 +23,13 @@ use command_buffer::ActiveMultipleSubmitCommandBuffer;
 use device::Device;
 use event_loop::EventLoop;
 use image::SwapchainImage;
-use obj::{load_obj, FromRawVertex, Obj};
+use obj::{load_obj, Obj};
 use pipeline::Pipeline;
-use renderer::{Renderer, MAX_FRAMES_IN_FLIGHT};
+use renderer::Renderer;
 
 use geometric_algebra::{rotor::Rotor, vector::Vector};
-
-#[derive(Clone, Copy, Debug)]
-pub struct Vertex {
-    pub pos: Vector<f32>,
-    pub normal: Vector<f32>,
-}
-
-impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
-    fn process(
-        vertices: Vec<(f32, f32, f32, f32)>,
-        normals: Vec<(f32, f32, f32)>,
-        tex_coords: Vec<(f32, f32, f32)>,
-        polygons: Vec<obj::raw::object::Polygon>,
-    ) -> obj::ObjResult<(Vec<Self>, Vec<I>)> {
-        let (v, i) = obj::Vertex::process(vertices, normals, tex_coords, polygons)?;
-
-        Ok((
-            v.iter()
-                .map(|v| Vertex {
-                    pos: Vector::from_slice(v.position),
-                    normal: Vector::from_slice(v.normal),
-                })
-                .collect::<Vec<_>>(),
-            i,
-        ))
-    }
-}
-
-impl Vertex {
-    pub const fn get_binding_description() -> vk::VertexInputBindingDescription {
-        vk::VertexInputBindingDescription {
-            binding: 0,
-            stride: size_of::<Vertex>() as u32,
-            input_rate: vk::VertexInputRate::VERTEX,
-        }
-    }
-
-    pub const fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 2] {
-        [
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(Self, pos) as u32,
-            },
-            vk::VertexInputAttributeDescription {
-                location: 1,
-                binding: 0,
-                format: vk::Format::R32G32B32_SFLOAT,
-                offset: offset_of!(Self, normal) as u32,
-            },
-        ]
-    }
-}
+use sdl2::{event::Event, keyboard::Keycode};
+use vertex::Vertex;
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
@@ -136,130 +85,86 @@ fn main() {
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
-    event_loop.run(|ctx: &mut EventLoop| {
-        let camera_rotation = Vector::<f32>::E2
-            .wedge(Vector::<f32>::E3)
-            .rotor(-std::f32::consts::PI / 8.0)
-            * Vector::<f32>::E3
-                .wedge(Vector::<f32>::E1)
-                .rotor(ctx.time + std::f32::consts::PI / 2.0);
+    let start_time = std::time::Instant::now();
 
-        let push_constants = PushConstants {
-            vertex: VertexPushConstants {
-                camera_position: Vector::<f32>::new(
-                    10.0 * (ctx.time.cos()),
-                    6.0,
-                    10.0 * (-ctx.time.sin()),
-                ),
-                camera_rotation,
-            },
-            _align: 0.0,
-            fragment: FragmentPushConstants {
-                camera_vector: Vector::<f32>::new(1.0, 1.0, 1.0)
-                    .norm()
-                    .rotate(camera_rotation.conjugate()),
-            },
-        };
+    let framebuffer_resized = Cell::new(false);
 
-        let current_frame = gfx.current_frame;
-        unsafe {
-            let fence = &[*gfx.in_flight_fences[current_frame]];
-            gfx.device.wait_for_fences(fence, true, u64::MAX).unwrap();
+    event_loop.run(
+        || {
+            let time = (std::time::Instant::now() - start_time).as_secs_f32();
 
-            let (image_index, recreate_swapchain) = match (
-                gfx.swapchain.loader.acquire_next_image(
-                    *gfx.swapchain,
-                    u64::MAX,
-                    *gfx.image_avaliable_semaphores[current_frame],
-                    vk::Fence::null(),
-                ),
-                ctx.framebuffer_resized,
-            ) {
-                (Ok((image_index, true)), _) | (Ok((image_index, false)), true) => {
-                    (image_index, true)
-                }
-                (Ok((image_index, false)), false) => (image_index, false),
-                (Err(vk::Result::ERROR_OUT_OF_DATE_KHR), _) => {
-                    ctx.framebuffer_resized = false;
-                    gfx.recreate_swapchain();
-                    return;
-                }
-                (Err(_), _) => {
-                    panic!("failed to acquire swapchain image")
-                }
-            };
+            let camera_rotation = Vector::<f32>::E2
+                .wedge(Vector::<f32>::E3)
+                .rotor(-std::f32::consts::PI / 8.0)
+                * Vector::<f32>::E3
+                    .wedge(Vector::<f32>::E1)
+                    .rotor(time + std::f32::consts::PI / 2.0);
 
-            gfx.device.reset_fences(fence).unwrap();
-
-            take_mut::take(
-                gfx.command_buffers.get_mut(current_frame).unwrap(),
-                |command_buffer| {
-                    command_buffer
-                        .begin()
-                        .record(|command_buffer| {
-                            record_command_buffer(
-                                command_buffer,
-                                &gfx.device,
-                                &gfx.swapchain.pipeline,
-                                &gfx.swapchain.images[image_index as usize],
-                                &vertex_buffer,
-                                &index_buffer,
-                                teapot.indices.len().try_into().unwrap(),
-                                push_constants,
-                            )
-                        })
-                        .end()
-                        .submit(
-                            gfx.device.graphics_queue,
-                            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                            *gfx.image_avaliable_semaphores[current_frame],
-                            *gfx.render_finished_semaphores[current_frame],
-                            *gfx.in_flight_fences[current_frame],
-                        )
+            let push_constants = PushConstants {
+                vertex: VertexPushConstants {
+                    camera_position: Vector::<f32>::new(
+                        10.0 * (time.cos()),
+                        6.0,
+                        10.0 * (-time.sin()),
+                    ),
+                    camera_rotation,
                 },
-            );
-
-            let swapchains = [*gfx.swapchain];
-            let indices: [u32; 1] = [image_index];
-
-            let wait_semaphore = [*gfx.render_finished_semaphores[current_frame]];
-            let present_info = vk::PresentInfoKHR::default()
-                .wait_semaphores(&wait_semaphore)
-                .swapchains(&swapchains)
-                .image_indices(&indices);
-
-            match gfx
-                .swapchain
-                .loader
-                .queue_present(gfx.device.present_queue, &present_info)
-            {
-                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => gfx.recreate_swapchain(),
-                Err(e) => panic!("{}", e),
-                _ => (),
+                _align: 0.0,
+                fragment: FragmentPushConstants {
+                    camera_vector: Vector::<f32>::new(1.0, 1.0, 1.0)
+                        .norm()
+                        .rotate(camera_rotation.conjugate()),
+                },
             };
 
-            if recreate_swapchain {
-                ctx.framebuffer_resized = false;
-                gfx.recreate_swapchain();
+            gfx.draw(
+                |device, pipeline, command_buffer, image| {
+                    record_command_buffer(
+                        device,
+                        pipeline,
+                        command_buffer,
+                        image,
+                        &vertex_buffer,
+                        &index_buffer,
+                        &push_constants,
+                    )
+                },
+                &framebuffer_resized,
+            );
+        },
+        |event| match event {
+            Event::Quit { timestamp: _ } => true,
+            Event::KeyDown {
+                timestamp: _,
+                window_id: _,
+                keycode: Some(Keycode::Escape),
+                scancode: _,
+                keymod: _,
+                repeat: _,
+            } => true,
+            Event::Window {
+                timestamp: _,
+                window_id: _,
+                win_event: sdl2::event::WindowEvent::SizeChanged(_, _),
+            } => {
+                framebuffer_resized.set(true);
+                false
             }
-        }
-
-        gfx.current_frame = (gfx.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-    });
+            _ => false,
+        },
+    );
 
     gfx.wait_idle();
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn record_command_buffer(
-    command_buffer: ActiveMultipleSubmitCommandBuffer,
     device: &Device,
     pipeline: &Pipeline,
+    command_buffer: ActiveMultipleSubmitCommandBuffer,
     image: &SwapchainImage,
     vertex_buffer: &Buffer<Vertex>,
     index_buffer: &Buffer<u32>,
-    index_count: u32,
-    push_constants: PushConstants,
+    push_constants: &PushConstants,
 ) -> ActiveMultipleSubmitCommandBuffer {
     unsafe {
         let clear_color = [
@@ -337,7 +242,7 @@ pub fn record_command_buffer(
                 std::mem::size_of::<FragmentPushConstants>(),
             ),
         );
-        device.cmd_draw_indexed(cmd_buf, index_count, 1, 0, 0, 0);
+        device.cmd_draw_indexed(cmd_buf, index_buffer.len().try_into().unwrap(), 1, 0, 0, 0);
 
         device.cmd_end_render_pass(cmd_buf);
 

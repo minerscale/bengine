@@ -20,16 +20,11 @@ impl SwapchainImage {
         format: vk::Format,
         extent: vk::Extent2D,
         attachment: vk::ImageView,
-        pipeline: &Pipeline
+        pipeline: &Pipeline,
     ) -> Self {
         let view = create_image_view(&device, image, format, vk::ImageAspectFlags::COLOR);
 
-        let framebuffer = create_framebuffer(
-            &device,
-            pipeline,
-            &[view, attachment],
-            extent,
-        );
+        let framebuffer = create_framebuffer(&device, pipeline, &[view, attachment], extent);
 
         SwapchainImage {
             image,
