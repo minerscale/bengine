@@ -28,11 +28,10 @@ impl Pipeline {
         let frag_shader_module = spv!(device.device.clone(), "shader.frag");
 
         let camera_scale = Vector::<f32>::new(
-            (extent.height as f32) / (extent.width as f32),
+            1.0 * ((extent.height as f32) / (extent.width as f32)),
             1.0,
-            1.0 / 10.0,
-        )
-        .scalar_product(0.3);
+            0.05,
+        );
 
         let specialization_map_entries = [
             vk::SpecializationMapEntry {

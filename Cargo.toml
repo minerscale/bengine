@@ -38,7 +38,7 @@ features = ["linked", "debug", "std"]
 [dependencies.sdl2]
 version = "0.37.0"
 default-features = false
-features = ["raw-window-handle"]
+features = ["raw-window-handle", "static-link", "bundled"]
 
 [build-dependencies]
 anyhow = "1.0.89"

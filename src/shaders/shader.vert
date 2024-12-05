@@ -52,8 +52,7 @@ vec3 lighting(vec3 light, vec3 color) {
 
 void main() {
     vec3 rotated = rotate(inPosition - PushConstants.camera_position, PushConstants.camera_rotation);
-    vec3 transformed = -vec3(scale_x, scale_y, scale_z)*rotated;
-    gl_Position = vec4(transformed, 1.0);
+    gl_Position = vec4(vec2(scale_x, scale_y)*rotated.xy/rotated.z, -scale_z*rotated.z-0.1, 1.0);
 
     //vec4 reverse = vec4(PushConstants.camera_rotation.x, -PushConstants.camera_rotation.yzw);
     //vec3 sunlight = normalize(rotate(sun, reverse));

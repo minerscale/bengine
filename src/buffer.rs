@@ -193,7 +193,7 @@ impl<T: Copy> Buffer<T> {
     }
 
     pub fn len(&self) -> vk::DeviceSize {
-        self.size/vk::DeviceSize::try_from(size_of::<T>()).unwrap()
+        self.size / vk::DeviceSize::try_from(size_of::<T>()).unwrap()
     }
 
     pub fn is_empty(&self) -> bool {

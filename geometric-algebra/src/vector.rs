@@ -10,6 +10,18 @@ pub struct Vector<T> {
     pub e3: T,
 }
 
+impl<T: Neg<Output = T>> Neg for Vector<T> {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Vector {
+            e1: -self.e1,
+            e2: -self.e2,
+            e3: -self.e3,
+        }
+    }
+}
+
 impl<T: Copy + num_traits::ConstZero + num_traits::ConstOne> Vector<T> {
     pub const ZERO: Self = Self {
         e1: T::ZERO,

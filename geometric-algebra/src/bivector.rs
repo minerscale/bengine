@@ -9,6 +9,29 @@ pub struct BiVector<T> {
     pub e23: T,
 }
 
+impl<T: Copy + num_traits::ConstZero + num_traits::ConstOne> BiVector<T> {
+    pub const ZERO: Self = Self {
+        e12: T::ZERO,
+        e31: T::ZERO,
+        e23: T::ZERO,
+    };
+
+    pub const E12: Self = Self {
+        e12: T::ONE,
+        ..Self::ZERO
+    };
+
+    pub const E31: Self = Self {
+        e31: T::ONE,
+        ..Self::ZERO
+    };
+
+    pub const E23: Self = Self {
+        e23: T::ONE,
+        ..Self::ZERO
+    };
+}
+
 impl<T: num_traits::Float + std::fmt::Debug> BiVector<T> {
     pub fn rotor(&self, angle: T) -> Rotor<T> {
         let two = T::one() + T::one();

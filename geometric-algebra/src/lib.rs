@@ -1,6 +1,7 @@
 pub mod bivector;
 pub mod number;
 pub mod rotor;
+pub mod vec2;
 pub mod vector;
 
 #[cfg(test)]

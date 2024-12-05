@@ -19,5 +19,5 @@ vec3 lighting(vec3 light, vec3 color) {
 }
 
 void main() {
-    outColor = vec4(vec3(0.4, 0.7, 0.9)*(lighting(PushConstants.camera_vector, sun_color) + 0.01*vec3(0.5, 0.7, 0.9) + 0.2*lighting(vec3(-PushConstants.camera_vector.x, PushConstants.camera_vector.y, -PushConstants.camera_vector.z), vec3(0.5, 0.7, 0.9))), 1.0);
+    outColor = vec4(vec3(0.4, 0.7, 0.9)*(lighting(sun, sun_color) + 0.01*vec3(0.5, 0.7, 0.9) + 0.2*lighting(vec3(-sun.x,sun.y,-sun.z), vec3(0.5, 0.7, 0.9))), 1.0);
 }

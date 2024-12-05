@@ -180,7 +180,7 @@ impl Renderer {
             sdl_context
                 .video()
                 .unwrap()
-                .window("Space Game", width, height)
+                .window("bengine", width, height)
                 .allow_highdpi()
                 .vulkan()
                 .position_centered()

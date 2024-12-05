@@ -14,7 +14,7 @@ pub struct Instance {
 
 impl Instance {
     pub fn new(entry: &ash::Entry, window: &sdl2::video::Window) -> Self {
-        let app_name = c"Space Game";
+        let app_name = c"Bengine";
 
         let layer_names: &[&std::ffi::CStr] = if ENABLE_VALIDATION_LAYERS {
             &[c"VK_LAYER_KHRONOS_validation"]
