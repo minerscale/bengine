@@ -5,6 +5,7 @@ use log::info;
 
 use crate::command_buffer::ActiveCommandBuffer;
 
+#[derive(Debug)]
 pub struct StagedBuffer<T: Copy> {
     staging_buffer: Buffer<T>,
     buffer: Buffer<T>,
@@ -101,6 +102,16 @@ pub struct Buffer<T: Copy> {
     device: Rc<ash::Device>,
     size: vk::DeviceSize,
     phantom: PhantomData<T>,
+}
+
+impl<T: Copy> std::fmt::Debug for Buffer<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Buffer")
+            .field("buffer", &self.buffer)
+            .field("memory", &self.memory)
+            .field("size", &self.size)
+            .finish()
+    }
 }
 
 pub fn find_memory_type(

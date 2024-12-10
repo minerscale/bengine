@@ -5,6 +5,8 @@ pub mod device;
 pub mod event_loop;
 pub mod image;
 pub mod instance;
+pub mod mesh;
+pub mod node;
 pub mod pipeline;
 pub mod render_pass;
 pub mod renderer;
@@ -23,17 +25,21 @@ use std::{
 };
 
 use ash::vk;
-use buffer::{Buffer, StagedBuffer};
 use command_buffer::ActiveMultipleSubmitCommandBuffer;
 
 use device::Device;
 use event_loop::EventLoop;
 use image::SwapchainImage;
-use obj::{load_obj, Obj};
+use mesh::Mesh;
+use node::{Node, Object};
 use pipeline::Pipeline;
 use renderer::Renderer;
 
-use geometric_algebra::{bivector::BiVector, rotor::Rotor, vec2::Vec2, vector::Vector};
+use ultraviolet::{Rotor3, Vec2, Vec3};
+
+//use geometric_algebra::{
+//    affine::Affine, bivector::BiVector, rotor::Rotor, vec2::Vec2, vector::Vector,
+//};
 use sdl2::{event::Event, keyboard::Keycode};
 use vertex::Vertex;
 
@@ -42,13 +48,13 @@ const HEIGHT: u32 = 600;
 
 #[repr(C, align(32))]
 pub struct VertexPushConstants {
-    camera_rotation: Rotor<f32>,
-    camera_position: Vector<f32>,
+    camera_rotation: Rotor3,
+    camera_position: Vec3,
 }
 
 #[repr(C, align(16))]
 pub struct FragmentPushConstants {
-    camera_vector: Vector<f32>,
+    camera_vector: Vec3,
 }
 
 #[repr(C)]
@@ -86,29 +92,16 @@ fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-
-    let teapot: Obj<Vertex, u32> = load_obj(Cursor::new(include_bytes!("../newell_teaset/teapot-triangulated.obj")))
-    .unwrap();
-
     let staging_command_buffer = gfx.command_pool.create_one_time_submit_command_buffer();
 
-    let vertex_buffer = StagedBuffer::new(
-        &gfx.instance,
-        gfx.device.device.clone(),
-        gfx.device.physical_device,
-        &staging_command_buffer,
-        vk::BufferUsageFlags::VERTEX_BUFFER,
-        &teapot.vertices,
-    );
-
-    let index_buffer = StagedBuffer::new(
-        &gfx.instance,
-        gfx.device.device.clone(),
-        gfx.device.physical_device,
-        &staging_command_buffer,
-        vk::BufferUsageFlags::INDEX_BUFFER,
-        &teapot.indices,
-    );
+    let root_node = Node::new().add_child(Object::Mesh(
+        Mesh::new(
+            Cursor::new(include_bytes!("../newell_teaset/teapot-triangulated.obj")),
+            &gfx,
+            &staging_command_buffer,
+        )
+        .into(),
+    ));
 
     staging_command_buffer.submit(gfx.device.graphics_queue, &gfx.command_pool);
 
@@ -116,12 +109,11 @@ fn main() {
 
     let framebuffer_resized = Cell::new(false);
 
-    let camera_rotation = Cell::new(Vec2::<f32>::new(f32::consts::FRAC_PI_2, 0.0));
-    let mut camera_position = Vector::<f32>::new(10.0, 6.0, 0.0);
+    let camera_rotation = Cell::new(Vec2::new(f32::consts::FRAC_PI_2, 0.0));
+    let mut camera_position = Vec3::new(5.0, 2.0, 0.0);
 
-    fn get_camera_rotor(camera_rotation: Vec2<f32>) -> Rotor<f32> {
-        BiVector::<f32>::E23.rotor(camera_rotation.e2)
-            * BiVector::<f32>::E31.rotor(camera_rotation.e1)
+    fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
+        Rotor3::from_rotation_yz(camera_rotation.y) * Rotor3::from_rotation_xz(camera_rotation.x)
     }
 
     let inputs = RefCell::new(Inputs::default());
@@ -143,40 +135,39 @@ fn main() {
 
             const MOVEMENT_SPEED: f32 = 5.0;
             let camera_movement = if inputs.forward {
-                -Vector::E3
+                -Vec3::unit_z()
             } else if inputs.backward {
-                Vector::E3
+                Vec3::unit_z()
             } else {
-                Vector::ZERO
+                Vec3::zero()
             } + if inputs.left {
-                Vector::E1
+                Vec3::unit_x()
             } else if inputs.right {
-                -Vector::E1
+                -Vec3::unit_x()
             } else {
-                Vector::ZERO
+                Vec3::zero()
             };
 
             let vertical_movement = if inputs.up {
-                Vector::E2
+                Vec3::unit_y()
             } else if inputs.down {
-                -Vector::E2
+                -Vec3::unit_y()
             } else {
-                Vector::ZERO
+                Vec3::zero()
             };
 
-            camera_position = camera_position
-                + (vertical_movement + camera_movement.rotate(camera_rotation.conjugate()))
-                    .scalar_product(MOVEMENT_SPEED * dt);
+            camera_position += (vertical_movement + camera_movement.rotated_by(camera_rotation.reversed()))
+                * (MOVEMENT_SPEED * dt);
 
             let push_constants = PushConstants {
                 vertex: VertexPushConstants {
-                    camera_position,
                     camera_rotation,
+                    camera_position,
                 },
                 fragment: FragmentPushConstants {
-                    camera_vector: Vector::<f32>::new(1.0, 1.0, 1.0)
-                        .norm()
-                        .rotate(camera_rotation.conjugate()),
+                    camera_vector: Vec3::new(1.0, 1.0, 1.0)
+                        .normalized()
+                        .rotated_by(camera_rotation.reversed()),
                 },
             };
 
@@ -187,8 +178,7 @@ fn main() {
                         pipeline,
                         command_buffer,
                         image,
-                        &vertex_buffer,
-                        &index_buffer,
+                        &root_node,
                         &push_constants,
                     )
                 },
@@ -230,15 +220,11 @@ fn main() {
                 const SENSITIVITY: f32 = 0.005;
 
                 camera_rotation.set({
-                    let mut rotation = camera_rotation.get()
-                        + Vec2::<f32> {
-                            e1: xrel as f32,
-                            e2: -yrel as f32,
-                        }
-                        .scalar_product(SENSITIVITY);
+                    let mut rotation =
+                        camera_rotation.get() + Vec2::new(xrel as f32, yrel as f32) * SENSITIVITY;
 
-                    rotation.e2 = rotation
-                        .e2
+                    rotation.y = rotation
+                        .y
                         .clamp(-f32::consts::FRAC_PI_2, f32::consts::FRAC_PI_2);
 
                     rotation
@@ -266,8 +252,7 @@ pub fn record_command_buffer(
     pipeline: &Pipeline,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
     image: &SwapchainImage,
-    vertex_buffer: &Buffer<Vertex>,
-    index_buffer: &Buffer<u32>,
+    root_node: &Node,
     push_constants: &PushConstants,
 ) -> ActiveMultipleSubmitCommandBuffer {
     unsafe {
@@ -319,12 +304,6 @@ pub fn record_command_buffer(
 
         device.cmd_set_scissor(cmd_buf, 0, &scissor);
 
-        let vertex_buffers = [vertex_buffer.buffer];
-        let offsets = [vk::DeviceSize::from(0u64)];
-
-        device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
-        device.cmd_bind_index_buffer(cmd_buf, index_buffer.buffer, 0, vk::IndexType::UINT32);
-
         device.cmd_push_constants(
             cmd_buf,
             pipeline.pipeline_layout,
@@ -346,7 +325,30 @@ pub fn record_command_buffer(
                 std::mem::size_of::<FragmentPushConstants>(),
             ),
         );
-        device.cmd_draw_indexed(cmd_buf, index_buffer.len().try_into().unwrap(), 1, 0, 0, 0);
+
+        let mesh = root_node
+            .depth_first()
+            .into_iter()
+            .find_map(|o| match o {
+                Object::Mesh(m) => Some(m),
+                _ => None,
+            })
+            .unwrap();
+
+        let vertex_buffers = [mesh.vertex_buffer.buffer];
+        let offsets = [vk::DeviceSize::from(0u64)];
+
+        device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
+        device.cmd_bind_index_buffer(cmd_buf, mesh.index_buffer.buffer, 0, vk::IndexType::UINT32);
+
+        device.cmd_draw_indexed(
+            cmd_buf,
+            mesh.index_buffer.len().try_into().unwrap(),
+            1,
+            0,
+            0,
+            0,
+        );
 
         device.cmd_end_render_pass(cmd_buf);
 

@@ -1,8 +1,8 @@
 use std::{mem::offset_of, ops::Deref, rc::Rc};
 
 use ash::vk;
-use geometric_algebra::vector::Vector;
 use log::info;
+use ultraviolet::Vec3;
 
 use crate::{
     device::Device, render_pass::RenderPass, shader_module::spv, FragmentPushConstants,
@@ -27,26 +27,26 @@ impl Pipeline {
         let vert_shader_module = spv!(device.device.clone(), "shader.vert");
         let frag_shader_module = spv!(device.device.clone(), "shader.frag");
 
-        let camera_scale = Vector::<f32>::new(
+        let camera_scale = Vec3::new(
             1.0 * ((extent.height as f32) / (extent.width as f32)),
             1.0,
-            0.05,
+            0.01,
         );
 
         let specialization_map_entries = [
             vk::SpecializationMapEntry {
                 constant_id: 0,
-                offset: offset_of!(Vector<f32>, e1) as u32,
+                offset: offset_of!(Vec3, x) as u32,
                 size: std::mem::size_of::<f32>(),
             },
             vk::SpecializationMapEntry {
                 constant_id: 1,
-                offset: offset_of!(Vector<f32>, e2) as u32,
+                offset: offset_of!(Vec3, y) as u32,
                 size: std::mem::size_of::<f32>(),
             },
             vk::SpecializationMapEntry {
                 constant_id: 2,
-                offset: offset_of!(Vector<f32>, e3) as u32,
+                offset: offset_of!(Vec3, z) as u32,
                 size: std::mem::size_of::<f32>(),
             },
         ];
@@ -55,8 +55,8 @@ impl Pipeline {
             .map_entries(&specialization_map_entries)
             .data(unsafe {
                 std::slice::from_raw_parts(
-                    &camera_scale as *const Vector<f32> as *const u8,
-                    std::mem::size_of::<Vector<f32>>(),
+                    &camera_scale as *const Vec3 as *const u8,
+                    std::mem::size_of::<Vec3>(),
                 )
             });
 

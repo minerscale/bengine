@@ -1,13 +1,13 @@
 use std::mem::offset_of;
 
 use ash::vk;
-use geometric_algebra::vector::Vector;
 use obj::FromRawVertex;
+use ultraviolet::Vec3;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Vertex {
-    pub pos: Vector<f32>,
-    pub normal: Vector<f32>,
+    pub pos: Vec3,
+    pub normal: Vec3,
 }
 
 impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
@@ -22,8 +22,8 @@ impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
         Ok((
             v.iter()
                 .map(|v| Vertex {
-                    pos: Vector::from_slice(v.position),
-                    normal: Vector::from_slice(v.normal),
+                    pos: Vec3::from(v.position),
+                    normal: Vec3::from(v.normal),
                 })
                 .collect::<Vec<_>>(),
             i,
