@@ -213,13 +213,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geometric-algebra"
-version = "0.1.0"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "image"
 version = "0.25.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
