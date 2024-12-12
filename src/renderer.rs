@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use ash::vk;
 use sdl2::sys::SDL_Vulkan_GetDrawableSize;
 
@@ -58,29 +56,28 @@ impl Renderer {
     >(
         &mut self,
         mut record_command_buffer: F,
-        framebuffer_resized: &Cell<bool>,
-    ) {
+        framebuffer_resized: &bool,
+    ) -> bool {
         unsafe {
             let fence = &[*self.in_flight_fences[self.current_frame]];
             self.device.wait_for_fences(fence, true, u64::MAX).unwrap();
 
-            let (image_index, recreate_swapchain) = match (
+            let (image_index, mut recreate_swapchain) = match (
                 self.swapchain.loader.acquire_next_image(
                     *self.swapchain,
                     u64::MAX,
                     *self.image_avaliable_semaphores[self.current_frame],
                     vk::Fence::null(),
                 ),
-                framebuffer_resized.get(),
+                framebuffer_resized,
             ) {
                 (Ok((image_index, true)), _) | (Ok((image_index, false)), true) => {
                     (image_index, true)
                 }
                 (Ok((image_index, false)), false) => (image_index, false),
                 (Err(vk::Result::ERROR_OUT_OF_DATE_KHR), _) => {
-                    framebuffer_resized.set(false);
                     self.recreate_swapchain();
-                    return;
+                    return false;
                 }
                 (Err(_), _) => {
                     panic!("failed to acquire swapchain image")
@@ -127,18 +124,19 @@ impl Renderer {
                 .loader
                 .queue_present(self.device.present_queue, &present_info)
             {
-                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_swapchain(),
+                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => recreate_swapchain = true,
                 Err(e) => panic!("{}", e),
                 _ => (),
             };
 
             if recreate_swapchain {
-                framebuffer_resized.set(false);
                 self.recreate_swapchain();
             }
         }
 
         self.current_frame = (self.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+        false
     }
 
     pub fn recreate_swapchain(&mut self) {

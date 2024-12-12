@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.release]
-#debug = true
-lto = true
+debug = true
+#lto = true
+strip = false
 
 [dependencies]
 colored = "2.1.0"

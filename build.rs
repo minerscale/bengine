@@ -1,4 +1,3 @@
-use core::str;
 use std::{env, fs, process::Command};
 
 fn main() -> anyhow::Result<()> {
@@ -28,7 +27,7 @@ fn main() -> anyhow::Result<()> {
                 format!(
                     "failed to compile {}\n\n{}",
                     path.file_name().to_string_lossy(),
-                    str::from_utf8(&output.stderr)?
+                    std::str::from_utf8(&output.stderr)?
                 ),
             ))?;
         }

@@ -16,13 +16,7 @@ pub mod swapchain;
 pub mod synchronization;
 pub mod vertex;
 
-use core::f32;
-use std::{
-    cell::{Cell, RefCell},
-    io::Cursor,
-    mem::offset_of,
-    ptr::addr_of,
-};
+use std::{io::Cursor, mem::offset_of, ptr::addr_of};
 
 use ash::vk;
 use command_buffer::ActiveMultipleSubmitCommandBuffer;
@@ -60,31 +54,6 @@ pub struct PushConstants {
     fragment: FragmentPushConstants,
 }
 
-#[derive(Debug, Default)]
-struct Inputs {
-    forward: bool,
-    backward: bool,
-    left: bool,
-    right: bool,
-    up: bool,
-    down: bool,
-}
-
-impl Inputs {
-    fn set_input(&mut self, key: sdl2::keyboard::Keycode, pressed: bool) {
-        type K = Keycode;
-        match key {
-            K::W => self.forward = pressed,
-            K::R => self.backward = pressed,
-            K::A => self.left = pressed,
-            K::S => self.right = pressed,
-            K::SPACE => self.up = pressed,
-            K::C => self.down = pressed,
-            _ => (),
-        }
-    }
-}
-
 fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
@@ -112,16 +81,11 @@ fn main() {
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
-    let framebuffer_resized = Cell::new(false);
-
-    let camera_rotation = Cell::new(Vec2::new(f32::consts::FRAC_PI_2, f32::consts::FRAC_PI_8));
     let mut camera_position = Vec3::new(15.0, 5.0, 0.0);
 
     fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
         Rotor3::from_rotation_yz(camera_rotation.y) * Rotor3::from_rotation_xz(camera_rotation.x)
     }
-
-    let inputs = RefCell::new(Inputs::default());
 
     gfx.sdl_context.mouse().set_relative_mouse_mode(true);
 
@@ -130,7 +94,7 @@ fn main() {
     let mut previous_time =
         std::time::Instant::now() - std::time::Duration::from_secs_f64(1.0 / 60.0);
     event_loop.run(
-        || {
+        |inputs, framebuffer_resized| {
             // Delta time calculation
             let new_time = std::time::Instant::now();
             let dt = (new_time - previous_time).as_secs_f32();
@@ -138,9 +102,7 @@ fn main() {
 
             let time_secs = (new_time - start_time).as_secs_f32();
 
-            let camera_rotation = get_camera_rotor(camera_rotation.get());
-
-            let inputs = inputs.borrow();
+            let camera_rotation = get_camera_rotor(inputs.camera_rotation);
 
             root_node.children[0].transform = Isometry3::new(
                 Vec3::new(0.0, -1.0, 0.0),
@@ -186,7 +148,7 @@ fn main() {
 
             let camera_transform = Isometry3::new(camera_position, camera_rotation);
 
-            gfx.draw(
+            *framebuffer_resized = gfx.draw(
                 |device, pipeline, command_buffer, image| {
                     record_command_buffer(
                         device,
@@ -197,10 +159,10 @@ fn main() {
                         camera_transform,
                     )
                 },
-                &framebuffer_resized,
+                framebuffer_resized,
             );
         },
-        |event| match event {
+        |event, inputs, framebuffer_resized| match event {
             Event::Quit { timestamp: _ } => true,
             Event::KeyDown {
                 keycode: Some(Keycode::ESCAPE),
@@ -211,7 +173,7 @@ fn main() {
                 repeat: false,
                 ..
             } => {
-                inputs.borrow_mut().set_input(key, true);
+                inputs.set_input(key, true);
                 false
             }
             Event::KeyUp {
@@ -219,7 +181,7 @@ fn main() {
                 repeat: false,
                 ..
             } => {
-                inputs.borrow_mut().set_input(key, false);
+                inputs.set_input(key, false);
                 false
             }
             Event::MouseMotion {
@@ -234,16 +196,16 @@ fn main() {
             } => {
                 const SENSITIVITY: f32 = 0.005;
 
-                camera_rotation.set({
+                inputs.camera_rotation = {
                     let mut rotation =
-                        camera_rotation.get() + Vec2::new(xrel as f32, yrel as f32) * SENSITIVITY;
+                        inputs.camera_rotation + Vec2::new(xrel as f32, yrel as f32) * SENSITIVITY;
 
                     rotation.y = rotation
                         .y
-                        .clamp(-f32::consts::FRAC_PI_2, f32::consts::FRAC_PI_2);
+                        .clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
 
                     rotation
-                });
+                };
 
                 false
             }
@@ -252,7 +214,7 @@ fn main() {
                 window_id: _,
                 win_event: sdl2::event::WindowEvent::SizeChanged(_, _),
             } => {
-                framebuffer_resized.set(true);
+                *framebuffer_resized = true;
                 false
             }
             _ => false,
