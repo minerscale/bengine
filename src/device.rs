@@ -12,6 +12,7 @@ pub struct Device {
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub graphics_index: u32,
     pub present_index: u32,
+    pub mssa_samples: vk::SampleCountFlags,
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
 }
@@ -25,7 +26,7 @@ impl Device {
             requested_features: &vk::PhysicalDeviceFeatures,
             requested_features12: &vk::PhysicalDeviceVulkan12Features,
             requested_features13: &vk::PhysicalDeviceVulkan13Features,
-        ) -> Option<(vk::PhysicalDevice, (u32, u32))> {
+        ) -> Option<(vk::PhysicalDevice, (u32, u32), vk::SampleCountFlags)> {
             fn feature_subset(
                 requested_features: &vk::PhysicalDeviceFeatures,
                 capabilities: &vk::PhysicalDeviceFeatures,
@@ -122,6 +123,41 @@ impl Device {
                     return None;
                 }
 
+                let physical_device_properties =
+                    instance.get_physical_device_properties(*physical_device);
+
+                let sample_count = physical_device_properties
+                    .limits
+                    .framebuffer_color_sample_counts
+                    & physical_device_properties
+                        .limits
+                        .framebuffer_depth_sample_counts;
+
+                let max_usable_sample_count = 'label: {
+                    /*if sample_count.contains(vk::SampleCountFlags::TYPE_64) {
+                        break 'label vk::SampleCountFlags::TYPE_64;
+                    }
+                    if sample_count.contains(vk::SampleCountFlags::TYPE_32) {
+                        break 'label vk::SampleCountFlags::TYPE_32;
+                    }
+                    if sample_count.contains(vk::SampleCountFlags::TYPE_16) {
+                        break 'label vk::SampleCountFlags::TYPE_16;
+                    }*/
+                    if sample_count.contains(vk::SampleCountFlags::TYPE_8) {
+                        break 'label vk::SampleCountFlags::TYPE_8;
+                    }
+                    if sample_count.contains(vk::SampleCountFlags::TYPE_4) {
+                        break 'label vk::SampleCountFlags::TYPE_4;
+                    }
+                    if sample_count.contains(vk::SampleCountFlags::TYPE_2) {
+                        break 'label vk::SampleCountFlags::TYPE_2;
+                    }
+
+                    vk::SampleCountFlags::TYPE_1
+                };
+
+                info!("Multisampling level: {max_usable_sample_count:?}");
+
                 let mut graphics_index = Option::<u32>::None;
                 let mut present_index = Option::<u32>::None;
 
@@ -152,7 +188,11 @@ impl Device {
                         if let (Some(graphics_index), Some(present_index)) =
                             (graphics_index, present_index)
                         {
-                            Some((*physical_device, (graphics_index, present_index)))
+                            Some((
+                                *physical_device,
+                                (graphics_index, present_index),
+                                max_usable_sample_count,
+                            ))
                         } else {
                             None
                         }
@@ -165,15 +205,16 @@ impl Device {
         let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
 
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
-        let (physical_device, (graphics_index, present_index)) = pick_physical_device(
-            instance,
-            surface,
-            physical_devices,
-            &features,
-            &features12,
-            &features13,
-        )
-        .expect("Couldn't find suitable device");
+        let (physical_device, (graphics_index, present_index), mssa_samples) =
+            pick_physical_device(
+                instance,
+                surface,
+                physical_devices,
+                &features,
+                &features12,
+                &features13,
+            )
+            .expect("Couldn't find suitable device");
 
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
@@ -206,6 +247,7 @@ impl Device {
             device_memory_properties,
             graphics_index,
             present_index,
+            mssa_samples,
             graphics_queue,
             present_queue,
         }

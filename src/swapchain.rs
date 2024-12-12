@@ -14,8 +14,8 @@ pub struct Swapchain {
     pub swapchain: vk::SwapchainKHR,
     pub pipeline: Pipeline,
     pub images: Vec<SwapchainImage>,
-    pub depth: ManuallyDrop<Image>,
-
+    pub depth_image: ManuallyDrop<Image>,
+    pub color_image: Option<Image>,
     pub extent: vk::Extent2D,
 }
 
@@ -99,7 +99,7 @@ impl Swapchain {
                 .unwrap()
         };
 
-        let depth = {
+        let depth_image = {
             let depth_format = find_depth_format(instance, &device.physical_device);
 
             fn has_stencil_component(format: vk::Format) -> bool {
@@ -113,12 +113,29 @@ impl Swapchain {
                 &device.physical_device,
                 device.device.clone(),
                 extent,
+                device.mssa_samples,
                 depth_format,
                 vk::ImageTiling::OPTIMAL,
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 vk::ImageAspectFlags::DEPTH,
             ))
+        };
+
+        let color_image = match device.mssa_samples {
+            vk::SampleCountFlags::TYPE_1 => None,
+            _ => Some(Image::new(
+                instance,
+                &device.physical_device,
+                device.device.clone(),
+                extent,
+                device.mssa_samples,
+                surface_format.format,
+                vk::ImageTiling::OPTIMAL,
+                vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                vk::ImageAspectFlags::COLOR,
+            )),
         };
 
         let pipeline = Pipeline::new(instance, device, &extent, surface_format.format);
@@ -131,7 +148,8 @@ impl Swapchain {
                     image,
                     surface_format.format,
                     extent,
-                    depth.view,
+                    depth_image.view,
+                    color_image.as_ref().and_then(|i| Some(i.view)),
                     &pipeline,
                 )
             })
@@ -142,7 +160,8 @@ impl Swapchain {
             swapchain,
             pipeline,
             images,
-            depth,
+            depth_image,
+            color_image,
             extent,
         }
     }
@@ -185,7 +204,8 @@ impl Drop for Swapchain {
         unsafe {
             // Drop images first
             self.images.clear();
-            ManuallyDrop::drop(&mut self.depth);
+            ManuallyDrop::drop(&mut self.depth_image);
+            self.color_image.take();
 
             info!("dropped swapchain");
             self.loader.destroy_swapchain(self.swapchain, None)

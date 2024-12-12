@@ -14,10 +14,10 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new<T: BufRead>(
+    pub fn new<T: BufRead, C: ActiveCommandBuffer>(
         file: T,
         gfx: &Renderer,
-        staging_command_buffer: &dyn ActiveCommandBuffer,
+        cmd_buf: &mut C,
     ) -> Self {
         let teapot: Obj<Vertex, u32> = load_obj(file).unwrap();
 
@@ -25,7 +25,7 @@ impl Mesh {
             &gfx.instance,
             gfx.device.device.clone(),
             gfx.device.physical_device,
-            staging_command_buffer,
+            cmd_buf,
             vk::BufferUsageFlags::VERTEX_BUFFER,
             &teapot.vertices,
         );
@@ -34,7 +34,7 @@ impl Mesh {
             &gfx.instance,
             gfx.device.device.clone(),
             gfx.device.physical_device,
-            staging_command_buffer,
+            cmd_buf,
             vk::BufferUsageFlags::INDEX_BUFFER,
             &teapot.indices,
         );

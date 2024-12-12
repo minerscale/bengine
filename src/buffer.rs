@@ -20,11 +20,11 @@ impl<T: Copy> Deref for StagedBuffer<T> {
 }
 
 impl<T: Copy> StagedBuffer<T> {
-    pub fn new(
+    pub fn new<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         device: Rc<ash::Device>,
         physical_device: vk::PhysicalDevice,
-        command_buffer: &dyn ActiveCommandBuffer,
+        cmd_buf: &mut C,
         usage: vk::BufferUsageFlags,
         data: &[T],
     ) -> Self {
@@ -40,7 +40,7 @@ impl<T: Copy> StagedBuffer<T> {
         let buffer = staging_buffer.copy(
             instance,
             physical_device,
-            command_buffer,
+            cmd_buf,
             vk::BufferUsageFlags::TRANSFER_DST | usage,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         );
@@ -51,11 +51,11 @@ impl<T: Copy> StagedBuffer<T> {
         }
     }
 
-    pub fn upload_new(
+    pub fn upload_new<C: ActiveCommandBuffer>(
         &self,
         data: &[T],
         offset: vk::DeviceSize,
-        command_buffer: &dyn ActiveCommandBuffer,
+        command_buffer: &C,
     ) {
         let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
 
@@ -136,11 +136,11 @@ pub fn find_memory_type(
 }
 
 impl<T: Copy> Buffer<T> {
-    pub fn copy(
+    pub fn copy<C: ActiveCommandBuffer>(
         &self,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        command_buffer: &dyn ActiveCommandBuffer,
+        cmd_buf: &mut C,
         usage: vk::BufferUsageFlags,
         properties: vk::MemoryPropertyFlags,
     ) -> Self {
@@ -161,7 +161,7 @@ impl<T: Copy> Buffer<T> {
             size: self.size,
         }];
 
-        unsafe { device.cmd_copy_buffer(**command_buffer, **self, buffer, &copy_region) };
+        unsafe { device.cmd_copy_buffer(**cmd_buf, **self, buffer, &copy_region) };
 
         Self {
             buffer,

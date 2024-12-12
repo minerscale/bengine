@@ -4,44 +4,66 @@ use genawaiter::{rc::gen, yield_};
 
 use crate::mesh::Mesh;
 
+use ultraviolet::Isometry3;
+
 #[derive(Clone, Debug)]
 pub enum Object {
     Mesh(Rc<Mesh>),
-    Node(Rc<Node>),
 }
 
 #[derive(Debug)]
 pub struct Node {
-    children: Vec<Object>,
+    pub transform: Isometry3,
+    pub children: Vec<Node>,
+    pub objects: Vec<Object>,
 }
 
 impl Node {
-    pub fn new() -> Self {
-        Self { children: vec![] }
+    pub fn empty() -> Self {
+        Self {
+            transform: Isometry3::identity(),
+            children: vec![],
+            objects: vec![],
+        }
     }
 
-    pub fn add_child(mut self, child: Object) -> Self {
+    pub fn new(transform: Isometry3, children: Vec<Node>, objects: Vec<Object>) -> Self {
+        Self {
+            transform: transform,
+            children,
+            objects,
+        }
+    }
+
+    pub fn add_child(mut self, child: Node) -> Self {
         self.children.push(child);
 
         self
     }
 
-    pub fn depth_first<'a>(
+    pub fn add_object(mut self, object: Object) -> Self {
+        self.objects.push(object);
+
+        self
+    }
+
+    pub fn breadth_first<'a>(
         &'a self,
-    ) -> genawaiter::rc::Gen<&'a Object, (), impl Future<Output = ()> + use<'a>> {
+    ) -> genawaiter::rc::Gen<(Isometry3, &'a Node), (), impl Future<Output = ()> + use<'a>> {
         gen!({
-            let mut stack: Vec<&'a Node> = vec![self];
+            let mut stack: Vec<(Isometry3, &'a Node)> = vec![(self.transform, self)];
 
             loop {
                 match stack.pop() {
-                    Some(node) => {
+                    Some((transform, node)) => {
                         for child in &node.children {
-                            match child {
-                                Object::Node(n) => {
-                                    stack.push(n);
-                                }
-                                x => yield_!(x),
+                            let t = transform * child.transform;
+
+                            if !self.children.is_empty() {
+                                stack.push((t, child));
                             }
+
+                            yield_!((t, child));
                         }
                     }
                     None => break,

@@ -35,11 +35,8 @@ use node::{Node, Object};
 use pipeline::Pipeline;
 use renderer::Renderer;
 
-use ultraviolet::{Rotor3, Vec2, Vec3};
+use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
-//use geometric_algebra::{
-//    affine::Affine, bivector::BiVector, rotor::Rotor, vec2::Vec2, vector::Vector,
-//};
 use sdl2::{event::Event, keyboard::Keycode};
 use vertex::Vertex;
 
@@ -48,13 +45,13 @@ const HEIGHT: u32 = 600;
 
 #[repr(C, align(32))]
 pub struct VertexPushConstants {
-    camera_rotation: Rotor3,
-    camera_position: Vec3,
+    camera_transform: Isometry3,
+    model_transform: Isometry3,
 }
 
 #[repr(C, align(16))]
 pub struct FragmentPushConstants {
-    camera_vector: Vec3,
+    sun_direction: Vec3,
 }
 
 #[repr(C)]
@@ -92,25 +89,33 @@ fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-    let staging_command_buffer = gfx.command_pool.create_one_time_submit_command_buffer();
+    let (teapot, suzanne) =
+        gfx.command_pool
+            .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
+                (
+                    Mesh::new(
+                        Cursor::new(include_bytes!("../test-objects/teapot-triangulated.obj")),
+                        &gfx,
+                        cmd_buf,
+                    ),
+                    Mesh::new(
+                        Cursor::new(include_bytes!("../test-objects/suzanne.obj")),
+                        &gfx,
+                        cmd_buf,
+                    ),
+                )
+            });
 
-    let root_node = Node::new().add_child(Object::Mesh(
-        Mesh::new(
-            Cursor::new(include_bytes!("../newell_teaset/teapot-triangulated.obj")),
-            &gfx,
-            &staging_command_buffer,
-        )
-        .into(),
-    ));
-
-    staging_command_buffer.submit(gfx.device.graphics_queue, &gfx.command_pool);
+    let mut root_node = Node::empty()
+        .add_child(Node::empty().add_object(Object::Mesh(teapot.into())))
+        .add_child(Node::empty().add_child(Node::empty().add_object(Object::Mesh(suzanne.into()))));
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
     let framebuffer_resized = Cell::new(false);
 
-    let camera_rotation = Cell::new(Vec2::new(f32::consts::FRAC_PI_2, 0.0));
-    let mut camera_position = Vec3::new(5.0, 2.0, 0.0);
+    let camera_rotation = Cell::new(Vec2::new(f32::consts::FRAC_PI_2, f32::consts::FRAC_PI_8));
+    let mut camera_position = Vec3::new(15.0, 5.0, 0.0);
 
     fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
         Rotor3::from_rotation_yz(camera_rotation.y) * Rotor3::from_rotation_xz(camera_rotation.x)
@@ -119,6 +124,8 @@ fn main() {
     let inputs = RefCell::new(Inputs::default());
 
     gfx.sdl_context.mouse().set_relative_mouse_mode(true);
+
+    let start_time = std::time::Instant::now();
 
     let mut previous_time =
         std::time::Instant::now() - std::time::Duration::from_secs_f64(1.0 / 60.0);
@@ -129,9 +136,26 @@ fn main() {
             let dt = (new_time - previous_time).as_secs_f32();
             previous_time = new_time;
 
+            let time_secs = (new_time - start_time).as_secs_f32();
+
             let camera_rotation = get_camera_rotor(camera_rotation.get());
 
             let inputs = inputs.borrow();
+
+            root_node.children[0].transform = Isometry3::new(
+                Vec3::new(0.0, -1.0, 0.0),
+                Rotor3::from_rotation_xz(1.0 * time_secs),
+            );
+
+            root_node.children[1].children[0].transform = Isometry3::new(
+                Vec3::new(7.5, 0.0, 0.0),
+                Rotor3::from_rotation_xz(3.0 * time_secs),
+            );
+
+            root_node.children[1].transform = Isometry3::new(
+                Vec3::new(0.0, 0.0, 0.0),
+                Rotor3::from_rotation_xz(2.0 * time_secs),
+            );
 
             const MOVEMENT_SPEED: f32 = 5.0;
             let camera_movement = if inputs.forward {
@@ -156,20 +180,11 @@ fn main() {
                 Vec3::zero()
             };
 
-            camera_position += (vertical_movement + camera_movement.rotated_by(camera_rotation.reversed()))
+            camera_position += (vertical_movement
+                + camera_movement.rotated_by(camera_rotation.reversed()))
                 * (MOVEMENT_SPEED * dt);
 
-            let push_constants = PushConstants {
-                vertex: VertexPushConstants {
-                    camera_rotation,
-                    camera_position,
-                },
-                fragment: FragmentPushConstants {
-                    camera_vector: Vec3::new(1.0, 1.0, 1.0)
-                        .normalized()
-                        .rotated_by(camera_rotation.reversed()),
-                },
-            };
+            let camera_transform = Isometry3::new(camera_position, camera_rotation);
 
             gfx.draw(
                 |device, pipeline, command_buffer, image| {
@@ -179,7 +194,7 @@ fn main() {
                         command_buffer,
                         image,
                         &root_node,
-                        &push_constants,
+                        camera_transform,
                     )
                 },
                 &framebuffer_resized,
@@ -253,7 +268,7 @@ pub fn record_command_buffer(
     command_buffer: ActiveMultipleSubmitCommandBuffer,
     image: &SwapchainImage,
     root_node: &Node,
-    push_constants: &PushConstants,
+    camera_transform: Isometry3,
 ) -> ActiveMultipleSubmitCommandBuffer {
     unsafe {
         let clear_color = [
@@ -310,45 +325,70 @@ pub fn record_command_buffer(
             vk::ShaderStageFlags::VERTEX,
             0,
             std::slice::from_raw_parts(
-                addr_of!(push_constants.vertex) as *const u8,
-                std::mem::size_of::<VertexPushConstants>(),
+                addr_of!(camera_transform) as *const u8,
+                std::mem::size_of::<Isometry3>(),
             ),
         );
 
-        device.cmd_push_constants(
-            cmd_buf,
-            pipeline.pipeline_layout,
-            vk::ShaderStageFlags::FRAGMENT,
-            offset_of!(PushConstants, fragment) as u32,
-            std::slice::from_raw_parts(
-                addr_of!(push_constants.fragment) as *const u8,
-                std::mem::size_of::<FragmentPushConstants>(),
-            ),
-        );
+        for (transform, node) in root_node.breadth_first() {
+            for object in &node.objects {
+                match object {
+                    Object::Mesh(mesh) => {
+                        let mesh = mesh.as_ref();
 
-        let mesh = root_node
-            .depth_first()
-            .into_iter()
-            .find_map(|o| match o {
-                Object::Mesh(m) => Some(m),
-                _ => None,
-            })
-            .unwrap();
+                        let vertex_buffers = [mesh.vertex_buffer.buffer];
+                        let offsets = [vk::DeviceSize::from(0u64)];
 
-        let vertex_buffers = [mesh.vertex_buffer.buffer];
-        let offsets = [vk::DeviceSize::from(0u64)];
+                        let fragment_push_constants = FragmentPushConstants {
+                            sun_direction: {
+                                let root_3 = 1.0 / f32::sqrt(3.0);
+                                Vec3::new(-root_3, root_3, root_3)
+                                    .rotated_by(transform.rotation.reversed())
+                            },
+                        };
 
-        device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
-        device.cmd_bind_index_buffer(cmd_buf, mesh.index_buffer.buffer, 0, vk::IndexType::UINT32);
+                        device.cmd_push_constants(
+                            cmd_buf,
+                            pipeline.pipeline_layout,
+                            vk::ShaderStageFlags::VERTEX,
+                            offset_of!(VertexPushConstants, model_transform) as u32,
+                            std::slice::from_raw_parts(
+                                addr_of!(transform) as *const u8,
+                                std::mem::size_of::<Isometry3>(),
+                            ),
+                        );
 
-        device.cmd_draw_indexed(
-            cmd_buf,
-            mesh.index_buffer.len().try_into().unwrap(),
-            1,
-            0,
-            0,
-            0,
-        );
+                        device.cmd_push_constants(
+                            cmd_buf,
+                            pipeline.pipeline_layout,
+                            vk::ShaderStageFlags::FRAGMENT,
+                            offset_of!(PushConstants, fragment) as u32,
+                            std::slice::from_raw_parts(
+                                addr_of!(fragment_push_constants) as *const u8,
+                                std::mem::size_of::<FragmentPushConstants>(),
+                            ),
+                        );
+
+                        device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
+                        device.cmd_bind_index_buffer(
+                            cmd_buf,
+                            mesh.index_buffer.buffer,
+                            0,
+                            vk::IndexType::UINT32,
+                        );
+
+                        device.cmd_draw_indexed(
+                            cmd_buf,
+                            mesh.index_buffer.len().try_into().unwrap(),
+                            1,
+                            0,
+                            0,
+                            0,
+                        );
+                    }
+                }
+            }
+        }
 
         device.cmd_end_render_pass(cmd_buf);
 

@@ -19,12 +19,18 @@ impl SwapchainImage {
         image: vk::Image,
         format: vk::Format,
         extent: vk::Extent2D,
-        attachment: vk::ImageView,
+        depth_attachment: vk::ImageView,
+        color_attachment: Option<vk::ImageView>,
         pipeline: &Pipeline,
     ) -> Self {
         let view = create_image_view(&device, image, format, vk::ImageAspectFlags::COLOR);
 
-        let framebuffer = create_framebuffer(&device, pipeline, &[view, attachment], extent);
+        let attachments = match color_attachment {
+            Some(color_attachment) => vec![color_attachment, depth_attachment, view],
+            None => vec![view, depth_attachment],
+        };
+
+        let framebuffer = create_framebuffer(&device, pipeline, &attachments, extent);
 
         SwapchainImage {
             image,
@@ -52,6 +58,7 @@ impl Image {
         physical_device: &vk::PhysicalDevice,
         device: Rc<ash::Device>,
         extent: vk::Extent2D,
+        sample_count: vk::SampleCountFlags,
         format: vk::Format,
         tiling: vk::ImageTiling,
         usage: vk::ImageUsageFlags,
@@ -71,7 +78,7 @@ impl Image {
             .tiling(tiling)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .usage(usage)
-            .samples(vk::SampleCountFlags::TYPE_1)
+            .samples(sample_count)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (image, memory) = unsafe {

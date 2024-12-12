@@ -134,7 +134,21 @@ pub struct CommandPool {
 }
 
 impl CommandPool {
-    pub fn create_one_time_submit_command_buffer(&self) -> OneTimeSubmitCommandBuffer {
+    pub fn one_time_submit<T>(
+        &self,
+        queue: vk::Queue,
+        f: impl FnOnce(&mut OneTimeSubmitCommandBuffer) -> T,
+    ) -> T {
+        let mut cmd_buf = self.create_one_time_submit_command_buffer();
+
+        let result = f(&mut cmd_buf);
+
+        cmd_buf.submit(queue, self);
+
+        result
+    }
+
+    fn create_one_time_submit_command_buffer(&self) -> OneTimeSubmitCommandBuffer {
         let alloc_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(self.command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)

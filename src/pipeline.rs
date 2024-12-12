@@ -2,7 +2,7 @@ use std::{mem::offset_of, ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
-use ultraviolet::Vec3;
+use ultraviolet::Vec4;
 
 use crate::{
     device::Device, render_pass::RenderPass, shader_module::spv, FragmentPushConstants,
@@ -27,26 +27,35 @@ impl Pipeline {
         let vert_shader_module = spv!(device.device.clone(), "shader.vert");
         let frag_shader_module = spv!(device.device.clone(), "shader.frag");
 
-        let camera_scale = Vec3::new(
-            1.0 * ((extent.height as f32) / (extent.width as f32)),
+        let fov = 90f32.to_radians();
+
+        let ez = f32::tan(fov / 2.0).recip();
+        let camera_parameters = Vec4::new(
             1.0,
-            0.01,
+            1.0 * ((extent.width as f32) / (extent.height as f32)),
+            ez,
+            50.0,
         );
 
         let specialization_map_entries = [
             vk::SpecializationMapEntry {
                 constant_id: 0,
-                offset: offset_of!(Vec3, x) as u32,
+                offset: offset_of!(Vec4, x) as u32,
                 size: std::mem::size_of::<f32>(),
             },
             vk::SpecializationMapEntry {
                 constant_id: 1,
-                offset: offset_of!(Vec3, y) as u32,
+                offset: offset_of!(Vec4, y) as u32,
                 size: std::mem::size_of::<f32>(),
             },
             vk::SpecializationMapEntry {
                 constant_id: 2,
-                offset: offset_of!(Vec3, z) as u32,
+                offset: offset_of!(Vec4, z) as u32,
+                size: std::mem::size_of::<f32>(),
+            },
+            vk::SpecializationMapEntry {
+                constant_id: 3,
+                offset: offset_of!(Vec4, w) as u32,
                 size: std::mem::size_of::<f32>(),
             },
         ];
@@ -55,8 +64,8 @@ impl Pipeline {
             .map_entries(&specialization_map_entries)
             .data(unsafe {
                 std::slice::from_raw_parts(
-                    &camera_scale as *const Vec3 as *const u8,
-                    std::mem::size_of::<Vec3>(),
+                    &camera_parameters as *const Vec4 as *const u8,
+                    std::mem::size_of::<Vec4>(),
                 )
             });
 
@@ -117,7 +126,7 @@ impl Pipeline {
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
             .sample_shading_enable(false)
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .rasterization_samples(device.mssa_samples)
             .min_sample_shading(1.0);
 
         let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default()

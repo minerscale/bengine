@@ -6,11 +6,9 @@ layout(location = 0) out vec4 outColor;
 
 layout( push_constant ) uniform constants
 {
-    layout(offset = 32) vec3 camera_vector;
+    layout(offset = 64) vec3 sun_direction;
 } PushConstants;
 
-float root3 = 1.0/sqrt(3.0);
-vec3 sun = vec3(-root3, root3, root3);
 vec3 sun_color = vec3(1.0, 0.91, 0.56);
 
 vec3 lighting(vec3 light, vec3 color) {
@@ -18,6 +16,8 @@ vec3 lighting(vec3 light, vec3 color) {
 }
 
 void main() {
+    vec3 sun = PushConstants.sun_direction;
+
     outColor = vec4(vec3(0.4, 0.7, 0.9) * (
                     lighting(sun, sun_color) +
                     0.01 * vec3(0.5, 0.7, 0.9) +

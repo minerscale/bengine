@@ -12,26 +12,45 @@ pub struct RenderPass {
 
 impl RenderPass {
     pub fn new(instance: &ash::Instance, device: &Device, format: vk::Format) -> Self {
-        let attachments = [
-            vk::AttachmentDescription::default()
-                .format(format)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::PRESENT_SRC_KHR),
-            vk::AttachmentDescription::default()
-                .format(find_depth_format(instance, &device.physical_device))
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL),
-        ];
+        let color_attachment = vk::AttachmentDescription::default()
+            .format(format)
+            .samples(device.mssa_samples)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(match device.mssa_samples {
+                vk::SampleCountFlags::TYPE_1 => vk::ImageLayout::PRESENT_SRC_KHR,
+                _ => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            });
+
+        let depth_attachment = vk::AttachmentDescription::default()
+            .format(find_depth_format(instance, &device.physical_device))
+            .samples(device.mssa_samples)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+        let attachments = match device.mssa_samples {
+            vk::SampleCountFlags::TYPE_1 => vec![color_attachment, depth_attachment],
+            _ => {
+                let color_attachment_resolve = vk::AttachmentDescription::default()
+                    .format(format)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                    .initial_layout(vk::ImageLayout::UNDEFINED)
+                    .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+
+                vec![color_attachment, depth_attachment, color_attachment_resolve]
+            }
+        };
 
         let color_attachment_ref = [vk::AttachmentReference {
             attachment: 0,
@@ -43,10 +62,21 @@ impl RenderPass {
             layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         };
 
-        let subpass = [vk::SubpassDescription::default()
+        let color_attachment_resolve_ref = [vk::AttachmentReference {
+            attachment: 2,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        }];
+
+        let subpass = vk::SubpassDescription::default()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
             .color_attachments(&color_attachment_ref)
-            .depth_stencil_attachment(&depth_attachment_ref)];
+            .depth_stencil_attachment(&depth_attachment_ref);
+
+        let subpass = if device.mssa_samples != vk::SampleCountFlags::TYPE_1 {
+            [subpass.resolve_attachments(&color_attachment_resolve_ref)]
+        } else {
+            [subpass]
+        };
 
         let dependency = [vk::SubpassDependency::default()
             .src_subpass(vk::SUBPASS_EXTERNAL)
