@@ -3,7 +3,11 @@ use std::rc::Rc;
 use ash::vk;
 use log::info;
 
-use crate::{buffer::find_memory_type, pipeline::Pipeline};
+use crate::{
+    buffer::{find_memory_type, Buffer},
+    command_buffer::ActiveCommandBuffer,
+    pipeline::Pipeline,
+};
 
 pub struct SwapchainImage {
     pub image: vk::Image,
@@ -51,11 +55,160 @@ pub struct Image {
     device: Rc<ash::Device>,
 }
 
+fn copy_buffer_to_image<C: ActiveCommandBuffer>(
+    device: &ash::Device,
+    image: vk::Image,
+    extent: vk::Extent2D,
+    cmd_buf: &mut C,
+    buffer: Rc<Buffer<u8>>,
+) {
+    let regions = [vk::BufferImageCopy {
+        buffer_offset: 0,
+        buffer_row_length: 0,
+        buffer_image_height: 0,
+        image_subresource: vk::ImageSubresourceLayers {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            mip_level: 0,
+            base_array_layer: 0,
+            layer_count: 1,
+        },
+        image_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+        image_extent: vk::Extent3D {
+            width: extent.width,
+            height: extent.height,
+            depth: 1,
+        },
+    }];
+
+    unsafe {
+        device.cmd_copy_buffer_to_image(
+            **cmd_buf,
+            **buffer,
+            image,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            &regions,
+        );
+        cmd_buf.add_dependency(buffer);
+    }
+}
+
+fn transition_layout<C: ActiveCommandBuffer>(
+    device: &ash::Device,
+    image: vk::Image,
+    cmd_buf: &mut C,
+    old_layout: vk::ImageLayout,
+    new_layout: vk::ImageLayout,
+) {
+    let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) =
+        match (old_layout, new_layout) {
+            (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+                vk::AccessFlags::empty(),
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::TRANSFER,
+            ),
+            (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::AccessFlags::SHADER_READ,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+            ),
+            _ => {
+                unimplemented!("unsupported layout transition")
+            }
+        };
+
+    let barrier = [vk::ImageMemoryBarrier::default()
+        .old_layout(old_layout)
+        .new_layout(new_layout)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .image(image)
+        .subresource_range(vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        })
+        .src_access_mask(src_access_mask)
+        .dst_access_mask(dst_access_mask)];
+
+    unsafe {
+        device.cmd_pipeline_barrier(
+            **cmd_buf,
+            src_stage_mask,
+            dst_stage_mask,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            &barrier,
+        )
+    }
+}
+
 impl Image {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_staged<C: ActiveCommandBuffer>(
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        device: Rc<ash::Device>,
+        extent: vk::Extent2D,
+        image_data: &[u8],
+        cmd_buf: &mut C,
+        sample_count: vk::SampleCountFlags,
+        format: vk::Format,
+        tiling: vk::ImageTiling,
+        properties: vk::MemoryPropertyFlags,
+        aspect_flags: vk::ImageAspectFlags,
+    ) -> Self {
+        let image = Image::new(
+            instance,
+            physical_device,
+            device.clone(),
+            extent,
+            sample_count,
+            format,
+            tiling,
+            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED,
+            properties,
+            aspect_flags,
+        );
+
+        let staging_buffer = Rc::new(Buffer::new(
+            device.clone(),
+            &instance,
+            physical_device,
+            image_data,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        ));
+
+        transition_layout(
+            &device,
+            image.image,
+            cmd_buf,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        );
+
+        copy_buffer_to_image(&device, image.image, extent, cmd_buf, staging_buffer);
+
+        transition_layout(
+            &device,
+            image.image,
+            cmd_buf,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+
+        image
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instance: &ash::Instance,
-        physical_device: &vk::PhysicalDevice,
+        physical_device: vk::PhysicalDevice,
         device: Rc<ash::Device>,
         extent: vk::Extent2D,
         sample_count: vk::SampleCountFlags,
@@ -89,7 +242,7 @@ impl Image {
                 .allocation_size(memory_requirements.size)
                 .memory_type_index(find_memory_type(
                     instance,
-                    *physical_device,
+                    physical_device,
                     memory_requirements.memory_type_bits,
                     properties,
                 ));

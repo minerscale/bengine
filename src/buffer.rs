@@ -5,103 +5,54 @@ use log::info;
 
 use crate::command_buffer::ActiveCommandBuffer;
 
-#[derive(Debug)]
-pub struct StagedBuffer<T: Copy> {
-    staging_buffer: Buffer<T>,
-    buffer: Buffer<T>,
-}
-
-impl<T: Copy> Deref for StagedBuffer<T> {
-    type Target = Buffer<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.buffer
-    }
-}
-
-impl<T: Copy> StagedBuffer<T> {
-    pub fn new<C: ActiveCommandBuffer>(
-        instance: &ash::Instance,
-        device: Rc<ash::Device>,
-        physical_device: vk::PhysicalDevice,
-        cmd_buf: &mut C,
-        usage: vk::BufferUsageFlags,
-        data: &[T],
-    ) -> Self {
-        let staging_buffer = Buffer::new(
-            device,
-            instance,
-            physical_device,
-            data,
-            vk::BufferUsageFlags::TRANSFER_SRC,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        );
-
-        let buffer = staging_buffer.copy(
-            instance,
-            physical_device,
-            cmd_buf,
-            vk::BufferUsageFlags::TRANSFER_DST | usage,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-        );
-
-        Self {
-            staging_buffer,
-            buffer,
-        }
-    }
-
-    pub fn upload_new<C: ActiveCommandBuffer>(
-        &self,
-        data: &[T],
-        offset: vk::DeviceSize,
-        command_buffer: &C,
-    ) {
-        let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
-
-        assert!(size + offset <= self.staging_buffer.size);
-
-        let device = &self.staging_buffer.device;
-
-        let mapped_memory = unsafe {
-            std::slice::from_raw_parts_mut(
-                device
-                    .map_memory(
-                        self.staging_buffer.memory,
-                        offset,
-                        size,
-                        vk::MemoryMapFlags::empty(),
-                    )
-                    .unwrap() as *mut T,
-                data.len(),
-            )
-        };
-        mapped_memory.copy_from_slice(data);
-        unsafe { device.unmap_memory(self.staging_buffer.memory) };
-
-        let copy_region = [vk::BufferCopy {
-            src_offset: offset,
-            dst_offset: offset,
-            size,
-        }];
-
-        unsafe {
-            device.cmd_copy_buffer(
-                **command_buffer,
-                *self.staging_buffer,
-                *self.buffer,
-                &copy_region,
-            )
-        };
-    }
-}
-
 pub struct Buffer<T: Copy> {
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
     device: Rc<ash::Device>,
     size: vk::DeviceSize,
     phantom: PhantomData<T>,
+}
+
+pub struct MappedBuffer<T: Copy + 'static> {
+    pub buffer: Buffer<T>,
+    pub mapped_memory: &'static mut [T],
+}
+
+impl<T: Copy + 'static> MappedBuffer<T> {
+    pub fn new(
+        device: Rc<ash::Device>,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        data: &[T],
+        usage: vk::BufferUsageFlags,
+        properties: vk::MemoryPropertyFlags,
+    ) -> Self {
+        let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
+
+        let (buffer, memory) =
+            Buffer::<T>::create_buffer(&device, instance, physical_device, size, usage, properties);
+
+        let mapped_memory = unsafe {
+            std::slice::from_raw_parts_mut(
+                device
+                    .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
+                    .unwrap() as *mut T,
+                data.len(),
+            )
+        };
+        mapped_memory.copy_from_slice(data);
+
+        MappedBuffer {
+            buffer: Buffer {
+                buffer,
+                memory,
+                device,
+                size,
+                phantom: PhantomData,
+            },
+            mapped_memory,
+        }
+    }
 }
 
 impl<T: Copy> std::fmt::Debug for Buffer<T> {
@@ -135,44 +86,72 @@ pub fn find_memory_type(
     panic!("failed to find suitable memory type");
 }
 
-impl<T: Copy> Buffer<T> {
-    pub fn copy<C: ActiveCommandBuffer>(
-        &self,
+fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
+    buffer: Rc<Buffer<T>>,
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+    cmd_buf: &mut C,
+    usage: vk::BufferUsageFlags,
+    properties: vk::MemoryPropertyFlags,
+) -> Buffer<T> {
+    let device = &buffer.device;
+
+    let (new_buffer, memory) = Buffer::<T>::create_buffer(
+        device,
+        instance,
+        physical_device,
+        buffer.size,
+        usage,
+        properties,
+    );
+
+    let copy_region = [vk::BufferCopy {
+        src_offset: 0,
+        dst_offset: 0,
+        size: buffer.size,
+    }];
+
+    unsafe { device.cmd_copy_buffer(**cmd_buf, **buffer, new_buffer, &copy_region) };
+    cmd_buf.add_dependency(buffer.clone());
+
+    Buffer {
+        buffer: new_buffer,
+        memory,
+        device: buffer.device.clone(),
+        size: buffer.size,
+        phantom: PhantomData,
+    }
+}
+
+impl<T: Copy + 'static> Buffer<T> {
+    pub fn new_staged<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
+        device: Rc<ash::Device>,
         physical_device: vk::PhysicalDevice,
         cmd_buf: &mut C,
         usage: vk::BufferUsageFlags,
-        properties: vk::MemoryPropertyFlags,
+        data: &[T],
     ) -> Self {
-        let device = &self.device;
-
-        let (buffer, memory) = Self::create_buffer(
+        let staging_buffer = Rc::new(Buffer::new(
             device,
             instance,
             physical_device,
-            self.size,
-            usage,
-            properties,
-        );
+            data,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        ));
 
-        let copy_region = [vk::BufferCopy {
-            src_offset: 0,
-            dst_offset: 0,
-            size: self.size,
-        }];
-
-        unsafe { device.cmd_copy_buffer(**cmd_buf, **self, buffer, &copy_region) };
-
-        Self {
-            buffer,
-            memory,
-            device: self.device.clone(),
-            size: self.size,
-            phantom: PhantomData,
-        }
+        copy_buffer(
+            staging_buffer,
+            instance,
+            physical_device,
+            cmd_buf,
+            vk::BufferUsageFlags::TRANSFER_DST | usage,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )
     }
 
-    fn create_buffer(
+    pub fn create_buffer(
         device: &ash::Device,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,

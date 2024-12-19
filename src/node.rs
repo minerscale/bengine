@@ -29,7 +29,7 @@ impl Node {
 
     pub fn new(transform: Isometry3, children: Vec<Node>, objects: Vec<Object>) -> Self {
         Self {
-            transform: transform,
+            transform,
             children,
             objects,
         }
@@ -47,11 +47,11 @@ impl Node {
         self
     }
 
-    pub fn breadth_first<'a>(
-        &'a self,
-    ) -> genawaiter::rc::Gen<(Isometry3, &'a Node), (), impl Future<Output = ()> + use<'a>> {
+    pub fn breadth_first(
+        &self,
+    ) -> genawaiter::rc::Gen<(Isometry3, &Node), (), impl Future<Output = ()> + use<'_>> {
         gen!({
-            let mut stack: Vec<(Isometry3, &'a Node)> = vec![(self.transform, self)];
+            let mut stack: Vec<(Isometry3, &Node)> = vec![(self.transform, self)];
 
             loop {
                 match stack.pop() {

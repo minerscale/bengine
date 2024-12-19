@@ -1,6 +1,7 @@
 pub mod buffer;
 pub mod command_buffer;
 pub mod debug_messenger;
+pub mod descriptors;
 pub mod device;
 pub mod event_loop;
 pub mod image;
@@ -10,6 +11,7 @@ pub mod node;
 pub mod pipeline;
 pub mod render_pass;
 pub mod renderer;
+pub mod sampler;
 pub mod shader_module;
 pub mod surface;
 pub mod swapchain;
@@ -21,17 +23,19 @@ use std::{io::Cursor, mem::offset_of, ptr::addr_of};
 use ash::vk;
 use command_buffer::ActiveMultipleSubmitCommandBuffer;
 
+use ::image::GenericImageView;
 use device::Device;
 use event_loop::EventLoop;
-use image::SwapchainImage;
+use image::{Image, SwapchainImage};
 use mesh::Mesh;
 use node::{Node, Object};
 use pipeline::Pipeline;
-use renderer::Renderer;
+use renderer::{Renderer, UniformBufferObject, MAX_FRAMES_IN_FLIGHT};
+use sampler::Sampler;
 
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
-use sdl2::{event::Event, keyboard::Keycode};
+use sdl2::event::Event;
 use vertex::Vertex;
 
 const WIDTH: u32 = 800;
@@ -39,7 +43,6 @@ const HEIGHT: u32 = 600;
 
 #[repr(C, align(32))]
 pub struct VertexPushConstants {
-    camera_transform: Isometry3,
     model_transform: Isometry3,
 }
 
@@ -58,7 +61,7 @@ fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-    let (teapot, suzanne) =
+    let (teapot, suzanne, texture) =
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
                 (
@@ -72,8 +75,69 @@ fn main() {
                         &gfx,
                         cmd_buf,
                     ),
+                    {
+                        let image =
+                            ::image::load_from_memory(include_bytes!("../textures/agadwheel.png"))
+                                .unwrap();
+                        let extent = image.dimensions();
+                        let img = image.into_rgba8().into_vec();
+
+                        Image::new_staged(
+                            &gfx.instance,
+                            gfx.device.physical_device,
+                            gfx.device.device.clone(),
+                            vk::Extent2D {
+                                width: extent.0,
+                                height: extent.1,
+                            },
+                            &img,
+                            cmd_buf,
+                            vk::SampleCountFlags::TYPE_1,
+                            vk::Format::R8G8B8A8_SRGB,
+                            vk::ImageTiling::OPTIMAL,
+                            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                            vk::ImageAspectFlags::COLOR,
+                        )
+                    },
                 )
             });
+
+    let texture_sampler = Sampler::new(
+        &gfx.instance,
+        gfx.device.device.clone(),
+        &gfx.device.physical_device,
+    );
+
+    for i in 0..MAX_FRAMES_IN_FLIGHT {
+        let buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer(*gfx.uniform_buffers[i].buffer)
+            .offset(0)
+            .range(size_of::<UniformBufferObject>().try_into().unwrap())];
+
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(texture.view)
+            .sampler(texture_sampler.sampler)];
+
+        let descriptor_writes = [
+            vk::WriteDescriptorSet::default()
+                .dst_set(gfx.descriptor_sets[i])
+                .dst_binding(0)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .buffer_info(&buffer_info),
+            vk::WriteDescriptorSet::default()
+                .dst_set(gfx.descriptor_sets[i])
+                .dst_binding(1)
+                .dst_array_element(0)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .descriptor_count(1)
+                .image_info(&image_info),
+        ];
+
+        unsafe { gfx.device.update_descriptor_sets(&descriptor_writes, &[]) };
+    }
 
     let mut root_node = Node::empty()
         .add_child(Node::empty().add_object(Object::Mesh(teapot.into())))
@@ -94,7 +158,7 @@ fn main() {
     let mut previous_time =
         std::time::Instant::now() - std::time::Duration::from_secs_f64(1.0 / 60.0);
     event_loop.run(
-        |inputs, framebuffer_resized| {
+        |inputs| {
             // Delta time calculation
             let new_time = std::time::Instant::now();
             let dt = (new_time - previous_time).as_secs_f32();
@@ -148,42 +212,34 @@ fn main() {
 
             let camera_transform = Isometry3::new(camera_position, camera_rotation);
 
-            *framebuffer_resized = gfx.draw(
-                |device, pipeline, command_buffer, image| {
+            inputs.recreate_swapchain = gfx.draw(
+                |device, pipeline, command_buffer, descriptor_set, uniform_buffer, image| {
                     record_command_buffer(
                         device,
                         pipeline,
                         command_buffer,
+                        &descriptor_set,
+                        uniform_buffer,
                         image,
                         &root_node,
                         camera_transform,
                     )
                 },
-                framebuffer_resized,
+                inputs.recreate_swapchain,
             );
         },
-        |event, inputs, framebuffer_resized| match event {
-            Event::Quit { timestamp: _ } => true,
-            Event::KeyDown {
-                keycode: Some(Keycode::ESCAPE),
-                ..
-            } => true,
+        |event, inputs| match event {
+            Event::Quit { timestamp: _ } => inputs.quit = true,
             Event::KeyDown {
                 keycode: Some(key),
                 repeat: false,
                 ..
-            } => {
-                inputs.set_input(key, true);
-                false
-            }
+            } => inputs.set_input(key, true),
             Event::KeyUp {
                 keycode: Some(key),
                 repeat: false,
                 ..
-            } => {
-                inputs.set_input(key, false);
-                false
-            }
+            } => inputs.set_input(key, false),
             Event::MouseMotion {
                 timestamp: _,
                 window_id: _,
@@ -206,18 +262,15 @@ fn main() {
 
                     rotation
                 };
-
-                false
             }
             Event::Window {
                 timestamp: _,
                 window_id: _,
                 win_event: sdl2::event::WindowEvent::SizeChanged(_, _),
             } => {
-                *framebuffer_resized = true;
-                false
+                inputs.recreate_swapchain = true;
             }
-            _ => false,
+            _ => (),
         },
     );
 
@@ -228,46 +281,47 @@ pub fn record_command_buffer(
     device: &Device,
     pipeline: &Pipeline,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
+    descriptor_set: &vk::DescriptorSet,
+    uniform_buffer: &mut [UniformBufferObject],
     image: &SwapchainImage,
     root_node: &Node,
     camera_transform: Isometry3,
 ) -> ActiveMultipleSubmitCommandBuffer {
+    let clear_color = [
+        vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0],
+            },
+        },
+        vk::ClearValue {
+            color: vk::ClearColorValue {
+                float32: [1.0, 0.0, 0.0, 0.0],
+            },
+        },
+    ];
+
+    let render_pass_info = vk::RenderPassBeginInfo::default()
+        .render_pass(*pipeline.render_pass)
+        .framebuffer(image.framebuffer)
+        .render_area(vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: image.extent,
+        })
+        .clear_values(&clear_color);
+
+    let viewport = [vk::Viewport::default()
+        .x(0.0)
+        .y(0.0)
+        .width(image.extent.width as f32)
+        .height(image.extent.height as f32)
+        .min_depth(0.0)
+        .max_depth(1.0)];
+
     unsafe {
-        let clear_color = [
-            vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [0.0, 0.0, 0.0, 1.0],
-                },
-            },
-            vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [1.0, 0.0, 0.0, 0.0],
-                },
-            },
-        ];
-
-        let render_pass_info = vk::RenderPassBeginInfo::default()
-            .render_pass(*pipeline.render_pass)
-            .framebuffer(image.framebuffer)
-            .render_area(vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent: image.extent,
-            })
-            .clear_values(&clear_color);
-
         let cmd_buf = *command_buffer;
-
         device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
 
         device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **pipeline);
-
-        let viewport = [vk::Viewport::default()
-            .x(0.0)
-            .y(0.0)
-            .width(image.extent.width as f32)
-            .height(image.extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0)];
 
         device.cmd_set_viewport(cmd_buf, 0, &viewport);
 
@@ -281,6 +335,22 @@ pub fn record_command_buffer(
 
         device.cmd_set_scissor(cmd_buf, 0, &scissor);
 
+        let ubo = uniform_buffer.first_mut().unwrap();
+
+        *ubo = UniformBufferObject {
+            view_transform: camera_transform,
+        };
+
+        let descriptor_set = [*descriptor_set];
+        device.cmd_bind_descriptor_sets(
+            cmd_buf,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline.pipeline_layout,
+            0,
+            &descriptor_set,
+            &[],
+        );
+
         device.cmd_push_constants(
             cmd_buf,
             pipeline.pipeline_layout,
@@ -293,6 +363,35 @@ pub fn record_command_buffer(
         );
 
         for (transform, node) in root_node.breadth_first() {
+            let fragment_push_constants = FragmentPushConstants {
+                sun_direction: {
+                    let root_3 = 1.0 / f32::sqrt(3.0);
+                    Vec3::new(-root_3, root_3, root_3).rotated_by(transform.rotation.reversed())
+                },
+            };
+
+            device.cmd_push_constants(
+                cmd_buf,
+                pipeline.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX,
+                offset_of!(VertexPushConstants, model_transform) as u32,
+                std::slice::from_raw_parts(
+                    addr_of!(transform) as *const u8,
+                    std::mem::size_of::<Isometry3>(),
+                ),
+            );
+
+            device.cmd_push_constants(
+                cmd_buf,
+                pipeline.pipeline_layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                offset_of!(PushConstants, fragment) as u32,
+                std::slice::from_raw_parts(
+                    addr_of!(fragment_push_constants) as *const u8,
+                    std::mem::size_of::<FragmentPushConstants>(),
+                ),
+            );
+
             for object in &node.objects {
                 match object {
                     Object::Mesh(mesh) => {
@@ -300,36 +399,6 @@ pub fn record_command_buffer(
 
                         let vertex_buffers = [mesh.vertex_buffer.buffer];
                         let offsets = [vk::DeviceSize::from(0u64)];
-
-                        let fragment_push_constants = FragmentPushConstants {
-                            sun_direction: {
-                                let root_3 = 1.0 / f32::sqrt(3.0);
-                                Vec3::new(-root_3, root_3, root_3)
-                                    .rotated_by(transform.rotation.reversed())
-                            },
-                        };
-
-                        device.cmd_push_constants(
-                            cmd_buf,
-                            pipeline.pipeline_layout,
-                            vk::ShaderStageFlags::VERTEX,
-                            offset_of!(VertexPushConstants, model_transform) as u32,
-                            std::slice::from_raw_parts(
-                                addr_of!(transform) as *const u8,
-                                std::mem::size_of::<Isometry3>(),
-                            ),
-                        );
-
-                        device.cmd_push_constants(
-                            cmd_buf,
-                            pipeline.pipeline_layout,
-                            vk::ShaderStageFlags::FRAGMENT,
-                            offset_of!(PushConstants, fragment) as u32,
-                            std::slice::from_raw_parts(
-                                addr_of!(fragment_push_constants) as *const u8,
-                                std::mem::size_of::<FragmentPushConstants>(),
-                            ),
-                        );
 
                         device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
                         device.cmd_bind_index_buffer(
@@ -353,7 +422,7 @@ pub fn record_command_buffer(
         }
 
         device.cmd_end_render_pass(cmd_buf);
-
-        command_buffer
     }
+
+    command_buffer
 }

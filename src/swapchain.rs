@@ -4,6 +4,7 @@ use ash::{khr, vk};
 use log::info;
 
 use crate::{
+    descriptors::DescriptorSetLayout,
     device::Device,
     image::{find_supported_format, Image, SwapchainImage},
     pipeline::Pipeline,
@@ -26,6 +27,7 @@ impl Swapchain {
         surface_loader: &khr::surface::Instance,
         surface: vk::SurfaceKHR,
         extent: vk::Extent2D,
+        descriptor_set_layout: &DescriptorSetLayout,
         old_swapchain: Option<&Self>,
     ) -> Self {
         let swapchain_loader = match old_swapchain {
@@ -110,7 +112,7 @@ impl Swapchain {
 
             ManuallyDrop::new(Image::new(
                 instance,
-                &device.physical_device,
+                device.physical_device,
                 device.device.clone(),
                 extent,
                 device.mssa_samples,
@@ -126,7 +128,7 @@ impl Swapchain {
             vk::SampleCountFlags::TYPE_1 => None,
             _ => Some(Image::new(
                 instance,
-                &device.physical_device,
+                device.physical_device,
                 device.device.clone(),
                 extent,
                 device.mssa_samples,
@@ -138,7 +140,13 @@ impl Swapchain {
             )),
         };
 
-        let pipeline = Pipeline::new(instance, device, &extent, surface_format.format);
+        let pipeline = Pipeline::new(
+            instance,
+            device,
+            &extent,
+            surface_format.format,
+            descriptor_set_layout,
+        );
 
         let images = unsafe { swapchain_loader.get_swapchain_images(swapchain).unwrap() }
             .iter()
@@ -149,7 +157,7 @@ impl Swapchain {
                     surface_format.format,
                     extent,
                     depth_image.view,
-                    color_image.as_ref().and_then(|i| Some(i.view)),
+                    color_image.as_ref().map(|i| i.view),
                     &pipeline,
                 )
             })

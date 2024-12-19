@@ -5,14 +5,21 @@ use log::info;
 
 use crate::device::Device;
 
-pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {}
+pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {
+    fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any + 'static>);
+}
 
 pub struct OneTimeSubmitCommandBuffer {
     device: Rc<ash::Device>,
     command_buffer: vk::CommandBuffer,
+    dependencies: Vec<Rc<dyn std::any::Any>>,
 }
 
-impl ActiveCommandBuffer for OneTimeSubmitCommandBuffer {}
+impl ActiveCommandBuffer for OneTimeSubmitCommandBuffer {
+    fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any>) {
+        self.dependencies.push(dependency);
+    }
+}
 
 impl Deref for OneTimeSubmitCommandBuffer {
     type Target = vk::CommandBuffer;
@@ -66,6 +73,7 @@ impl MultipleSubmitCommandBuffer {
 
         ActiveMultipleSubmitCommandBuffer {
             command_buffer: self,
+            dependencies: vec![],
         }
     }
 
@@ -99,9 +107,14 @@ impl MultipleSubmitCommandBuffer {
 
 pub struct ActiveMultipleSubmitCommandBuffer {
     command_buffer: MultipleSubmitCommandBuffer,
+    dependencies: Vec<Rc<dyn std::any::Any>>,
 }
 
-impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {}
+impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {
+    fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any>) {
+        self.dependencies.push(dependency)
+    }
+}
 
 impl Deref for ActiveMultipleSubmitCommandBuffer {
     type Target = vk::CommandBuffer;
@@ -168,6 +181,7 @@ impl CommandPool {
         OneTimeSubmitCommandBuffer {
             device: self.device.clone(),
             command_buffer,
+            dependencies: vec![],
         }
     }
 

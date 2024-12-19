@@ -5,8 +5,8 @@ use log::info;
 use ultraviolet::Vec4;
 
 use crate::{
-    device::Device, render_pass::RenderPass, shader_module::spv, FragmentPushConstants,
-    PushConstants, Vertex, VertexPushConstants,
+    descriptors::DescriptorSetLayout, device::Device, render_pass::RenderPass, shader_module::spv,
+    FragmentPushConstants, PushConstants, Vertex, VertexPushConstants,
 };
 
 pub struct Pipeline {
@@ -23,6 +23,7 @@ impl Pipeline {
         device: &Device,
         extent: &vk::Extent2D,
         format: vk::Format,
+        descriptor_set_layout: &DescriptorSetLayout,
     ) -> Self {
         let vert_shader_module = spv!(device.device.clone(), "shader.vert");
         let frag_shader_module = spv!(device.device.clone(), "shader.frag");
@@ -170,8 +171,12 @@ impl Pipeline {
                 )
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT),
         ];
-        let pipeline_layout_info =
-            vk::PipelineLayoutCreateInfo::default().push_constant_ranges(&push_constant_ranges);
+
+        let descriptor_set_layouts = [descriptor_set_layout.layout];
+
+        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
+            .set_layouts(&descriptor_set_layouts)
+            .push_constant_ranges(&push_constant_ranges);
 
         let pipeline_layout = unsafe {
             device

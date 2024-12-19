@@ -14,6 +14,8 @@ pub struct Inputs {
     pub right: bool,
     pub up: bool,
     pub down: bool,
+    pub quit: bool,
+    pub recreate_swapchain: bool,
 }
 
 impl Inputs {
@@ -26,6 +28,7 @@ impl Inputs {
             K::S => self.right = pressed,
             K::SPACE => self.up = pressed,
             K::C => self.down = pressed,
+            K::ESCAPE => self.quit = pressed,
             _ => (),
         }
     }
@@ -42,22 +45,25 @@ impl EventLoop {
         EventLoop { pump }
     }
 
-    pub fn run<F: FnMut(&Inputs, &mut bool), G: FnMut(sdl2::event::Event, &mut Inputs, &mut bool) -> bool>(
+    pub fn run<F: FnMut(&mut Inputs), G: FnMut(sdl2::event::Event, &mut Inputs)>(
         &mut self,
         mut render: F,
         mut process_event: G,
     ) {
-        let mut inputs = Inputs::default().camera_rotation(Vec2::new(std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_8));
-
-        let mut framebuffer_resized = false;
+        let mut inputs = Inputs::default().camera_rotation(Vec2::new(
+            std::f32::consts::FRAC_PI_2,
+            std::f32::consts::FRAC_PI_8,
+        ));
 
         'quit: loop {
-            render(&inputs, &mut framebuffer_resized);
+            render(&mut inputs);
 
             while let Some(event) = self.pump.poll_event() {
-                if process_event(event, &mut inputs, &mut framebuffer_resized) {
-                    break 'quit;
-                }
+                process_event(event, &mut inputs);
+            }
+
+            if inputs.quit {
+                break 'quit;
             }
         }
     }

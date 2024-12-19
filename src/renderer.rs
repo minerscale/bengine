@@ -1,9 +1,12 @@
 use ash::vk;
 use sdl2::sys::SDL_Vulkan_GetDrawableSize;
+use ultraviolet::Isometry3;
 
 use crate::{
+    buffer::MappedBuffer,
     command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer},
     debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
+    descriptors::{DescriptorPool, DescriptorSetLayout},
     device::Device,
     image::SwapchainImage,
     instance::Instance,
@@ -15,11 +18,21 @@ use crate::{
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UniformBufferObject {
+    pub view_transform: Isometry3,
+}
+
 pub struct Renderer {
     // WARNING: Cleanup order matters here
     pub image_avaliable_semaphores: Vec<Semaphore>,
     pub render_finished_semaphores: Vec<Semaphore>,
     pub in_flight_fences: Vec<Fence>,
+
+    pub descriptor_set_layout: DescriptorSetLayout,
+    pub descriptor_pool: DescriptorPool,
+    pub descriptor_sets: Vec<vk::DescriptorSet>,
+    pub uniform_buffers: Vec<MappedBuffer<UniformBufferObject>>,
 
     pub command_buffers: Vec<MultipleSubmitCommandBuffer>,
     pub command_pool: CommandPool,
@@ -51,12 +64,14 @@ impl Renderer {
             &Device,
             &Pipeline,
             ActiveMultipleSubmitCommandBuffer,
+            &vk::DescriptorSet,
+            &mut [UniformBufferObject],
             &SwapchainImage,
         ) -> ActiveMultipleSubmitCommandBuffer,
     >(
         &mut self,
         mut record_command_buffer: F,
-        framebuffer_resized: &bool,
+        framebuffer_resized: bool,
     ) -> bool {
         unsafe {
             let fence = &[*self.in_flight_fences[self.current_frame]];
@@ -96,6 +111,8 @@ impl Renderer {
                                 &self.device,
                                 &self.swapchain.pipeline,
                                 command_buffer,
+                                &self.descriptor_sets[self.current_frame],
+                                self.uniform_buffers[self.current_frame].mapped_memory,
                                 &self.swapchain.images[image_index as usize],
                             )
                         })
@@ -164,6 +181,7 @@ impl Renderer {
             &self.surface.loader,
             *self.surface,
             extent,
+            &self.descriptor_set_layout,
             Some(&self.swapchain),
         );
 
@@ -200,12 +218,15 @@ impl Renderer {
 
         let device = Device::new(&instance, &surface);
 
+        let descriptor_set_layout = DescriptorSetLayout::new(device.device.clone());
+
         let swapchain = Swapchain::new(
             &instance,
             &device,
             &surface.loader,
             *surface,
             vk::Extent2D { width, height },
+            &descriptor_set_layout,
             None,
         );
 
@@ -216,6 +237,14 @@ impl Renderer {
         let mut in_flight_fences = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
 
         let mut command_buffers = Vec::new();
+        let mut uniform_buffers = Vec::new();
+
+        let descriptor_pool = DescriptorPool::new(device.device.clone());
+
+        let descriptor_sets = {
+            let descriptor_set_layouts = [descriptor_set_layout.layout; MAX_FRAMES_IN_FLIGHT];
+            descriptor_pool.create_descriptor_sets(&descriptor_set_layouts)
+        };
 
         for _ in 0..MAX_FRAMES_IN_FLIGHT {
             command_buffers.push(command_pool.create_command_buffer());
@@ -223,12 +252,25 @@ impl Renderer {
             image_avaliable_semaphores.push(Semaphore::new(device.device.clone()));
             render_finished_semaphores.push(Semaphore::new(device.device.clone()));
             in_flight_fences.push(Fence::new(device.device.clone()));
+
+            uniform_buffers.push(MappedBuffer::new(
+                device.device.clone(),
+                &instance,
+                device.physical_device,
+                &[UniformBufferObject::default()],
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            ));
         }
 
         Self {
             image_avaliable_semaphores,
             render_finished_semaphores,
             in_flight_fences,
+            descriptor_pool,
+            descriptor_set_layout,
+            descriptor_sets,
+            uniform_buffers,
             command_buffers,
             command_pool,
             swapchain,

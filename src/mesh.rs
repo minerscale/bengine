@@ -4,13 +4,13 @@ use ash::vk;
 use obj::{load_obj, Obj};
 
 use crate::{
-    buffer::StagedBuffer, command_buffer::ActiveCommandBuffer, renderer::Renderer, vertex::Vertex,
+    buffer::Buffer, command_buffer::ActiveCommandBuffer, renderer::Renderer, vertex::Vertex,
 };
 
 #[derive(Debug)]
 pub struct Mesh {
-    pub vertex_buffer: StagedBuffer<Vertex>,
-    pub index_buffer: StagedBuffer<u32>,
+    pub vertex_buffer: Buffer<Vertex>,
+    pub index_buffer: Buffer<u32>,
 }
 
 impl Mesh {
@@ -21,7 +21,7 @@ impl Mesh {
     ) -> Self {
         let teapot: Obj<Vertex, u32> = load_obj(file).unwrap();
 
-        let vertex_buffer = StagedBuffer::new(
+        let vertex_buffer = Buffer::new_staged(
             &gfx.instance,
             gfx.device.device.clone(),
             gfx.device.physical_device,
@@ -30,7 +30,7 @@ impl Mesh {
             &teapot.vertices,
         );
 
-        let index_buffer = StagedBuffer::new(
+        let index_buffer = Buffer::new_staged(
             &gfx.instance,
             gfx.device.device.clone(),
             gfx.device.physical_device,
