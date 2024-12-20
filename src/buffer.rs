@@ -14,7 +14,7 @@ pub struct Buffer<T: Copy> {
 }
 
 pub struct MappedBuffer<T: Copy + 'static> {
-    pub buffer: Buffer<T>,
+    pub buffer: Rc<Buffer<T>>,
     pub mapped_memory: &'static mut [T],
 }
 
@@ -43,13 +43,13 @@ impl<T: Copy + 'static> MappedBuffer<T> {
         mapped_memory.copy_from_slice(data);
 
         MappedBuffer {
-            buffer: Buffer {
+            buffer: Rc::new(Buffer {
                 buffer,
                 memory,
                 device,
                 size,
                 phantom: PhantomData,
-            },
+            }),
             mapped_memory,
         }
     }

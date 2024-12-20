@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [profile.release]
-debug = true
-#lto = true
+#debug = true
+lto = true
 strip = false
 
 [dependencies]
 colored = "2.1.0"
 log = "0.4.22"
 num-traits = "0.2.19"
-take_mut = "0.2.2"
 genawaiter = "0.99.1"
+replace_with = "0.1.7"
 
 [dependencies.ultraviolet]
 version = "0.9.2"

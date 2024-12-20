@@ -18,19 +18,19 @@ pub mod swapchain;
 pub mod synchronization;
 pub mod vertex;
 
-use std::{io::Cursor, mem::offset_of, ptr::addr_of};
+use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
 use ash::vk;
 use command_buffer::ActiveMultipleSubmitCommandBuffer;
 
-use ::image::GenericImageView;
 use device::Device;
 use event_loop::EventLoop;
 use image::{Image, SwapchainImage};
+use log::info;
 use mesh::Mesh;
 use node::{Node, Object};
 use pipeline::Pipeline;
-use renderer::{Renderer, UniformBufferObject, MAX_FRAMES_IN_FLIGHT};
+use renderer::{Renderer, UniformBufferObject};
 use sampler::Sampler;
 
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
@@ -61,83 +61,45 @@ fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-    let (teapot, suzanne, texture) =
+    let (teapot, suzanne) =
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
-                (
-                    Mesh::new(
-                        Cursor::new(include_bytes!("../test-objects/teapot-triangulated.obj")),
-                        &gfx,
-                        cmd_buf,
-                    ),
-                    Mesh::new(
-                        Cursor::new(include_bytes!("../test-objects/suzanne.obj")),
-                        &gfx,
-                        cmd_buf,
-                    ),
-                    {
-                        let image =
-                            ::image::load_from_memory(include_bytes!("../textures/agadwheel.png"))
-                                .unwrap();
-                        let extent = image.dimensions();
-                        let img = image.into_rgba8().into_vec();
-
-                        Image::new_staged(
+                for set in &mut gfx.descriptor_sets {
+                    set.bind_texture(
+                        &gfx.device.device,
+                        1,
+                        Rc::new(Image::from_bytes(
                             &gfx.instance,
                             gfx.device.physical_device,
                             gfx.device.device.clone(),
-                            vk::Extent2D {
-                                width: extent.0,
-                                height: extent.1,
-                            },
-                            &img,
                             cmd_buf,
-                            vk::SampleCountFlags::TYPE_1,
-                            vk::Format::R8G8B8A8_SRGB,
-                            vk::ImageTiling::OPTIMAL,
-                            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                            vk::ImageAspectFlags::COLOR,
-                        )
-                    },
+                            include_bytes!("../textures/agadwheel.png"),
+                        )),
+                        Rc::new(Sampler::new(
+                            &gfx.instance,
+                            gfx.device.device.clone(),
+                            &gfx.device.physical_device,
+                        )),
+                    );
+                }
+
+                (
+                    Mesh::new(
+                        &gfx.instance,
+                        gfx.device.physical_device,
+                        gfx.device.device.clone(),
+                        Cursor::new(include_bytes!("../test-objects/teapot-triangulated.obj")),
+                        cmd_buf,
+                    ),
+                    Mesh::new(
+                        &gfx.instance,
+                        gfx.device.physical_device,
+                        gfx.device.device.clone(),
+                        Cursor::new(include_bytes!("../test-objects/suzanne.obj")),
+                        cmd_buf,
+                    ),
                 )
             });
-
-    let texture_sampler = Sampler::new(
-        &gfx.instance,
-        gfx.device.device.clone(),
-        &gfx.device.physical_device,
-    );
-
-    for i in 0..MAX_FRAMES_IN_FLIGHT {
-        let buffer_info = [vk::DescriptorBufferInfo::default()
-            .buffer(*gfx.uniform_buffers[i].buffer)
-            .offset(0)
-            .range(size_of::<UniformBufferObject>().try_into().unwrap())];
-
-        let image_info = [vk::DescriptorImageInfo::default()
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-            .image_view(texture.view)
-            .sampler(texture_sampler.sampler)];
-
-        let descriptor_writes = [
-            vk::WriteDescriptorSet::default()
-                .dst_set(gfx.descriptor_sets[i])
-                .dst_binding(0)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(&buffer_info),
-            vk::WriteDescriptorSet::default()
-                .dst_set(gfx.descriptor_sets[i])
-                .dst_binding(1)
-                .dst_array_element(0)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(1)
-                .image_info(&image_info),
-        ];
-
-        unsafe { gfx.device.update_descriptor_sets(&descriptor_writes, &[]) };
-    }
 
     let mut root_node = Node::empty()
         .add_child(Node::empty().add_object(Object::Mesh(teapot.into())))
@@ -152,6 +114,8 @@ fn main() {
     }
 
     gfx.sdl_context.mouse().set_relative_mouse_mode(true);
+
+    info!("finished loading");
 
     let start_time = std::time::Instant::now();
 

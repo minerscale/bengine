@@ -13,6 +13,7 @@ layout( push_constant ) uniform constants
 } PushConstants;
 
 vec3 sun_color = vec3(1.0, 0.91, 0.56);
+vec3 fill_light_color = vec3(0.5, 0.7, 0.9);
 
 vec3 lighting(vec3 light, vec3 color) {
     return color*vec3(max(dot(light, normalize(fragColor)),0));
@@ -21,11 +22,10 @@ vec3 lighting(vec3 light, vec3 color) {
 void main() {
     vec3 sun = PushConstants.sun_direction;
 
-
     vec3 tex = texture(texSampler, vec2(fragTexCoord.x, -fragTexCoord.y)).xyz;
     outColor = vec4(tex * (
                     lighting(sun, sun_color) +
-                    0.01 * vec3(0.5, 0.7, 0.9) +
-                    0.2 * lighting(vec3(-sun.x,sun.y,-sun.z), vec3(0.5, 0.7, 0.9))
+                    0.01 * fill_light_color +
+                    0.2 * lighting(vec3(-sun.x,sun.y,-sun.z), fill_light_color)
                 ), 1.0);
 }

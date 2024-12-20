@@ -8,7 +8,7 @@ use ultraviolet::{Vec2, Vec3};
 pub struct Vertex {
     pub pos: Vec3,
     pub normal: Vec3,
-    pub tex_coord: Vec2
+    pub tex_coord: Vec2,
 }
 
 impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
@@ -25,7 +25,7 @@ impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
                 .map(|v| Vertex {
                     pos: Vec3::from(v.position),
                     normal: Vec3::from(v.normal),
-                    tex_coord: Vec2::new(v.texture[0], v.texture[1])
+                    tex_coord: Vec2::new(v.texture[0], v.texture[1]),
                 })
                 .collect::<Vec<_>>(),
             i,

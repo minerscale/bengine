@@ -6,7 +6,7 @@ use crate::{
     buffer::MappedBuffer,
     command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer},
     debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
-    descriptors::{DescriptorPool, DescriptorSetLayout},
+    descriptors::{DescriptorPool, DescriptorSet, DescriptorSetLayout},
     device::Device,
     image::SwapchainImage,
     instance::Instance,
@@ -31,7 +31,7 @@ pub struct Renderer {
 
     pub descriptor_set_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
-    pub descriptor_sets: Vec<vk::DescriptorSet>,
+    pub descriptor_sets: Vec<DescriptorSet>,
     pub uniform_buffers: Vec<MappedBuffer<UniformBufferObject>>,
 
     pub command_buffers: Vec<MultipleSubmitCommandBuffer>,
@@ -101,7 +101,7 @@ impl Renderer {
 
             self.device.reset_fences(fence).unwrap();
 
-            take_mut::take(
+            replace_with::replace_with_or_abort(
                 self.command_buffers.get_mut(self.current_frame).unwrap(),
                 |command_buffer| {
                     command_buffer
@@ -241,12 +241,12 @@ impl Renderer {
 
         let descriptor_pool = DescriptorPool::new(device.device.clone());
 
-        let descriptor_sets = {
+        let mut descriptor_sets = {
             let descriptor_set_layouts = [descriptor_set_layout.layout; MAX_FRAMES_IN_FLIGHT];
             descriptor_pool.create_descriptor_sets(&descriptor_set_layouts)
         };
 
-        for _ in 0..MAX_FRAMES_IN_FLIGHT {
+        for i in 0..MAX_FRAMES_IN_FLIGHT {
             command_buffers.push(command_pool.create_command_buffer());
 
             image_avaliable_semaphores.push(Semaphore::new(device.device.clone()));
@@ -261,6 +261,8 @@ impl Renderer {
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             ));
+
+            descriptor_sets[i].bind_buffer(&device.device, uniform_buffers[i].buffer.clone());
         }
 
         Self {

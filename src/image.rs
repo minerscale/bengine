@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use ash::vk;
+use image::GenericImageView;
 use log::info;
 
 use crate::{
@@ -148,6 +149,35 @@ fn transition_layout<C: ActiveCommandBuffer>(
 }
 
 impl Image {
+    pub fn from_bytes<C: ActiveCommandBuffer>(
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        device: Rc<ash::Device>,
+        cmd_buf: &mut C,
+        bytes: &[u8],
+    ) -> Self {
+        let image = ::image::load_from_memory(bytes).unwrap();
+        let extent = image.dimensions();
+        let img = image.into_rgba8().into_vec();
+
+        Image::new_staged(
+            instance,
+            physical_device,
+            device.clone(),
+            vk::Extent2D {
+                width: extent.0,
+                height: extent.1,
+            },
+            &img,
+            cmd_buf,
+            vk::SampleCountFlags::TYPE_1,
+            vk::Format::R8G8B8A8_SRGB,
+            vk::ImageTiling::OPTIMAL,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            vk::ImageAspectFlags::COLOR,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new_staged<C: ActiveCommandBuffer>(
         instance: &ash::Instance,

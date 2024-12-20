@@ -1,14 +1,82 @@
-use std::rc::Rc;
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
 
-use crate::renderer::MAX_FRAMES_IN_FLIGHT;
+use crate::{buffer::Buffer, image::Image, renderer::MAX_FRAMES_IN_FLIGHT, sampler::Sampler};
 
 #[derive(Clone)]
 pub struct DescriptorSetLayout {
     pub layout: vk::DescriptorSetLayout,
     device: Rc<ash::Device>,
+}
+
+pub struct DescriptorSet {
+    pub descriptor_set: vk::DescriptorSet,
+    dependencies: Vec<Rc<dyn std::any::Any>>,
+}
+
+impl DescriptorSet {
+    pub fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any>) {
+        self.dependencies.push(dependency);
+    }
+}
+
+impl Deref for DescriptorSet {
+    type Target = vk::DescriptorSet;
+
+    fn deref(&self) -> &Self::Target {
+        &self.descriptor_set
+    }
+}
+
+impl DescriptorSet {
+    pub fn bind_buffer<T: Copy + 'static>(&mut self, device: &ash::Device, buffer: Rc<Buffer<T>>) {
+        let buffer_info = [vk::DescriptorBufferInfo::default()
+            .buffer(**buffer)
+            .offset(0)
+            .range(size_of::<T>().try_into().unwrap())];
+
+        let descriptor_writes = [vk::WriteDescriptorSet::default()
+            .dst_set(**self)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .buffer_info(&buffer_info)];
+
+        unsafe {
+            device.update_descriptor_sets(&descriptor_writes, &[]);
+            self.dependencies.push(buffer);
+        };
+    }
+
+    pub fn bind_texture(
+        &mut self,
+        device: &ash::Device,
+        binding: u32,
+        texture: Rc<Image>,
+        sampler: Rc<Sampler>,
+    ) {
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(texture.view)
+            .sampler(sampler.sampler)];
+
+        let descriptor_writes = [vk::WriteDescriptorSet::default()
+            .dst_set(**self)
+            .dst_binding(binding)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .image_info(&image_info)];
+
+        unsafe {
+            device.update_descriptor_sets(&descriptor_writes, &[]);
+            self.dependencies.push(texture.clone());
+            self.dependencies.push(sampler.clone());
+        };
+    }
 }
 
 impl DescriptorSetLayout {
@@ -74,7 +142,7 @@ impl DescriptorPool {
     pub fn create_descriptor_sets(
         &self,
         set_layouts: &[vk::DescriptorSetLayout],
-    ) -> Vec<vk::DescriptorSet> {
+    ) -> Vec<DescriptorSet> {
         let allocate_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(self.pool)
             .set_layouts(&set_layouts);
@@ -84,6 +152,12 @@ impl DescriptorPool {
                 .allocate_descriptor_sets(&allocate_info)
                 .unwrap()
         }
+        .into_iter()
+        .map(|descriptor_set| DescriptorSet {
+            descriptor_set,
+            dependencies: vec![],
+        })
+        .collect()
     }
 }
 
