@@ -23,7 +23,7 @@ fn pick_physical_device(
     physical_devices: Vec<vk::PhysicalDevice>,
     requested_features: &vk::PhysicalDeviceFeatures,
     requested_features12: &vk::PhysicalDeviceVulkan12Features,
-    requested_features13: &vk::PhysicalDeviceVulkan13Features,
+    //requested_features13: &vk::PhysicalDeviceVulkan13Features,
 ) -> Option<(vk::PhysicalDevice, (u32, u32), vk::SampleCountFlags)> {
     fn feature_subset(
         requested_features: &vk::PhysicalDeviceFeatures,
@@ -78,7 +78,7 @@ fn pick_physical_device(
         .any(|(&requested, &capability)| requested != 0 && capability == 0)
     }
 
-    fn feature_subset13(
+    /*fn feature_subset13(
         requested_features: &vk::PhysicalDeviceVulkan13Features,
         capabilities: &vk::PhysicalDeviceVulkan13Features,
     ) -> bool {
@@ -102,20 +102,20 @@ fn pick_physical_device(
             features_to_slice(capabilities),
         )
         .any(|(&requested, &capability)| requested != 0 && capability == 0)
-    }
+    }*/
 
     physical_devices.iter().find_map(|physical_device| unsafe {
-        let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+        /*let mut features13 = vk::PhysicalDeviceVulkan13Features::default();*/
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
         let mut features = vk::PhysicalDeviceFeatures2::default()
             .push_next(&mut features12)
-            .push_next(&mut features13);
+            /*.push_next(&mut features13)*/;
 
         instance.get_physical_device_features2(*physical_device, &mut features);
 
         if !(feature_subset(requested_features, &features.features)
             && feature_subset12(requested_features12, &features12)
-            && feature_subset13(requested_features13, &features13))
+            /*&& feature_subset13(requested_features13, &features13)*/)
         {
             return None;
         }
@@ -207,7 +207,7 @@ impl Device {
                 physical_devices,
                 &features,
                 &features12,
-                &features13,
+                //&features13,
             )
             .expect("Couldn't find suitable device");
 

@@ -44,6 +44,7 @@ impl Instance {
         }
 
         extension_names.push(c"VK_KHR_portability_enumeration".as_ptr());
+        extension_names.push(c"VK_KHR_portability_subset".as_ptr());
 
         let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
