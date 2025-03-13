@@ -3,7 +3,10 @@ use std::{marker::PhantomData, ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::command_buffer::ActiveCommandBuffer;
+use crate::{
+    command_buffer::ActiveCommandBuffer,
+    descriptors::{DescriptorPool, DescriptorSet, DescriptorSetLayout},
+};
 
 pub struct Buffer<T: Copy> {
     pub buffer: vk::Buffer,
@@ -16,6 +19,7 @@ pub struct Buffer<T: Copy> {
 pub struct MappedBuffer<T: Copy + 'static> {
     pub buffer: Rc<Buffer<T>>,
     pub mapped_memory: &'static mut [T],
+    pub descriptor_set: DescriptorSet,
 }
 
 impl<T: Copy + 'static> MappedBuffer<T> {
@@ -26,6 +30,8 @@ impl<T: Copy + 'static> MappedBuffer<T> {
         data: &[T],
         usage: vk::BufferUsageFlags,
         properties: vk::MemoryPropertyFlags,
+        descriptor_pool: &DescriptorPool,
+        descriptor_set_layout: &DescriptorSetLayout,
     ) -> Self {
         let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
 
@@ -42,15 +48,22 @@ impl<T: Copy + 'static> MappedBuffer<T> {
         };
         mapped_memory.copy_from_slice(data);
 
+        let buffer = Rc::new(Buffer {
+            buffer,
+            memory,
+            device: device.clone(),
+            size,
+            phantom: PhantomData,
+        });
+
+        let mut descriptor_set = descriptor_pool.create_descriptor_set(descriptor_set_layout);
+
+        descriptor_set.bind_buffer(&device, buffer.clone());
+
         MappedBuffer {
-            buffer: Rc::new(Buffer {
-                buffer,
-                memory,
-                device,
-                size,
-                phantom: PhantomData,
-            }),
+            buffer,
             mapped_memory,
+            descriptor_set,
         }
     }
 }

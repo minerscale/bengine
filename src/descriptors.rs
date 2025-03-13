@@ -3,7 +3,10 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::{buffer::Buffer, image::Image, renderer::MAX_FRAMES_IN_FLIGHT, sampler::Sampler};
+use crate::{
+    buffer::Buffer, image::Image, renderer::MAX_FRAMES_IN_FLIGHT, sampler::Sampler,
+    texture::MAX_TEXTURES,
+};
 
 #[derive(Clone)]
 pub struct DescriptorSetLayout {
@@ -11,6 +14,7 @@ pub struct DescriptorSetLayout {
     device: Rc<ash::Device>,
 }
 
+#[derive(Debug)]
 pub struct DescriptorSet {
     pub descriptor_set: vk::DescriptorSet,
     dependencies: Vec<Rc<dyn std::any::Any>>,
@@ -80,20 +84,7 @@ impl DescriptorSet {
 }
 
 impl DescriptorSetLayout {
-    pub fn new(device: Rc<ash::Device>) -> Self {
-        let bindings = [
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX),
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
-
+    pub fn new(device: Rc<ash::Device>, bindings: &[vk::DescriptorSetLayoutBinding]) -> Self {
         let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
         let layout = unsafe {
@@ -127,37 +118,40 @@ impl DescriptorPool {
                 .descriptor_count(MAX_FRAMES_IN_FLIGHT.try_into().unwrap()),
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .descriptor_count(MAX_FRAMES_IN_FLIGHT.try_into().unwrap()),
+                .descriptor_count(MAX_TEXTURES),
         ];
 
         let pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&pool_sizes)
-            .max_sets(MAX_FRAMES_IN_FLIGHT.try_into().unwrap());
+            .max_sets(MAX_FRAMES_IN_FLIGHT as u32 + MAX_TEXTURES);
 
         let pool = unsafe { device.create_descriptor_pool(&pool_info, None).unwrap() };
 
         Self { pool, device }
     }
 
-    pub fn create_descriptor_sets(
+    pub fn create_descriptor_set(
         &self,
-        set_layouts: &[vk::DescriptorSetLayout],
-    ) -> Vec<DescriptorSet> {
+        descriptor_set_layout: &DescriptorSetLayout,
+    ) -> DescriptorSet {
+        let set_layouts = [descriptor_set_layout.layout];
+
         let allocate_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(self.pool)
             .set_layouts(&set_layouts);
 
-        unsafe {
+        let descriptor_set = *unsafe {
             self.device
                 .allocate_descriptor_sets(&allocate_info)
                 .unwrap()
         }
-        .into_iter()
-        .map(|descriptor_set| DescriptorSet {
+        .first()
+        .unwrap();
+
+        DescriptorSet {
             descriptor_set,
             dependencies: vec![],
-        })
-        .collect()
+        }
     }
 }
 

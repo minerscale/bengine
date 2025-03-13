@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 pub mod buffer;
 pub mod command_buffer;
 pub mod debug_messenger;
@@ -16,11 +18,13 @@ pub mod shader_module;
 pub mod surface;
 pub mod swapchain;
 pub mod synchronization;
+pub mod texture;
 pub mod vertex;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
 use ash::vk;
+use buffer::MappedBuffer;
 use command_buffer::ActiveMultipleSubmitCommandBuffer;
 
 use device::Device;
@@ -33,6 +37,7 @@ use pipeline::Pipeline;
 use renderer::{Renderer, UniformBufferObject};
 use sampler::Sampler;
 
+use texture::Texture;
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
 use sdl2::event::Event;
@@ -41,76 +46,88 @@ use vertex::Vertex;
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 600;
 
-#[repr(C, align(32))]
+#[repr(C)]
 pub struct VertexPushConstants {
     model_transform: Isometry3,
-}
-
-#[repr(C, align(16))]
-pub struct FragmentPushConstants {
-    sun_direction: Vec3,
-}
-
-#[repr(C)]
-pub struct PushConstants {
-    vertex: VertexPushConstants,
-    fragment: FragmentPushConstants,
 }
 
 fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-    let (teapot, suzanne) =
+    let (teapot, suzanne, room) =
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
-                for set in &mut gfx.descriptor_sets {
-                    set.bind_texture(
-                        &gfx.device.device,
-                        1,
+                macro_rules! image {
+                    ($filename:literal) => {
                         Rc::new(Image::from_bytes(
                             &gfx.instance,
                             gfx.device.physical_device,
                             gfx.device.device.clone(),
                             cmd_buf,
-                            include_bytes!("../textures/agadwheel.png"),
-                        )),
-                        Rc::new(Sampler::new(
-                            &gfx.instance,
-                            gfx.device.device.clone(),
-                            &gfx.device.physical_device,
-                        )),
-                    );
+                            include_bytes!($filename),
+                        ))
+                    };
                 }
 
+                macro_rules! mesh {
+                    ($filename:literal) => {
+                        Rc::new(Mesh::new(
+                            &gfx.instance,
+                            gfx.device.physical_device,
+                            gfx.device.device.clone(),
+                            Cursor::new(include_bytes!($filename)),
+                            cmd_buf,
+                        ))
+                    };
+                }
+
+                macro_rules! texture {
+                    ($sampler:expr, $texture:expr) => {
+                        Rc::new(Texture::new(
+                            &gfx.device,
+                            $texture.clone(),
+                            $sampler.clone(),
+                            &gfx.descriptor_pool,
+                            &gfx.texture_layout,
+                        ))
+                    };
+                }
+
+                let sampler = Rc::new(Sampler::new(
+                    &gfx.instance,
+                    gfx.device.device.clone(),
+                    &gfx.device.physical_device,
+                ));
+
+                let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
+
+                let floor_tiles = texture!(
+                    sampler,
+                    image!("../test-scene/textures/floor_tiles_06_diff_1k.jpg")
+                );
+
                 (
-                    Mesh::new(
-                        &gfx.instance,
-                        gfx.device.physical_device,
-                        gfx.device.device.clone(),
-                        Cursor::new(include_bytes!("../test-objects/teapot-triangulated.obj")),
-                        cmd_buf,
-                    ),
-                    Mesh::new(
-                        &gfx.instance,
-                        gfx.device.physical_device,
-                        gfx.device.device.clone(),
-                        Cursor::new(include_bytes!("../test-objects/suzanne.obj")),
-                        cmd_buf,
-                    ),
+                    Object::Model((
+                        mesh!("../test-objects/teapot-triangulated.obj"),
+                        agad_texture.clone(),
+                    )),
+                    Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),
+                    Object::Model((mesh!("../test-scene/room.obj"), floor_tiles)),
                 )
             });
 
     let mut root_node = Node::empty()
-        .add_child(Node::empty().add_object(Object::Mesh(teapot.into())))
-        .add_child(Node::empty().add_child(Node::empty().add_object(Object::Mesh(suzanne.into()))));
+        .add_child(Node::empty().add_object(teapot))
+        .add_child(Node::empty().add_child(Node::empty().add_object(suzanne)))
+        .add_child(Node::empty().add_object(room));
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
-    let mut camera_position = Vec3::new(15.0, 5.0, 0.0);
+    let mut camera_position = Vec3::new(6.0, 5.0, 6.0);
 
     fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
-        Rotor3::from_rotation_yz(camera_rotation.y) * Rotor3::from_rotation_xz(camera_rotation.x)
+        Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
     }
 
     gfx.sdl_context.mouse().set_relative_mouse_mode(true);
@@ -133,25 +150,25 @@ fn main() {
             let camera_rotation = get_camera_rotor(inputs.camera_rotation);
 
             root_node.children[0].transform = Isometry3::new(
-                Vec3::new(0.0, -1.0, 0.0),
+                Vec3::new(0.0, 0.0, 0.0),
                 Rotor3::from_rotation_xz(1.0 * time_secs),
             );
 
             root_node.children[1].children[0].transform = Isometry3::new(
-                Vec3::new(7.5, 0.0, 0.0),
+                Vec3::new(5.0, 2.0, 0.0),
                 Rotor3::from_rotation_xz(3.0 * time_secs),
             );
 
             root_node.children[1].transform = Isometry3::new(
                 Vec3::new(0.0, 0.0, 0.0),
-                Rotor3::from_rotation_xz(2.0 * time_secs),
+                Rotor3::from_rotation_xz(0.5 * time_secs),
             );
 
             const MOVEMENT_SPEED: f32 = 5.0;
             let camera_movement = if inputs.forward {
-                -Vec3::unit_z()
-            } else if inputs.backward {
                 Vec3::unit_z()
+            } else if inputs.backward {
+                -Vec3::unit_z()
             } else {
                 Vec3::zero()
             } + if inputs.left {
@@ -170,19 +187,17 @@ fn main() {
                 Vec3::zero()
             };
 
-            camera_position += (vertical_movement
-                + camera_movement.rotated_by(camera_rotation.reversed()))
+            camera_position += (vertical_movement + camera_movement.rotated_by(camera_rotation))
                 * (MOVEMENT_SPEED * dt);
 
-            let camera_transform = Isometry3::new(camera_position, camera_rotation);
+            let camera_transform = Isometry3::new(camera_position, camera_rotation.reversed());
 
             inputs.recreate_swapchain = gfx.draw(
-                |device, pipeline, command_buffer, descriptor_set, uniform_buffer, image| {
+                |device, pipeline, command_buffer, uniform_buffer, image| {
                     record_command_buffer(
                         device,
                         pipeline,
                         command_buffer,
-                        &descriptor_set,
                         uniform_buffer,
                         image,
                         &root_node,
@@ -245,8 +260,7 @@ pub fn record_command_buffer(
     device: &Device,
     pipeline: &Pipeline,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
-    descriptor_set: &vk::DescriptorSet,
-    uniform_buffer: &mut [UniformBufferObject],
+    uniform_buffer: &mut MappedBuffer<UniformBufferObject>,
     image: &SwapchainImage,
     root_node: &Node,
     camera_transform: Isometry3,
@@ -299,66 +313,57 @@ pub fn record_command_buffer(
 
         device.cmd_set_scissor(cmd_buf, 0, &scissor);
 
-        let ubo = uniform_buffer.first_mut().unwrap();
+        let ubo = uniform_buffer.mapped_memory.first_mut().unwrap();
 
         *ubo = UniformBufferObject {
             view_transform: camera_transform,
         };
 
-        let descriptor_set = [*descriptor_set];
+        let uniform_buffer_descriptor_set = [*uniform_buffer.descriptor_set];
         device.cmd_bind_descriptor_sets(
             cmd_buf,
             vk::PipelineBindPoint::GRAPHICS,
             pipeline.pipeline_layout,
             0,
-            &descriptor_set,
+            &uniform_buffer_descriptor_set,
             &[],
         );
 
-        device.cmd_push_constants(
-            cmd_buf,
-            pipeline.pipeline_layout,
-            vk::ShaderStageFlags::VERTEX,
-            0,
-            std::slice::from_raw_parts(
-                addr_of!(camera_transform) as *const u8,
-                std::mem::size_of::<Isometry3>(),
-            ),
-        );
-
         for (transform, node) in root_node.breadth_first() {
-            let fragment_push_constants = FragmentPushConstants {
-                sun_direction: {
-                    let root_3 = 1.0 / f32::sqrt(3.0);
-                    Vec3::new(-root_3, root_3, root_3).rotated_by(transform.rotation.reversed())
-                },
+            let modelview_transform = Isometry3 {
+                translation: (transform.translation - camera_transform.translation).rotated_by(camera_transform.rotation),
+                rotation: camera_transform.rotation * transform.rotation,
             };
 
-            device.cmd_push_constants(
-                cmd_buf,
-                pipeline.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
-                offset_of!(VertexPushConstants, model_transform) as u32,
-                std::slice::from_raw_parts(
-                    addr_of!(transform) as *const u8,
-                    std::mem::size_of::<Isometry3>(),
-                ),
-            );
+            //let mut modelview_transform = transform.clone();
+
+            //modelview_transform.append_isometry(camera_transform);
 
             device.cmd_push_constants(
                 cmd_buf,
                 pipeline.pipeline_layout,
-                vk::ShaderStageFlags::FRAGMENT,
-                offset_of!(PushConstants, fragment) as u32,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                offset_of!(VertexPushConstants, model_transform) as u32,
                 std::slice::from_raw_parts(
-                    addr_of!(fragment_push_constants) as *const u8,
-                    std::mem::size_of::<FragmentPushConstants>(),
+                    addr_of!(modelview_transform) as *const u8,
+                    std::mem::size_of::<Isometry3>(),
                 ),
             );
 
             for object in &node.objects {
                 match object {
-                    Object::Mesh(mesh) => {
+                    Object::Model((mesh, texture)) => {
+                        let descriptor_sets = [texture.descriptor_set.descriptor_set];
+
+                        device.cmd_bind_descriptor_sets(
+                            cmd_buf,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            pipeline.pipeline_layout,
+                            1,
+                            &descriptor_sets,
+                            &[],
+                        );
+
                         let mesh = mesh.as_ref();
 
                         let vertex_buffers = [mesh.vertex_buffer.buffer];

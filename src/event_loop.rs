@@ -23,9 +23,9 @@ impl Inputs {
         type K = Keycode;
         match key {
             K::W => self.forward = pressed,
-            K::R => self.backward = pressed,
+            K::S => self.backward = pressed,
             K::A => self.left = pressed,
-            K::S => self.right = pressed,
+            K::D => self.right = pressed,
             K::SPACE => self.up = pressed,
             K::C => self.down = pressed,
             K::ESCAPE => self.quit = pressed,
@@ -51,7 +51,7 @@ impl EventLoop {
         mut process_event: G,
     ) {
         let mut inputs = Inputs::default().camera_rotation(Vec2::new(
-            std::f32::consts::FRAC_PI_2,
+            3.0 * std::f32::consts::FRAC_PI_4,
             std::f32::consts::FRAC_PI_8,
         ));
 

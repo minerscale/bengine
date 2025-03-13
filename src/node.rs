@@ -2,13 +2,13 @@ use std::{future::Future, rc::Rc};
 
 use genawaiter::{rc::gen, yield_};
 
-use crate::mesh::Mesh;
+use crate::{mesh::Mesh, texture::Texture};
 
 use ultraviolet::Isometry3;
 
 #[derive(Clone, Debug)]
 pub enum Object {
-    Mesh(Rc<Mesh>),
+    Model((Rc<Mesh>, Rc<Texture>)),
 }
 
 #[derive(Debug)]

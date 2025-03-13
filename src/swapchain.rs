@@ -4,7 +4,6 @@ use ash::{khr, vk};
 use log::info;
 
 use crate::{
-    descriptors::DescriptorSetLayout,
     device::Device,
     image::{find_supported_format, Image, SwapchainImage},
     pipeline::Pipeline,
@@ -27,7 +26,7 @@ impl Swapchain {
         surface_loader: &khr::surface::Instance,
         surface: vk::SurfaceKHR,
         extent: vk::Extent2D,
-        descriptor_set_layout: &DescriptorSetLayout,
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
         old_swapchain: Option<&Self>,
     ) -> Self {
         let swapchain_loader = match old_swapchain {
@@ -145,7 +144,7 @@ impl Swapchain {
             device,
             &extent,
             surface_format.format,
-            descriptor_set_layout,
+            descriptor_set_layouts,
         );
 
         let images = unsafe { swapchain_loader.get_swapchain_images(swapchain).unwrap() }

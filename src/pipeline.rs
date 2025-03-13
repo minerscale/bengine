@@ -5,8 +5,7 @@ use log::info;
 use ultraviolet::Vec4;
 
 use crate::{
-    descriptors::DescriptorSetLayout, device::Device, render_pass::RenderPass, shader_module::spv,
-    FragmentPushConstants, PushConstants, Vertex, VertexPushConstants,
+    device::Device, render_pass::RenderPass, shader_module::spv, Vertex, VertexPushConstants,
 };
 
 pub struct Pipeline {
@@ -23,7 +22,7 @@ impl Pipeline {
         device: &Device,
         extent: &vk::Extent2D,
         format: vk::Format,
-        descriptor_set_layout: &DescriptorSetLayout,
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
     ) -> Self {
         let vert_shader_module = spv!(device.device.clone(), "shader.vert");
         let frag_shader_module = spv!(device.device.clone(), "shader.frag");
@@ -32,8 +31,8 @@ impl Pipeline {
 
         let ez = f32::tan(fov / 2.0).recip();
         let camera_parameters = Vec4::new(
-            1.0,
-            1.0 * ((extent.width as f32) / (extent.height as f32)),
+            -1.0,
+            -1.0 * ((extent.width as f32) / (extent.height as f32)),
             ez,
             50.0,
         );
@@ -122,7 +121,7 @@ impl Pipeline {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::CLOCKWISE)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false);
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
@@ -153,26 +152,14 @@ impl Pipeline {
             .logic_op(vk::LogicOp::COPY)
             .attachments(&color_blend_attachment);
 
-        let push_constant_ranges = [
-            vk::PushConstantRange::default()
-                .offset(0)
-                .size(
-                    std::mem::size_of::<VertexPushConstants>()
-                        .try_into()
-                        .unwrap(),
-                )
-                .stage_flags(vk::ShaderStageFlags::VERTEX),
-            vk::PushConstantRange::default()
-                .offset(offset_of!(PushConstants, fragment) as u32)
-                .size(
-                    std::mem::size_of::<FragmentPushConstants>()
-                        .try_into()
-                        .unwrap(),
-                )
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
-        ];
-
-        let descriptor_set_layouts = [descriptor_set_layout.layout];
+        let push_constant_ranges = [vk::PushConstantRange::default()
+            .offset(0)
+            .size(
+                std::mem::size_of::<VertexPushConstants>()
+                    .try_into()
+                    .unwrap(),
+            )
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&descriptor_set_layouts)

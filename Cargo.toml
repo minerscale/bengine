@@ -6,7 +6,7 @@ edition = "2021"
 [profile.release]
 #debug = true
 lto = true
-strip = false
+#strip = false
 
 [dependencies]
 colored = "2.1.0"
@@ -30,7 +30,7 @@ features = ["auto-color"]
 [dependencies.image]
 version = "0.25.2"
 default-features = false
-features = ["png"]
+features = ["png", "jpeg"]
 
 [dependencies.ash]
 version = "0.38.0"
