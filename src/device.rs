@@ -197,7 +197,7 @@ impl Device {
     pub fn new(instance: &Instance, surface: &Surface) -> Self {
         let features = vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true);
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
-        /*let mut features13 = vk::PhysicalDeviceVulkan13Features::default()*/;
+        /*let mut features13 = vk::PhysicalDeviceVulkan13Features::default();*/
 
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
         let (physical_device, (graphics_index, present_index), mssa_samples) =
@@ -214,7 +214,11 @@ impl Device {
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
-        let device_extension_names = [khr::swapchain::NAME.as_ptr()];
+        let mut device_extension_names = [khr::swapchain::NAME.as_ptr()].to_vec();
+
+        if let Some(_) = unsafe { instance.enumerate_device_extension_properties(physical_device).unwrap().iter().find(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME) } {
+            device_extension_names.push(khr::portability_subset::NAME.as_ptr());
+        };        
 
         let priorities = [1.0];
 
