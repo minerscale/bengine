@@ -197,7 +197,7 @@ impl Device {
     pub fn new(instance: &Instance, surface: &Surface) -> Self {
         let features = vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true);
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
-        let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+        /*let mut features13 = vk::PhysicalDeviceVulkan13Features::default()*/;
 
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
         let (physical_device, (graphics_index, present_index), mssa_samples) =
@@ -227,7 +227,7 @@ impl Device {
             .enabled_extension_names(&device_extension_names)
             .enabled_features(&features)
             .push_next(&mut features12)
-            .push_next(&mut features13);
+            /*.push_next(&mut features13)*/;
 
         let device = Rc::new(
             unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap(),
