@@ -24,7 +24,7 @@ impl Texture {
     ) -> Self {
         let mut descriptor_set = descriptor_pool.create_descriptor_set(descriptor_set_layout);
 
-        descriptor_set.bind_texture(&device, 1, image.clone(), sampler.clone());
+        descriptor_set.bind_texture(device, 1, image.clone(), sampler.clone());
 
         Self { descriptor_set }
     }

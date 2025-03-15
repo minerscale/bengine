@@ -207,7 +207,7 @@ impl Image {
 
         let staging_buffer = Rc::new(Buffer::new(
             device.clone(),
-            &instance,
+            instance,
             physical_device,
             image_data,
             vk::BufferUsageFlags::TRANSFER_SRC,

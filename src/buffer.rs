@@ -23,6 +23,7 @@ pub struct MappedBuffer<T: Copy + 'static> {
 }
 
 impl<T: Copy + 'static> MappedBuffer<T> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: Rc<ash::Device>,
         instance: &ash::Instance,

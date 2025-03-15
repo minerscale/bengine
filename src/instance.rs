@@ -8,6 +8,8 @@ use log::info;
 
 use crate::debug_messenger::ENABLE_VALIDATION_LAYERS;
 
+pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_2;
+
 pub struct Instance {
     instance: ash::Instance,
 }
@@ -43,21 +45,25 @@ impl Instance {
             extension_names.push(ext::debug_utils::NAME.as_ptr());
         }
 
-        extension_names.push(c"VK_KHR_portability_enumeration".as_ptr());
-        //extension_names.push(c"VK_KHR_portability_subset".as_ptr());
+        let instance_create_flags = if cfg!(target_os = "macos") {
+            extension_names.push(c"VK_KHR_portability_enumeration".as_ptr());
+            vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
+        } else {
+            vk::InstanceCreateFlags::empty()
+        };
 
         let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
             .application_version(vk::make_api_version(0, 1, 0, 0))
             .engine_name(c"No Engine")
             .engine_version(vk::make_api_version(0, 1, 0, 0))
-            .api_version(vk::API_VERSION_1_3);
+            .api_version(TARGET_API_VERSION);
 
         let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_layer_names(&layers_names_raw)
             .enabled_extension_names(&extension_names)
-            .flags(vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR);
+            .flags(instance_create_flags);
 
         Self {
             instance: unsafe { entry.create_instance(&create_info, None) }.unwrap(),

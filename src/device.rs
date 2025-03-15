@@ -3,7 +3,10 @@ use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, rc::
 use ash::{khr, vk};
 use log::info;
 
-use crate::{instance::Instance, surface::Surface};
+use crate::{
+    instance::{Instance, TARGET_API_VERSION},
+    surface::Surface,
+};
 
 pub struct Device {
     pub device: Rc<ash::Device>,
@@ -22,8 +25,9 @@ fn pick_physical_device(
     surface: &Surface,
     physical_devices: Vec<vk::PhysicalDevice>,
     requested_features: &vk::PhysicalDeviceFeatures,
+    requested_features11: &vk::PhysicalDeviceVulkan11Features,
     requested_features12: &vk::PhysicalDeviceVulkan12Features,
-    //requested_features13: &vk::PhysicalDeviceVulkan13Features,
+    requested_features13: &vk::PhysicalDeviceVulkan13Features,
 ) -> Option<(vk::PhysicalDevice, (u32, u32), vk::SampleCountFlags)> {
     fn feature_subset(
         requested_features: &vk::PhysicalDeviceFeatures,
@@ -36,6 +40,35 @@ fn pick_physical_device(
         let features_to_slice = |features: &vk::PhysicalDeviceFeatures| unsafe {
             slice_from_raw_parts(
                 &features.robust_buffer_access as *const vk::Bool32,
+                features_len,
+            )
+            .as_ref()
+            .unwrap()
+        };
+
+        !zip(
+            features_to_slice(requested_features),
+            features_to_slice(capabilities),
+        )
+        .any(|(&requested, &capability)| requested != 0 && capability == 0)
+    }
+
+    fn feature_subset11(
+        requested_features: &vk::PhysicalDeviceVulkan11Features,
+        capabilities: &vk::PhysicalDeviceVulkan11Features,
+    ) -> bool {
+        let features_len = (size_of::<vk::PhysicalDeviceVulkan11Features>()
+            - offset_of!(
+                vk::PhysicalDeviceVulkan11Features,
+                storage_buffer16_bit_access
+            ))
+            / size_of::<vk::Bool32>();
+
+        // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
+        //         effectively making it an array and we can cast it accordingly.
+        let features_to_slice = |features: &vk::PhysicalDeviceVulkan11Features| unsafe {
+            slice_from_raw_parts(
+                &features.storage_buffer16_bit_access as *const vk::Bool32,
                 features_len,
             )
             .as_ref()
@@ -78,7 +111,7 @@ fn pick_physical_device(
         .any(|(&requested, &capability)| requested != 0 && capability == 0)
     }
 
-    /*fn feature_subset13(
+    fn feature_subset13(
         requested_features: &vk::PhysicalDeviceVulkan13Features,
         capabilities: &vk::PhysicalDeviceVulkan13Features,
     ) -> bool {
@@ -102,22 +135,52 @@ fn pick_physical_device(
             features_to_slice(capabilities),
         )
         .any(|(&requested, &capability)| requested != 0 && capability == 0)
-    }*/
+    }
 
     physical_devices.iter().find_map(|physical_device| unsafe {
-        /*let mut features13 = vk::PhysicalDeviceVulkan13Features::default();*/
-        let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
-        let mut features = vk::PhysicalDeviceFeatures2::default()
-            .push_next(&mut features12)
-            /*.push_next(&mut features13)*/;
+        if TARGET_API_VERSION < vk::API_VERSION_1_1 {
+            let features = instance.get_physical_device_features(*physical_device);
 
-        instance.get_physical_device_features2(*physical_device, &mut features);
+            if !feature_subset(requested_features, &features) {
+                return None;
+            }
+        } else {
+            let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
+            let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
+            let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
 
-        if !(feature_subset(requested_features, &features.features)
-            && feature_subset12(requested_features12, &features12)
-            /*&& feature_subset13(requested_features13, &features13)*/)
-        {
-            return None;
+            let features = vk::PhysicalDeviceFeatures2::default();
+
+            let mut features = if TARGET_API_VERSION >= vk::API_VERSION_1_1 {
+                let features = features.push_next(&mut features11);
+
+                if TARGET_API_VERSION >= vk::API_VERSION_1_2 {
+                    let features = features.push_next(&mut features12);
+
+                    if TARGET_API_VERSION >= vk::API_VERSION_1_3 {
+                        features.push_next(&mut features13)
+                    } else {
+                        features
+                    }
+                } else {
+                    features
+                }
+            } else {
+                features
+            };
+
+            instance.get_physical_device_features2(*physical_device, &mut features);
+
+            if !feature_subset(requested_features, &features.features)
+                || ((TARGET_API_VERSION >= vk::API_VERSION_1_1)
+                    && !feature_subset11(requested_features11, &features11))
+                || ((TARGET_API_VERSION >= vk::API_VERSION_1_2)
+                    && !feature_subset12(requested_features12, &features12))
+                || ((TARGET_API_VERSION >= vk::API_VERSION_1_3)
+                    && !feature_subset13(requested_features13, &features13))
+            {
+                return None;
+            }
         }
 
         let physical_device_properties = instance.get_physical_device_properties(*physical_device);
@@ -130,7 +193,7 @@ fn pick_physical_device(
                 .framebuffer_depth_sample_counts;
 
         let max_usable_sample_count = 'label: {
-            /*if sample_count.contains(vk::SampleCountFlags::TYPE_64) {
+            if sample_count.contains(vk::SampleCountFlags::TYPE_64) {
                 break 'label vk::SampleCountFlags::TYPE_64;
             }
             if sample_count.contains(vk::SampleCountFlags::TYPE_32) {
@@ -138,7 +201,7 @@ fn pick_physical_device(
             }
             if sample_count.contains(vk::SampleCountFlags::TYPE_16) {
                 break 'label vk::SampleCountFlags::TYPE_16;
-            }*/
+            }
             if sample_count.contains(vk::SampleCountFlags::TYPE_8) {
                 break 'label vk::SampleCountFlags::TYPE_8;
             }
@@ -152,7 +215,9 @@ fn pick_physical_device(
             vk::SampleCountFlags::TYPE_1
         };
 
-        info!("Multisampling level: {max_usable_sample_count:?}");
+        let chosen_sample_count = max_usable_sample_count.clamp(vk::SampleCountFlags::TYPE_1, vk::SampleCountFlags::TYPE_8);
+
+        info!("Multisampling level: {chosen_sample_count:?}");
 
         let mut graphics_index = Option::<u32>::None;
         let mut present_index = Option::<u32>::None;
@@ -184,7 +249,7 @@ fn pick_physical_device(
                     Some((
                         *physical_device,
                         (graphics_index, present_index),
-                        max_usable_sample_count,
+                        chosen_sample_count,
                     ))
                 } else {
                     None
@@ -196,8 +261,9 @@ fn pick_physical_device(
 impl Device {
     pub fn new(instance: &Instance, surface: &Surface) -> Self {
         let features = vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true);
+        let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
-        /*let mut features13 = vk::PhysicalDeviceVulkan13Features::default();*/
+        let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
 
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
         let (physical_device, (graphics_index, present_index), mssa_samples) =
@@ -206,8 +272,9 @@ impl Device {
                 surface,
                 physical_devices,
                 &features,
+                &features11,
                 &features12,
-                //&features13,
+                &features13,
             )
             .expect("Couldn't find suitable device");
 
@@ -216,9 +283,15 @@ impl Device {
 
         let mut device_extension_names = [khr::swapchain::NAME.as_ptr()].to_vec();
 
-        if let Some(_) = unsafe { instance.enumerate_device_extension_properties(physical_device).unwrap().iter().find(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME) } {
+        if unsafe {
+            instance
+                .enumerate_device_extension_properties(physical_device)
+                .unwrap()
+                .iter()
+                .find(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME)
+        }.is_some() {
             device_extension_names.push(khr::portability_subset::NAME.as_ptr());
-        };        
+        };
 
         let priorities = [1.0];
 
@@ -230,8 +303,9 @@ impl Device {
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&device_extension_names)
             .enabled_features(&features)
+            .push_next(&mut features11)
             .push_next(&mut features12)
-            /*.push_next(&mut features13)*/;
+            .push_next(&mut features13);
 
         let device = Rc::new(
             unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap(),

@@ -331,7 +331,8 @@ pub fn record_command_buffer(
 
         for (transform, node) in root_node.breadth_first() {
             let modelview_transform = Isometry3 {
-                translation: (transform.translation - camera_transform.translation).rotated_by(camera_transform.rotation),
+                translation: (transform.translation - camera_transform.translation)
+                    .rotated_by(camera_transform.rotation),
                 rotation: camera_transform.rotation * transform.rotation,
             };
 

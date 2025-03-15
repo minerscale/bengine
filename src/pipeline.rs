@@ -162,7 +162,7 @@ impl Pipeline {
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(&descriptor_set_layouts)
+            .set_layouts(descriptor_set_layouts)
             .push_constant_ranges(&push_constant_ranges);
 
         let pipeline_layout = unsafe {

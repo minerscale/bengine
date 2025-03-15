@@ -85,7 +85,7 @@ impl DescriptorSet {
 
 impl DescriptorSetLayout {
     pub fn new(device: Rc<ash::Device>, bindings: &[vk::DescriptorSetLayoutBinding]) -> Self {
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(bindings);
 
         let layout = unsafe {
             device
