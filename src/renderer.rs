@@ -87,9 +87,8 @@ impl Renderer {
                 framebuffer_resized,
             ) {
                 (Ok((image_index, true)), _) | (Ok((image_index, false)), true) => {
-                    //info!("recreated swapchain because it is suboptimal.");
-                    info!("the swapchain is suboptimal but I ignored it and didn't update it anyway");
-                    (image_index, false)
+                    info!("recreated swapchain because it is suboptimal.");
+                    (image_index, true)
                 }
                 (Ok((image_index, false)), false) => (image_index, false),
                 (Err(vk::Result::ERROR_OUT_OF_DATE_KHR), _) => {

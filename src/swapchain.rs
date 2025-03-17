@@ -56,6 +56,8 @@ impl Swapchain {
         let width = u32::clamp(extent.width, lb.width, ub.width);
         let height = u32::clamp(extent.height, lb.height, ub.height);
 
+        info!("new swapchain width: {width}, {height}");
+
         let pre_transform = if surface_capabilities
             .supported_transforms
             .contains(vk::SurfaceTransformFlagsKHR::IDENTITY)
