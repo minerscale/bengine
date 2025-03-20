@@ -215,7 +215,8 @@ fn pick_physical_device(
             vk::SampleCountFlags::TYPE_1
         };
 
-        let chosen_sample_count = max_usable_sample_count.clamp(vk::SampleCountFlags::TYPE_1, vk::SampleCountFlags::TYPE_8);
+        let chosen_sample_count = max_usable_sample_count
+            .clamp(vk::SampleCountFlags::TYPE_1, vk::SampleCountFlags::TYPE_8);
 
         info!("Multisampling level: {chosen_sample_count:?}");
 
@@ -289,7 +290,9 @@ impl Device {
                 .unwrap()
                 .iter()
                 .find(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME)
-        }.is_some() {
+        }
+        .is_some()
+        {
             device_extension_names.push(khr::portability_subset::NAME.as_ptr());
         };
 

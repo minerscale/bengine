@@ -1,5 +1,4 @@
 use ash::vk;
-use log::info;
 use sdl2::sys::SDL_Vulkan_GetDrawableSize;
 use ultraviolet::Isometry3;
 
@@ -87,13 +86,11 @@ impl Renderer {
                 framebuffer_resized,
             ) {
                 (Ok((image_index, true)), _) | (Ok((image_index, false)), true) => {
-                    info!("recreated swapchain because it is suboptimal.");
                     (image_index, true)
                 }
                 (Ok((image_index, false)), false) => (image_index, false),
                 (Err(vk::Result::ERROR_OUT_OF_DATE_KHR), _) => {
                     self.recreate_swapchain();
-                    info!("recreated swapchain before fence reset");
                     return false;
                 }
                 (Err(_), _) => {
@@ -144,8 +141,7 @@ impl Renderer {
             {
                 Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                     recreate_swapchain = true;
-                    info!("recreated swapchain after presentation");
-                },
+                }
                 Err(e) => panic!("{}", e),
                 _ => (),
             };

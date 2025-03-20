@@ -1,7 +1,7 @@
 use std::{mem::ManuallyDrop, ops::Deref};
 
 use ash::{khr, vk};
-use log::info;
+use log::{info, warn};
 
 use crate::{
     device::Device,
@@ -53,10 +53,22 @@ impl Swapchain {
         let ub = surface_capabilities.max_image_extent;
         let lb = surface_capabilities.min_image_extent;
 
-        let width = u32::clamp(extent.width, lb.width, ub.width);
-        let height = u32::clamp(extent.height, lb.height, ub.height);
+        if extent.width < lb.width
+            || extent.height < lb.height
+            || extent.width > ub.width
+            || extent.height > ub.height
+        {
+            warn!(
+                "requested swapchain image size is out of bounds. Requested extent: {}x{}, lower bound: {}x{}, upper bound: {}x{}",
+                extent.width, extent.height, lb.width, lb.height, ub.width, ub.height
+            );
+        }
 
-        info!("new swapchain width: {width}, {height}");
+        /*
+            let width = u32::clamp(extent.width, lb.width, ub.width);
+            let height = u32::clamp(extent.height, lb.height, ub.height);
+            let extent = vk::Extent2D { width, height };
+        */
 
         let pre_transform = if surface_capabilities
             .supported_transforms
@@ -77,7 +89,6 @@ impl Swapchain {
             .find(|&mode| mode == vk::PresentModeKHR::FIFO_RELAXED)
             .unwrap_or(vk::PresentModeKHR::FIFO);
 
-        let extent = vk::Extent2D { width, height };
         let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
             .surface(surface)
             .min_image_count(desired_image_count)
