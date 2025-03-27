@@ -37,10 +37,15 @@ version = "0.38.0"
 default-features = false
 features = ["linked", "debug", "std"]
 
-[dependencies.sdl2]
+[target.'cfg(not(any(target_os = "linux")))'.dependencies.sdl2]
 version = "0.37.0"
 default-features = false
 features = ["raw-window-handle", "static-link", "bundled"]
+
+[target.'cfg(any(target_os = "linux"))'.dependencies.sdl2]
+version = "0.37.0"
+default-features = false
+features = ["raw-window-handle"]
 
 [build-dependencies]
 anyhow = "1.0.89"
