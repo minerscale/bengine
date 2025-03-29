@@ -53,7 +53,7 @@ impl Swapchain {
         let ub = surface_capabilities.max_image_extent;
         let lb = surface_capabilities.min_image_extent;
 
-        if extent.width < lb.width
+        /*if extent.width < lb.width
             || extent.height < lb.height
             || extent.width > ub.width
             || extent.height > ub.height
@@ -62,13 +62,11 @@ impl Swapchain {
                 "requested swapchain image size is out of bounds. Requested extent: {}x{}, lower bound: {}x{}, upper bound: {}x{}",
                 extent.width, extent.height, lb.width, lb.height, ub.width, ub.height
             );
-        }
+        }*/
 
-        /*
-            let width = u32::clamp(extent.width, lb.width, ub.width);
-            let height = u32::clamp(extent.height, lb.height, ub.height);
-            let extent = vk::Extent2D { width, height };
-        */
+        let width = u32::clamp(extent.width, lb.width, ub.width);
+        let height = u32::clamp(extent.height, lb.height, ub.height);
+        let extent = vk::Extent2D { width, height };
 
         let pre_transform = if surface_capabilities
             .supported_transforms
