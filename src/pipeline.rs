@@ -34,7 +34,7 @@ impl Pipeline {
             -1.0,
             -1.0 * ((extent.width as f32) / (extent.height as f32)),
             ez,
-            50.0,
+            1000.0,
         );
 
         let specialization_map_entries = [

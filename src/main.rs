@@ -55,7 +55,7 @@ fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-    let (teapot, suzanne, room) =
+    let (teapot, suzanne, room, grass) =
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
                 macro_rules! image {
@@ -101,6 +101,10 @@ fn main() {
                 ));
 
                 let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
+                let grass = texture!(
+                    sampler,
+                    image!("../test-scene/textures/green-grass-1024x1024.png")
+                );
 
                 let floor_tiles = texture!(
                     sampler,
@@ -114,13 +118,15 @@ fn main() {
                     )),
                     Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),
                     Object::Model((mesh!("../test-scene/room.obj"), floor_tiles)),
+                    Object::Model((mesh!("../test-scene/grass.obj"), grass)),
                 )
             });
 
     let mut root_node = Node::empty()
         .add_child(Node::empty().add_object(teapot))
         .add_child(Node::empty().add_child(Node::empty().add_object(suzanne)))
-        .add_child(Node::empty().add_object(room));
+        .add_child(Node::empty().add_object(room))
+        .add_child(Node::empty().add_object(grass));
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 

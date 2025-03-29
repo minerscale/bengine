@@ -1,9 +1,20 @@
 use ash::vk;
-//use sdl2::sys::SDL_Vulkan_GetDrawableSize;
+use sdl2::sys::SDL_Vulkan_GetDrawableSize;
 use ultraviolet::Isometry3;
 
 use crate::{
-    buffer::MappedBuffer, command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer}, debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS}, descriptors::{DescriptorPool, DescriptorSetLayout}, device::Device, image::SwapchainImage, instance::Instance, pipeline::Pipeline, surface::Surface, swapchain::Swapchain, synchronization::{Fence, Semaphore}, HEIGHT, WIDTH
+    buffer::MappedBuffer,
+    command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer},
+    debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
+    descriptors::{DescriptorPool, DescriptorSetLayout},
+    device::Device,
+    image::SwapchainImage,
+    instance::Instance,
+    pipeline::Pipeline,
+    surface::Surface,
+    swapchain::Swapchain,
+    synchronization::{Fence, Semaphore},
+    HEIGHT, WIDTH,
 };
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
@@ -147,25 +158,25 @@ impl Renderer {
     }
 
     pub fn recreate_swapchain(&mut self) {
-        /*let mut width: std::ffi::c_int = 0;
+        let mut width: std::ffi::c_int = 0;
         let mut height: std::ffi::c_int = 0;
 
-        unsafe {
-            SDL_Vulkan_GetDrawableSize(
-                self.window.raw(),
-                (&mut width) as *mut std::ffi::c_int,
-                (&mut height) as *mut std::ffi::c_int,
-            )
+        if cfg!(target_os = "macos") {
+            width = WIDTH.try_into().unwrap();
+            height = HEIGHT.try_into().unwrap();
+        } else {
+            unsafe {
+                SDL_Vulkan_GetDrawableSize(
+                    self.window.raw(),
+                    (&mut width) as *mut std::ffi::c_int,
+                    (&mut height) as *mut std::ffi::c_int,
+                )
+            }
         };
 
         let extent = vk::Extent2D {
             width: width.try_into().unwrap(),
             height: height.try_into().unwrap(),
-        };*/
-
-        let extent = vk::Extent2D {
-            width: WIDTH,
-            height: HEIGHT
         };
 
         self.wait_idle();
@@ -197,10 +208,9 @@ impl Renderer {
                 .video()
                 .unwrap()
                 .window("bengine", width, height)
-                .allow_highdpi()
                 .vulkan()
                 .position_centered()
-                //.resizable()
+                .resizable()
                 .build()
                 .map_err(|e| e.to_string())
                 .unwrap()

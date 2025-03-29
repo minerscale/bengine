@@ -7,7 +7,7 @@ use crate::{
     sampler::Sampler,
 };
 
-pub const MAX_TEXTURES: u32 = 2;
+pub const MAX_TEXTURES: u32 = 3;
 
 #[derive(Debug)]
 pub struct Texture {
