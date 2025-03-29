@@ -1,7 +1,7 @@
 use std::{mem::ManuallyDrop, ops::Deref};
 
 use ash::{khr, vk};
-use log::{info, warn};
+use log::info;
 
 use crate::{
     device::Device,
