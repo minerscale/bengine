@@ -21,15 +21,28 @@ pub struct Inputs {
 impl Inputs {
     pub fn set_input(&mut self, key: sdl2::keyboard::Keycode, pressed: bool) {
         type K = Keycode;
-        match key {
-            K::W => self.forward = pressed,
-            K::S => self.backward = pressed,
-            K::A => self.left = pressed,
-            K::D => self.right = pressed,
-            K::SPACE => self.up = pressed,
-            K::C => self.down = pressed,
-            K::ESCAPE => self.quit = pressed,
-            _ => (),
+        if cfg!(feature = "colemak") {
+            match key {
+                K::W => self.forward = pressed,
+                K::R => self.backward = pressed,
+                K::A => self.left = pressed,
+                K::S => self.right = pressed,
+                K::SPACE => self.up = pressed,
+                K::C => self.down = pressed,
+                K::ESCAPE => self.quit = pressed,
+                _ => (),
+            }
+        } else {
+            match key {
+                K::W => self.forward = pressed,
+                K::S => self.backward = pressed,
+                K::A => self.left = pressed,
+                K::D => self.right = pressed,
+                K::SPACE => self.up = pressed,
+                K::C => self.down = pressed,
+                K::ESCAPE => self.quit = pressed,
+                _ => (),
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 pub mod buffer;
+pub mod collision;
 pub mod command_buffer;
 pub mod debug_messenger;
 pub mod descriptors;
@@ -25,11 +26,13 @@ use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
 use ash::vk;
 use buffer::MappedBuffer;
+use collision::{collide, Polyhedron};
 use command_buffer::ActiveMultipleSubmitCommandBuffer;
 
 use device::Device;
 use event_loop::EventLoop;
 use image::{Image, SwapchainImage};
+use itertools::Itertools;
 use log::info;
 use mesh::Mesh;
 use node::{Node, Object};
@@ -55,7 +58,13 @@ fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-    let (teapot, suzanne, room, grass) =
+    macro_rules! collider {
+        ($filename:literal) => {
+            node::Object::Collider(Polyhedron::new(Cursor::new(include_bytes!($filename))))
+        };
+    }
+
+    let (/*teapot, suzanne,*/ room, cube, icosehedron) =
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
                 macro_rules! image {
@@ -100,33 +109,42 @@ fn main() {
                     &gfx.device.physical_device,
                 ));
 
-                let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
-                let grass = texture!(
-                    sampler,
-                    image!("../test-scene/textures/green-grass-1024x1024.png")
-                );
+                //let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
 
                 let floor_tiles = texture!(
                     sampler,
                     image!("../test-scene/textures/floor_tiles_06_diff_1k.jpg")
                 );
 
+                let middle_grey = texture!(sampler, image!("../test-scene/middle-grey.png"));
+
                 (
-                    Object::Model((
+                    /*Object::Model((
                         mesh!("../test-objects/teapot-triangulated.obj"),
                         agad_texture.clone(),
                     )),
-                    Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),
+                    Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),*/
                     Object::Model((mesh!("../test-scene/room.obj"), floor_tiles)),
-                    Object::Model((mesh!("../test-scene/grass.obj"), grass)),
+                    Object::Model((mesh!("../test-scene/cube.obj"), middle_grey.clone())),
+                    Object::Model((mesh!("../test-scene/icosehedron.obj"), middle_grey)),
                 )
             });
 
     let mut root_node = Node::empty()
-        .add_child(Node::empty().add_object(teapot))
-        .add_child(Node::empty().add_child(Node::empty().add_object(suzanne)))
-        .add_child(Node::empty().add_object(room))
-        .add_child(Node::empty().add_object(grass));
+        .add_child(
+            Node::empty() /*.add_object(teapot)*/
+                .add_object(icosehedron)
+                .add_object(collider!("../test-scene/icosehedron.obj")),
+        )
+        .add_child(
+            Node::empty().add_child(
+                Node::empty()
+                    //.add_object(suzanne)
+                    .add_object(cube)
+                    .add_object(collider!("../test-scene/cube.obj")),
+            ),
+        )
+        .add_child(Node::empty().add_object(room));
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
@@ -157,18 +175,16 @@ fn main() {
 
             root_node.children[0].transform = Isometry3::new(
                 Vec3::new(0.0, 0.0, 0.0),
-                Rotor3::from_rotation_xz(1.0 * time_secs),
+                Rotor3::from_rotation_xz(0.0 * time_secs),
             );
 
-            root_node.children[1].children[0].transform = Isometry3::new(
-                Vec3::new(5.0, 2.0, 0.0),
-                Rotor3::from_rotation_xz(3.0 * time_secs),
-            );
+            root_node.children[1].children[0].transform =
+                Isometry3::new(Vec3::new(0.0, 0.0, 5.0), Rotor3::from_rotation_xz(1.0));
 
-            root_node.children[1].transform = Isometry3::new(
+            /*root_node.children[1].transform = Isometry3::new(
                 Vec3::new(0.0, 0.0, 0.0),
                 Rotor3::from_rotation_xz(0.5 * time_secs),
-            );
+            );*/
 
             const MOVEMENT_SPEED: f32 = 5.0;
             let camera_movement = if inputs.forward {
@@ -197,6 +213,22 @@ fn main() {
                 * (MOVEMENT_SPEED * dt);
 
             let camera_transform = Isometry3::new(camera_position, camera_rotation.reversed());
+
+            root_node.children[1].transform = Isometry3::new(camera_position, camera_rotation);
+
+            let mut collisions_to_check = vec![];
+            // handle collisions
+            for (transform, node) in root_node.breadth_first() {
+                for object in &node.objects {
+                    if let Object::Collider(polyhedron) = object {
+                        collisions_to_check.push(polyhedron.transform(transform));
+                    }
+                }
+            }
+
+            for (p, q) in collisions_to_check.iter().tuple_combinations() {
+                println!("{:?}", collide(p, q));
+            }
 
             inputs.recreate_swapchain = gfx.draw(
                 |device, pipeline, command_buffer, uniform_buffer, image| {
@@ -342,10 +374,6 @@ pub fn record_command_buffer(
                 rotation: camera_transform.rotation * transform.rotation,
             };
 
-            //let mut modelview_transform = transform.clone();
-
-            //modelview_transform.append_isometry(camera_transform);
-
             device.cmd_push_constants(
                 cmd_buf,
                 pipeline.pipeline_layout,
@@ -358,41 +386,39 @@ pub fn record_command_buffer(
             );
 
             for object in &node.objects {
-                match object {
-                    Object::Model((mesh, texture)) => {
-                        let descriptor_sets = [texture.descriptor_set.descriptor_set];
+                if let Object::Model((mesh, texture)) = object {
+                    let descriptor_sets = [texture.descriptor_set.descriptor_set];
 
-                        device.cmd_bind_descriptor_sets(
-                            cmd_buf,
-                            vk::PipelineBindPoint::GRAPHICS,
-                            pipeline.pipeline_layout,
-                            1,
-                            &descriptor_sets,
-                            &[],
-                        );
+                    device.cmd_bind_descriptor_sets(
+                        cmd_buf,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        pipeline.pipeline_layout,
+                        1,
+                        &descriptor_sets,
+                        &[],
+                    );
 
-                        let mesh = mesh.as_ref();
+                    let mesh = mesh.as_ref();
 
-                        let vertex_buffers = [mesh.vertex_buffer.buffer];
-                        let offsets = [vk::DeviceSize::from(0u64)];
+                    let vertex_buffers = [mesh.vertex_buffer.buffer];
+                    let offsets = [vk::DeviceSize::from(0u64)];
 
-                        device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
-                        device.cmd_bind_index_buffer(
-                            cmd_buf,
-                            mesh.index_buffer.buffer,
-                            0,
-                            vk::IndexType::UINT32,
-                        );
+                    device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
+                    device.cmd_bind_index_buffer(
+                        cmd_buf,
+                        mesh.index_buffer.buffer,
+                        0,
+                        vk::IndexType::UINT32,
+                    );
 
-                        device.cmd_draw_indexed(
-                            cmd_buf,
-                            mesh.index_buffer.len().try_into().unwrap(),
-                            1,
-                            0,
-                            0,
-                            0,
-                        );
-                    }
+                    device.cmd_draw_indexed(
+                        cmd_buf,
+                        mesh.index_buffer.len().try_into().unwrap(),
+                        1,
+                        0,
+                        0,
+                        0,
+                    );
                 }
             }
         }

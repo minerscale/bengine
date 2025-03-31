@@ -2,13 +2,14 @@ use std::{future::Future, rc::Rc};
 
 use genawaiter::{rc::gen, yield_};
 
-use crate::{mesh::Mesh, texture::Texture};
+use crate::{collision::Polyhedron, mesh::Mesh, texture::Texture};
 
-use ultraviolet::Isometry3;
+use ultraviolet::{Isometry3, Vec3};
 
 #[derive(Clone, Debug)]
 pub enum Object {
     Model((Rc<Mesh>, Rc<Texture>)),
+    Collider(Polyhedron<Vec3>),
 }
 
 #[derive(Debug)]

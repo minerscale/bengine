@@ -19,7 +19,7 @@ impl Mesh {
         file: T,
         cmd_buf: &mut C,
     ) -> Self {
-        let teapot: Obj<Vertex, u32> = load_obj(file).unwrap();
+        let mesh: Obj<Vertex, u32> = load_obj(file).unwrap();
 
         let vertex_buffer = Buffer::new_staged(
             instance,
@@ -27,7 +27,7 @@ impl Mesh {
             physical_device,
             cmd_buf,
             vk::BufferUsageFlags::VERTEX_BUFFER,
-            &teapot.vertices,
+            &mesh.vertices,
         );
 
         let index_buffer = Buffer::new_staged(
@@ -36,7 +36,7 @@ impl Mesh {
             physical_device,
             cmd_buf,
             vk::BufferUsageFlags::INDEX_BUFFER,
-            &teapot.indices,
+            &mesh.indices,
         );
 
         Self {
