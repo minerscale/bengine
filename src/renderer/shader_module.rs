@@ -10,7 +10,7 @@ pub struct ShaderModule {
 
 macro_rules! spv {
     ($device:expr, $filename:literal) => {{
-        crate::shader_module::ShaderModule::new(
+        crate::renderer::shader_module::ShaderModule::new(
             unsafe {
                 let mut code = std::io::Cursor::new(
                     &(include_bytes!(concat!(env!("OUT_DIR"), "/", $filename, ".spv")))[..],

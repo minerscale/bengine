@@ -1,58 +1,36 @@
 #![windows_subsystem = "windows"]
 
-pub mod buffer;
-pub mod collision;
-pub mod command_buffer;
-pub mod debug_messenger;
-pub mod descriptors;
-pub mod device;
-pub mod event_loop;
-pub mod image;
-pub mod instance;
-pub mod mesh;
-pub mod node;
-pub mod pipeline;
-pub mod render_pass;
-pub mod renderer;
-pub mod sampler;
-pub mod shader_module;
-pub mod surface;
-pub mod swapchain;
-pub mod synchronization;
-pub mod texture;
-pub mod vertex;
+mod collision;
+mod event_loop;
+mod node;
+pub mod physics;
+mod renderer;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
-use ash::vk;
-use buffer::MappedBuffer;
-use collision::{collide, Polyhedron};
-use command_buffer::ActiveMultipleSubmitCommandBuffer;
+use physics::RigidBody;
+use renderer::{
+    buffer::MappedBuffer,
+    command_buffer::ActiveMultipleSubmitCommandBuffer,
+    device::Device,
+    image::{Image, SwapchainImage},
+    mesh::Mesh,
+    pipeline::{Pipeline, VertexPushConstants},
+    sampler::Sampler,
+    texture::Texture,
+    HEIGHT, WIDTH,
+};
 
-use device::Device;
+use ash::vk;
+use collision::{collide, Polyhedron, TransformedPolyhedron};
 use event_loop::EventLoop;
-use image::{Image, SwapchainImage};
 use itertools::Itertools;
 use log::info;
-use mesh::Mesh;
 use node::{Node, Object};
-use pipeline::Pipeline;
 use renderer::{Renderer, UniformBufferObject};
-use sampler::Sampler;
-
-use texture::Texture;
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
 use sdl2::event::Event;
-use vertex::Vertex;
-
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
-
-#[repr(C)]
-pub struct VertexPushConstants {
-    model_transform: Isometry3,
-}
 
 fn main() {
     env_logger::init();
@@ -64,7 +42,14 @@ fn main() {
         };
     }
 
-    let (/*teapot, suzanne,*/ room, cube, icosehedron) =
+    let cube_scale = Vec3::new(0.01, 1.0, 2.5);
+    let cube_mass = 30.0;
+    let cube_moment_of_inertia = cube_mass / 12.0 * {
+        let (x, y, z) = cube_scale.into();
+        Vec3::new(y * y + z * z, x * x + z * z, x * x + y * y)
+    };
+
+    let (/*teapot, suzanne,*/ room, cube /*icosehedron*/) =
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
                 macro_rules! image {
@@ -80,13 +65,14 @@ fn main() {
                 }
 
                 macro_rules! mesh {
-                    ($filename:literal) => {
+                    ($filename:literal, $scale:expr) => {
                         Rc::new(Mesh::new(
                             &gfx.instance,
                             gfx.device.physical_device,
                             gfx.device.device.clone(),
                             Cursor::new(include_bytes!($filename)),
                             cmd_buf,
+                            $scale,
                         ))
                     };
                 }
@@ -124,25 +110,34 @@ fn main() {
                         agad_texture.clone(),
                     )),
                     Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),*/
-                    Object::Model((mesh!("../test-scene/room.obj"), floor_tiles)),
-                    Object::Model((mesh!("../test-scene/cube.obj"), middle_grey.clone())),
-                    Object::Model((mesh!("../test-scene/icosehedron.obj"), middle_grey)),
+                    Object::Model((mesh!("../test-scene/room.obj", None), floor_tiles)),
+                    Object::Model((
+                        mesh!("../test-scene/cube.obj", Some(cube_scale)),
+                        middle_grey.clone(),
+                    )),
+                    /*Object::Model((mesh!("../test-scene/icosehedron.obj"), middle_grey)),*/
                 )
             });
 
-    let mut root_node = Node::empty()
-        .add_child(
+    let root_node = Node::empty()
+        /*.add_child(
             Node::empty() /*.add_object(teapot)*/
                 .add_object(icosehedron)
                 .add_object(collider!("../test-scene/icosehedron.obj")),
-        )
+        )*/
         .add_child(
-            Node::empty().add_child(
-                Node::empty()
-                    //.add_object(suzanne)
-                    .add_object(cube)
-                    .add_object(collider!("../test-scene/cube.obj")),
-            ),
+            Node::empty()
+                //.add_object(suzanne)
+                .add_object(cube)
+                .add_object(collider!("../test-scene/cube.obj"))
+                .add_object(node::Object::RigidBody(RigidBody::new(
+                    Vec3::new(0.0, 3.0, 0.0),
+                    Rotor3::identity(),
+                    Vec3::zero(),
+                    Vec3::new(2.0, 30.0, 0.0),
+                    cube_moment_of_inertia,
+                    1.0,
+                ))),
         )
         .add_child(Node::empty().add_object(room));
 
@@ -173,18 +168,10 @@ fn main() {
 
             let camera_rotation = get_camera_rotor(inputs.camera_rotation);
 
-            root_node.children[0].transform = Isometry3::new(
+            root_node.children[0].transform.replace(Isometry3::new(
                 Vec3::new(0.0, 0.0, 0.0),
                 Rotor3::from_rotation_xz(0.0 * time_secs),
-            );
-
-            root_node.children[1].children[0].transform =
-                Isometry3::new(Vec3::new(0.0, 0.0, 5.0), Rotor3::from_rotation_xz(1.0));
-
-            /*root_node.children[1].transform = Isometry3::new(
-                Vec3::new(0.0, 0.0, 0.0),
-                Rotor3::from_rotation_xz(0.5 * time_secs),
-            );*/
+            ));
 
             const MOVEMENT_SPEED: f32 = 5.0;
             let camera_movement = if inputs.forward {
@@ -214,14 +201,24 @@ fn main() {
 
             let camera_transform = Isometry3::new(camera_position, camera_rotation.reversed());
 
-            root_node.children[1].transform = Isometry3::new(camera_position, camera_rotation);
-
-            let mut collisions_to_check = vec![];
+            let mut collisions_to_check: Vec<TransformedPolyhedron<Vec3>> = vec![];
             // handle collisions
             for (transform, node) in root_node.breadth_first() {
-                for object in &node.objects {
-                    if let Object::Collider(polyhedron) = object {
-                        collisions_to_check.push(polyhedron.transform(transform));
+                for object in node.objects.borrow_mut().iter_mut() {
+                    match object {
+                        Object::Collider(polyhedron) => {
+                            collisions_to_check.push(polyhedron.transform(transform));
+                        }
+                        Object::RigidBody(rigid_body) => {
+                            const NUM_SUBSTEPS: usize = 4;
+                            for _ in 0..NUM_SUBSTEPS {
+                                rigid_body.update(dt / (NUM_SUBSTEPS as f32));
+                            }
+
+                            node.transform
+                                .set(Isometry3::new(rigid_body.position, rigid_body.orientation));
+                        }
+                        _ => (),
                     }
                 }
             }
@@ -385,7 +382,7 @@ pub fn record_command_buffer(
                 ),
             );
 
-            for object in &node.objects {
+            for object in node.objects.borrow().iter() {
                 if let Object::Model((mesh, texture)) = object {
                     let descriptor_sets = [texture.descriptor_set.descriptor_set];
 

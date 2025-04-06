@@ -3,7 +3,7 @@ use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, rc::
 use ash::{khr, vk};
 use log::info;
 
-use crate::{
+use crate::renderer::{
     instance::{Instance, TARGET_API_VERSION},
     surface::Surface,
 };

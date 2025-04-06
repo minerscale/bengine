@@ -3,7 +3,7 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::{device::Device, swapchain::find_depth_format};
+use crate::renderer::{device::Device, swapchain::find_depth_format};
 
 pub struct RenderPass {
     render_pass: vk::RenderPass,

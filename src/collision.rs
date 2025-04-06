@@ -7,11 +7,12 @@
 use std::{
     io::BufRead,
     ops::{Index, IndexMut},
+    rc::Rc,
 };
 
 use itertools::Itertools;
 use obj::raw::RawObj;
-use ultraviolet::Vec3;
+use ultraviolet::{Isometry3, Vec3};
 
 pub trait Collider<T> {
     fn support(&self, d: T) -> T;
@@ -19,34 +20,77 @@ pub trait Collider<T> {
 
 #[derive(Clone, Debug)]
 pub struct Polyhedron<T> {
+    vertices: Rc<[T]>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TransformedPolyhedron<T> {
     vertices: Box<[T]>,
+}
+
+fn transform_vecs(isometry: Isometry3, src: &[Vec3]) -> Box<[Vec3]> {
+    let rotor = isometry.rotation;
+    let translation = isometry.translation;
+
+    let s2 = rotor.s * rotor.s;
+    let bxy2 = rotor.bv.xy * rotor.bv.xy;
+    let bxz2 = rotor.bv.xz * rotor.bv.xz;
+    let byz2 = rotor.bv.yz * rotor.bv.yz;
+    let s_bxy = rotor.s * rotor.bv.xy;
+    let s_bxz = rotor.s * rotor.bv.xz;
+    let s_byz = rotor.s * rotor.bv.yz;
+    let bxz_byz = rotor.bv.xz * rotor.bv.yz;
+    let bxy_byz = rotor.bv.xy * rotor.bv.yz;
+    let bxy_bxz = rotor.bv.xy * rotor.bv.xz;
+
+    let xa = s2 - bxy2 - bxz2 + byz2;
+    let xb = s_bxy - bxz_byz;
+    let xc = s_bxz + bxy_byz;
+
+    let ya = -(bxz_byz + s_bxy);
+    let yb = s2 - bxy2 + bxz2 - byz2;
+    let yc = s_byz - bxy_bxz;
+
+    let za = bxy_byz - s_bxz;
+    let zb = bxy_bxz + s_byz;
+    let zc = -(s2 + bxy2 - bxz2 - byz2);
+
+    src.iter()
+        .map(|vec| {
+            let two_vx = vec.x + vec.x;
+            let two_vy = vec.y + vec.y;
+            let two_vz = vec.z + vec.z;
+
+            Vec3::new(
+                vec.x * xa + two_vy * xb + two_vz * xc,
+                two_vx * ya + vec.y * yb + two_vz * yc,
+                two_vx * za - two_vy * zb - vec.z * zc,
+            ) + translation
+        })
+        .collect()
 }
 
 impl Polyhedron<Vec3> {
     pub fn new<T: BufRead>(file: T) -> Self {
         let mesh: RawObj = obj::raw::parse_obj(file).unwrap();
 
-        Polyhedron {
-            vertices: mesh
-                .positions
-                .iter()
-                .map(|v| Vec3::from([v.0, v.1, v.2]))
-                .collect(),
-        }
+        let vertices: Rc<[Vec3]> = mesh
+            .positions
+            .iter()
+            .map(|v| Vec3::from([v.0, v.1, v.2]))
+            .collect();
+
+        Polyhedron { vertices }
     }
 
-    pub fn transform(&self, isometry: ultraviolet::Isometry3) -> Self {
-        Polyhedron {
-            vertices: self
-                .vertices
-                .iter()
-                .map(|&v| isometry.transform_vec(v))
-                .collect::<Box<[_]>>(),
+    pub fn transform(&mut self, isometry: ultraviolet::Isometry3) -> TransformedPolyhedron<Vec3> {
+        TransformedPolyhedron {
+            vertices: transform_vecs(isometry, &self.vertices),
         }
     }
 }
 
-impl Collider<Vec3> for Polyhedron<Vec3> {
+impl Collider<Vec3> for TransformedPolyhedron<Vec3> {
     fn support(&self, d: Vec3) -> Vec3 {
         self.vertices
             .iter()
@@ -237,17 +281,17 @@ fn epa<A: Collider<Vec3>, B: Collider<Vec3>>(
     let (mut normals, mut min_face) = get_face_normals(&polytope, &faces);
 
     let mut min_normal = Vec3::default();
-    let mut min_distance = f32::MAX;
+    let mut min_distance = None;
 
-    while min_distance == f32::MAX {
+    while min_distance.is_none() {
         min_normal = normals[min_face].0;
-        min_distance = normals[min_face].1;
+        min_distance = Some(normals[min_face].1);
 
         let support = a.support(min_normal) - b.support(-min_normal);
         let s_distance = min_normal.dot(support);
 
-        if (s_distance - min_distance).abs() > EPA_EPSILON {
-            min_distance = f32::MAX;
+        if min_distance.is_some_and(|d| (s_distance - d).abs() > EPA_EPSILON) {
+            min_distance = None;
 
             let mut unique_edges: Vec<(usize, usize)> = Vec::new();
 
@@ -274,15 +318,15 @@ fn epa<A: Collider<Vec3>, B: Collider<Vec3>>(
 
             let (new_normals, new_min_face) = get_face_normals(&polytope, &new_faces);
 
-            let mut old_min_distance = f32::MAX;
+            let mut old_min_distance = None;
             for (idx, normal) in normals.iter().enumerate() {
-                if normal.1 < old_min_distance {
-                    old_min_distance = normal.1;
+                if old_min_distance.is_none_or(|d| normal.1 < d) {
+                    old_min_distance = Some(normal.1);
                     min_face = idx;
                 }
             }
 
-            if new_normals[new_min_face].1 < old_min_distance {
+            if old_min_distance.is_none_or(|d| new_normals[new_min_face].1 < d) {
                 min_face = new_min_face + normals.len();
             }
 
@@ -291,7 +335,7 @@ fn epa<A: Collider<Vec3>, B: Collider<Vec3>>(
         }
     }
 
-    (min_normal, min_distance + 0.001)
+    (min_normal, min_distance.unwrap() + 0.001)
 }
 
 fn add_if_unique_edge(
@@ -316,7 +360,7 @@ fn get_face_normals(polytope: &[Vec3], faces: &[[usize; 3]]) -> (Vec<(Vec3, f32)
     let mut normals = Vec::new();
 
     let mut min_triangle = 0;
-    let mut min_distance = f32::MAX;
+    let mut min_distance = None;
 
     for (face_idx, face) in faces.iter().enumerate() {
         let a = polytope[face[0]];
@@ -333,9 +377,9 @@ fn get_face_normals(polytope: &[Vec3], faces: &[[usize; 3]]) -> (Vec<(Vec3, f32)
 
         normals.push((normal, distance));
 
-        if distance < min_distance {
+        if min_distance.is_none_or(|d| distance < d) {
             min_triangle = face_idx;
-            min_distance = distance;
+            min_distance = Some(distance);
         }
     }
 

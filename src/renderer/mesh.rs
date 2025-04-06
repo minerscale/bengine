@@ -2,8 +2,9 @@ use std::{io::BufRead, rc::Rc};
 
 use ash::vk;
 use obj::{load_obj, Obj};
+use ultraviolet::Vec3;
 
-use crate::{buffer::Buffer, command_buffer::ActiveCommandBuffer, vertex::Vertex};
+use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer, vertex::Vertex};
 
 #[derive(Debug)]
 pub struct Mesh {
@@ -18,8 +19,15 @@ impl Mesh {
         device: Rc<ash::Device>,
         file: T,
         cmd_buf: &mut C,
+        scale: Option<Vec3>,
     ) -> Self {
-        let mesh: Obj<Vertex, u32> = load_obj(file).unwrap();
+        let mut mesh: Obj<Vertex, u32> = load_obj(file).unwrap();
+
+        scale.map(|scale| {
+            for vertex in &mut mesh.vertices {
+                vertex.pos *= scale;
+            }
+        });
 
         let vertex_buffer = Buffer::new_staged(
             instance,

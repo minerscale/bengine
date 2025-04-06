@@ -4,7 +4,7 @@ use ash::vk;
 use image::GenericImageView;
 use log::info;
 
-use crate::{
+use crate::renderer::{
     buffer::{find_memory_type, Buffer},
     command_buffer::ActiveCommandBuffer,
     pipeline::Pipeline,

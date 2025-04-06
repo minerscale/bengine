@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{
+use crate::renderer::{
     descriptors::{DescriptorPool, DescriptorSet, DescriptorSetLayout},
     device::Device,
     image::Image,

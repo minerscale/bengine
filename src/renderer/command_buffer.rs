@@ -3,7 +3,7 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::device::Device;
+use crate::renderer::device::Device;
 
 pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {
     fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any + 'static>);
@@ -211,6 +211,7 @@ impl CommandPool {
         }
     }
 
+    #[allow(dead_code)]
     pub fn destroy_command_buffer(&self, command_buffer: MultipleSubmitCommandBuffer) {
         unsafe {
             self.device

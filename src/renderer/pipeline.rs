@@ -2,10 +2,15 @@ use std::{mem::offset_of, ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
-use ultraviolet::Vec4;
+use ultraviolet::{Isometry3, Vec4};
 
-use crate::{
-    device::Device, render_pass::RenderPass, shader_module::spv, Vertex, VertexPushConstants,
+#[repr(C)]
+pub struct VertexPushConstants {
+    pub model_transform: Isometry3,
+}
+
+use crate::renderer::{
+    device::Device, render_pass::RenderPass, shader_module::spv, vertex::Vertex,
 };
 
 pub struct Pipeline {

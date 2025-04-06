@@ -2,7 +2,26 @@ use ash::vk;
 use sdl2::sys::SDL_Vulkan_GetDrawableSize;
 use ultraviolet::Isometry3;
 
-use crate::{
+pub mod buffer;
+pub mod command_buffer;
+pub mod device;
+pub mod image;
+pub mod mesh;
+pub mod pipeline;
+pub mod sampler;
+pub mod texture;
+
+mod debug_messenger;
+mod descriptors;
+mod instance;
+mod render_pass;
+mod shader_module;
+mod surface;
+mod swapchain;
+mod synchronization;
+mod vertex;
+
+use crate::renderer::{
     buffer::MappedBuffer,
     command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer},
     debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
@@ -14,10 +33,11 @@ use crate::{
     surface::Surface,
     swapchain::Swapchain,
     synchronization::{Fence, Semaphore},
-    HEIGHT, WIDTH,
 };
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
+pub const WIDTH: u32 = 800;
+pub const HEIGHT: u32 = 600;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UniformBufferObject {
@@ -26,33 +46,36 @@ pub struct UniformBufferObject {
 
 pub struct Renderer {
     // WARNING: Cleanup order matters here
-    pub image_avaliable_semaphores: Vec<Semaphore>,
-    pub render_finished_semaphores: Vec<Semaphore>,
-    pub in_flight_fences: Vec<Fence>,
+    image_avaliable_semaphores: Vec<Semaphore>,
+    render_finished_semaphores: Vec<Semaphore>,
+    in_flight_fences: Vec<Fence>,
 
-    pub uniform_buffer_layout: DescriptorSetLayout,
+    uniform_buffer_layout: DescriptorSetLayout,
     pub texture_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
-    pub uniform_buffers: Vec<MappedBuffer<UniformBufferObject>>,
+    uniform_buffers: Vec<MappedBuffer<UniformBufferObject>>,
 
-    pub command_buffers: Vec<MultipleSubmitCommandBuffer>,
+    command_buffers: Vec<MultipleSubmitCommandBuffer>,
     pub command_pool: CommandPool,
 
-    pub swapchain: Swapchain,
+    swapchain: Swapchain,
 
     pub device: Device,
 
-    pub surface: Surface,
+    surface: Surface,
 
-    pub debug_callback: Option<DebugMessenger>,
+    #[allow(dead_code)]
+    debug_callback: Option<DebugMessenger>,
+
     pub instance: Instance,
 
-    pub entry: ash::Entry,
+    #[allow(dead_code)]
+    entry: ash::Entry,
 
-    pub window: sdl2::video::Window,
+    window: sdl2::video::Window,
     pub sdl_context: sdl2::Sdl,
 
-    pub current_frame: usize,
+    current_frame: usize,
 }
 
 impl Renderer {

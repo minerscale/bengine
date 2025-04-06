@@ -3,9 +3,8 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::{
-    buffer::Buffer, image::Image, renderer::MAX_FRAMES_IN_FLIGHT, sampler::Sampler,
-    texture::MAX_TEXTURES,
+use crate::renderer::{
+    buffer::Buffer, image::Image, sampler::Sampler, texture::MAX_TEXTURES, MAX_FRAMES_IN_FLIGHT,
 };
 
 #[derive(Clone)]

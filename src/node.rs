@@ -1,8 +1,16 @@
-use std::{future::Future, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    future::Future,
+    rc::Rc,
+};
 
 use genawaiter::{rc::gen, yield_};
 
-use crate::{collision::Polyhedron, mesh::Mesh, texture::Texture};
+use crate::{
+    collision::Polyhedron,
+    physics::RigidBody,
+    renderer::{mesh::Mesh, texture::Texture},
+};
 
 use ultraviolet::{Isometry3, Vec3};
 
@@ -10,29 +18,29 @@ use ultraviolet::{Isometry3, Vec3};
 pub enum Object {
     Model((Rc<Mesh>, Rc<Texture>)),
     Collider(Polyhedron<Vec3>),
+    RigidBody(RigidBody),
 }
 
-#[derive(Debug)]
 pub struct Node {
-    pub transform: Isometry3,
+    pub transform: Cell<Isometry3>,
     pub children: Vec<Node>,
-    pub objects: Vec<Object>,
+    pub objects: RefCell<Vec<Object>>,
 }
 
 impl Node {
     pub fn empty() -> Self {
         Self {
-            transform: Isometry3::identity(),
+            transform: Isometry3::identity().into(),
             children: vec![],
-            objects: vec![],
+            objects: vec![].into(),
         }
     }
 
     pub fn new(transform: Isometry3, children: Vec<Node>, objects: Vec<Object>) -> Self {
         Self {
-            transform,
+            transform: transform.into(),
             children,
-            objects,
+            objects: objects.into(),
         }
     }
 
@@ -43,7 +51,7 @@ impl Node {
     }
 
     pub fn add_object(mut self, object: Object) -> Self {
-        self.objects.push(object);
+        self.objects.get_mut().push(object);
 
         self
     }
@@ -52,20 +60,17 @@ impl Node {
         &self,
     ) -> genawaiter::rc::Gen<(Isometry3, &Node), (), impl Future<Output = ()> + use<'_>> {
         gen!({
-            let mut stack: Vec<(Isometry3, &Node)> = vec![(self.transform, self)];
+            let mut stack: Vec<(Isometry3, &Node)> = vec![(self.transform.get(), self)];
 
             loop {
                 match stack.pop() {
                     Some((transform, node)) => {
                         for child in &node.children {
-                            let t = transform * child.transform;
+                            let t = transform * child.transform.get();
 
-                            if !self.children.is_empty() {
-                                stack.push((t, child));
-                            }
-
-                            yield_!((t, child));
+                            stack.push((t, child));
                         }
+                        yield_!((transform, node));
                     }
                     None => break,
                 }

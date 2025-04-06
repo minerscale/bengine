@@ -3,7 +3,7 @@ use std::{marker::PhantomData, ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::{
+use crate::renderer::{
     command_buffer::ActiveCommandBuffer,
     descriptors::{DescriptorPool, DescriptorSet, DescriptorSetLayout},
 };

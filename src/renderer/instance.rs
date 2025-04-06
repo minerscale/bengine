@@ -6,7 +6,7 @@ use std::{
 use ash::{ext, vk};
 use log::info;
 
-use crate::debug_messenger::ENABLE_VALIDATION_LAYERS;
+use crate::renderer::debug_messenger::ENABLE_VALIDATION_LAYERS;
 
 pub const TARGET_API_VERSION: u32 = vk::API_VERSION_1_2;
 

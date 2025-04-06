@@ -24,29 +24,17 @@ layout( push_constant ) uniform constants
 } modelview;
 
 vec3 rotate(vec3 vec, vec4 rotor) {
-    float x = rotor.x;
-    float y = rotor.y;
-    float z = rotor.z;
-    float w = rotor.w;
+    float fx = rotor.x * vec.x + rotor.y * vec.y + rotor.z * vec.z;
+    float fy = rotor.x * vec.y - rotor.y * vec.x + rotor.w * vec.z;
+    float fz = rotor.x * vec.z - rotor.z * vec.x - rotor.w * vec.y;
+    float fw = rotor.y * vec.z - rotor.z * vec.y + rotor.w * vec.x;
     
-    vec4 q = vec4(
-        dot(vec, vec3( x, y, z)),
-        dot(vec, vec3(-y, x, w)),
-        dot(vec, vec3(-z,-w, x)),
-        dot(vec, vec3( w,-z, y))
-    );
-
     return vec3(
-        dot(q, vec4( x, y, z, w)),
-        dot(q, vec4(-y, x, w,-z)),
-        dot(q, vec4(-z,-w, x, y))
+        rotor.x * fx + rotor.y * fy + rotor.z * fz + rotor.w * fw,
+        rotor.x * fy - rotor.y * fx - rotor.z * fw + rotor.w * fz,
+        rotor.x * fz + rotor.y * fw - rotor.z * fx - rotor.w * fy
     );
 }
-
-/*vec3 rotate(vec3 v, vec4 r) {
-    vec3 t = 2.0 * cross(r.xyz, v);
-    return v + r.w * t + cross(r.xyz, t);
-}*/
 
 void main() {
     vec3 modelview_position = vec3(modelview.x, modelview.y, modelview.z);
