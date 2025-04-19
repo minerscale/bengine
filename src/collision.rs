@@ -12,7 +12,7 @@ use std::{
 
 use itertools::Itertools;
 use obj::raw::RawObj;
-use ultraviolet::{Isometry3, Vec3};
+use ultraviolet::{Isometry3, Vec2, Vec3};
 
 pub trait Collider<T> {
     fn support(&self, d: T) -> T;
@@ -71,13 +71,21 @@ fn transform_vecs(isometry: Isometry3, src: &[Vec3]) -> Box<[Vec3]> {
 }
 
 impl Polyhedron<Vec3> {
-    pub fn new<T: BufRead>(file: T) -> Self {
+    pub fn new<T: BufRead>(file: T, scale: Option<Vec3>, transform: Option<Isometry3>) -> Self {
         let mesh: RawObj = obj::raw::parse_obj(file).unwrap();
 
         let vertices: Rc<[Vec3]> = mesh
             .positions
             .iter()
-            .map(|v| Vec3::from([v.0, v.1, v.2]))
+            .map(|v| {
+                let v = scale.unwrap_or(Vec3::one()) * Vec3::from([v.0, v.1, v.2]);
+
+                if let Some(t) = transform {
+                    t.transform_vec(v)
+                } else {
+                    v
+                }
+            })
             .collect();
 
         Polyhedron { vertices }
@@ -151,12 +159,12 @@ impl<T, const N: usize> IndexMut<usize> for Simplex<T, N> {
     }
 }
 
-fn line(simplex: &mut Simplex<Vec3, 4>, direction: &mut Vec3) -> bool {
+fn line(simplex: &mut Simplex<(Vec3, Vec3, Vec3), 4>, direction: &mut Vec3) -> bool {
     let a = simplex[0];
     let b = simplex[1];
 
-    let ab = b - a;
-    let ao = -a;
+    let ab = b.0 - a.0;
+    let ao = -a.0;
 
     if ab.dot(ao) > 0.0 {
         *direction = ab.cross(ao).cross(ab);
@@ -168,14 +176,14 @@ fn line(simplex: &mut Simplex<Vec3, 4>, direction: &mut Vec3) -> bool {
     false
 }
 
-fn triangle(simplex: &mut Simplex<Vec3, 4>, direction: &mut Vec3) -> bool {
+fn triangle(simplex: &mut Simplex<(Vec3, Vec3, Vec3), 4>, direction: &mut Vec3) -> bool {
     let a = simplex[0];
     let b = simplex[1];
     let c = simplex[2];
 
-    let ab = b - a;
-    let ac = c - a;
-    let ao = -a;
+    let ab = b.0 - a.0;
+    let ac = c.0 - a.0;
+    let ao = -a.0;
 
     let abc = ab.cross(ac);
 
@@ -200,16 +208,16 @@ fn triangle(simplex: &mut Simplex<Vec3, 4>, direction: &mut Vec3) -> bool {
     false
 }
 
-fn tetrahedron(simplex: &mut Simplex<Vec3, 4>, direction: &mut Vec3) -> bool {
+fn tetrahedron(simplex: &mut Simplex<(Vec3, Vec3, Vec3), 4>, direction: &mut Vec3) -> bool {
     let a = simplex[0];
     let b = simplex[1];
     let c = simplex[2];
     let d = simplex[3];
 
-    let ab = b - a;
-    let ac = c - a;
-    let ad = d - a;
-    let ao = -a;
+    let ab = b.0 - a.0;
+    let ac = c.0 - a.0;
+    let ad = d.0 - a.0;
+    let ao = -a.0;
 
     let abc = ab.cross(ac);
     let acd = ac.cross(ad);
@@ -233,25 +241,38 @@ fn tetrahedron(simplex: &mut Simplex<Vec3, 4>, direction: &mut Vec3) -> bool {
     true
 }
 
-pub fn collide<P: Collider<Vec3>, Q: Collider<Vec3>>(p: &P, q: &Q) -> Option<(Vec3, f32)> {
-    gjk_intersection(p, q, Vec3::unit_x()).map(|simplex| epa(&simplex, p, q))
+pub fn collide<P: Collider<Vec3>, Q: Collider<Vec3>>(p: &P, q: &Q) -> Option<(Vec3, Vec3, f32)> {
+    gjk_intersection(p, q, Vec3::unit_x()).map(|simplex| epa(&simplex, p, q).unwrap())
 }
+
+fn get_support_point<P: Collider<Vec3>, Q: Collider<Vec3>>(
+    direction: Vec3,
+    p: &P,
+    q: &Q,
+) -> (Vec3, Vec3, Vec3) {
+    let p_support = p.support(direction);
+    let q_support = q.support(-direction);
+    (p_support - q_support, p_support, q_support)
+}
+
+const GJK_MAX_ITERATIONS: usize = 32;
 
 fn gjk_intersection<P: Collider<Vec3>, Q: Collider<Vec3>>(
     p: &P,
     q: &Q,
     mut direction: Vec3,
-) -> Option<Simplex<Vec3, 4>> {
+) -> Option<Simplex<(Vec3, Vec3, Vec3), 4>> {
     let mut simplex = Simplex::<_, 4>::new();
 
-    simplex.push_front(p.support(direction) - q.support(-direction));
+    simplex.push_front(get_support_point(direction, p, q));
 
-    direction = -simplex[0];
+    direction = -simplex[0].0;
 
+    let mut i = 0;
     loop {
-        simplex.push_front(p.support(direction) - q.support(-direction));
+        simplex.push_front(get_support_point(direction, p, q));
 
-        if direction.dot(simplex[0]) <= 0.0 {
+        if i == GJK_MAX_ITERATIONS || direction.dot(simplex[0].0) <= 0.0 {
             break false;
         }
 
@@ -263,17 +284,20 @@ fn gjk_intersection<P: Collider<Vec3>, Q: Collider<Vec3>>(
         } {
             break true;
         }
+
+        i += 1;
     }
     .then_some(simplex)
 }
 
-const EPA_EPSILON: f32 = 0.001;
+const EPA_EPSILON: f32 = 0.0001;
+const EPA_MAX_ITERATIONS: usize = 64;
 
-fn epa<A: Collider<Vec3>, B: Collider<Vec3>>(
-    simplex: &Simplex<Vec3, 4>,
-    a: &A,
-    b: &B,
-) -> (Vec3, f32) {
+fn epa<P: Collider<Vec3>, Q: Collider<Vec3>>(
+    simplex: &Simplex<(Vec3, Vec3, Vec3), 4>,
+    p: &P,
+    q: &Q,
+) -> Option<(Vec3, Vec3, f32)> {
     let mut polytope = simplex.points.to_vec();
 
     let mut faces: Vec<[usize; 3]> = vec![[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]];
@@ -281,61 +305,127 @@ fn epa<A: Collider<Vec3>, B: Collider<Vec3>>(
     let (mut normals, mut min_face) = get_face_normals(&polytope, &faces);
 
     let mut min_normal = Vec3::default();
-    let mut min_distance = None;
+    let mut min_distance = f32::MAX;
 
-    while min_distance.is_none() {
+    let mut success: bool = false;
+
+    for _ in 0..EPA_MAX_ITERATIONS {
         min_normal = normals[min_face].0;
-        min_distance = Some(normals[min_face].1);
+        min_distance = normals[min_face].1;
 
-        let support = a.support(min_normal) - b.support(-min_normal);
-        let s_distance = min_normal.dot(support);
+        let support = get_support_point(min_normal, p, q);
+        let s_distance = min_normal.dot(support.0);
 
-        if min_distance.is_some_and(|d| (s_distance - d).abs() > EPA_EPSILON) {
-            min_distance = None;
-
-            let mut unique_edges: Vec<(usize, usize)> = Vec::new();
-
-            let mut i = 0;
-            while i < normals.len() {
-                if (normals[i].0.dot(support) - normals[i].1) > 0.0 {
-                    add_if_unique_edge(&mut unique_edges, &faces, i, 0, 1);
-                    add_if_unique_edge(&mut unique_edges, &faces, i, 1, 2);
-                    add_if_unique_edge(&mut unique_edges, &faces, i, 2, 0);
-
-                    faces.swap_remove(i);
-                    normals.swap_remove(i);
-                } else {
-                    i += 1;
-                }
-            }
-
-            let new_faces: Vec<[usize; 3]> = unique_edges
-                .iter()
-                .map(|(edge_index_1, edge_index_2)| [*edge_index_1, *edge_index_2, polytope.len()])
-                .collect();
-
-            polytope.push(support);
-
-            let (new_normals, new_min_face) = get_face_normals(&polytope, &new_faces);
-
-            let mut old_min_distance = None;
-            for (idx, normal) in normals.iter().enumerate() {
-                if old_min_distance.is_none_or(|d| normal.1 < d) {
-                    old_min_distance = Some(normal.1);
-                    min_face = idx;
-                }
-            }
-
-            if old_min_distance.is_none_or(|d| new_normals[new_min_face].1 < d) {
-                min_face = new_min_face + normals.len();
-            }
-
-            faces.extend(new_faces);
-            normals.extend(new_normals);
+        if (s_distance - min_distance).abs() <= EPA_EPSILON {
+            success = true;
+            break;
         }
+
+        min_distance = f32::MAX;
+
+        let mut unique_edges: Vec<(usize, usize)> = Vec::new();
+
+        let mut i = 0;
+        while i < normals.len() {
+            if (normals[i].0.dot(support.0) - normals[i].1) > 0.0 {
+                add_if_unique_edge(&mut unique_edges, &faces, i, 0, 1);
+                add_if_unique_edge(&mut unique_edges, &faces, i, 1, 2);
+                add_if_unique_edge(&mut unique_edges, &faces, i, 2, 0);
+
+                faces.swap_remove(i);
+                normals.swap_remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
+        let new_faces: Vec<[usize; 3]> = unique_edges
+            .iter()
+            .map(|(edge_index_1, edge_index_2)| [*edge_index_1, *edge_index_2, polytope.len()])
+            .collect();
+
+        polytope.push(support);
+
+        let (new_normals, new_min_face) = get_face_normals(&polytope, &new_faces);
+        let mut old_min_distance = f32::MAX;
+        for (idx, normal) in normals.iter().enumerate() {
+            if normal.1 < old_min_distance {
+                old_min_distance = normal.1;
+                min_face = idx;
+            }
+        }
+
+        if new_normals[new_min_face].1 < old_min_distance {
+            min_face = new_min_face + normals.len();
+        }
+
+        faces.extend(new_faces);
+        normals.extend(new_normals);
     }
 
-    (min_normal, min_distance.unwrap() + 0.001)
+    if success {
+        // get contact point
+        let face = faces[min_face]
+            .iter()
+            .map(|&i| &polytope[i])
+            .collect_array::<3>()
+            .unwrap();
+
+        let p = -min_normal * face[0].0.dot(min_normal);
+
+        fn to_barycentric(p: Vec3, polytope_face: [Vec3; 3]) -> Vec3 {
+            let f = polytope_face;
+            let (v0, v1, v2) = (f[1] - f[0], f[2] - f[0], p - f[0]);
+
+            let d00 = v0.dot(v0);
+            let d01 = v0.dot(v1);
+            let d11 = v1.dot(v1);
+            let d20 = v2.dot(v0);
+            let d21 = v2.dot(v1);
+
+            let denom = d00 * d11 - d01 * d01;
+
+            if denom.abs() <= EPA_EPSILON {
+                // the triangle is degenerate
+                if d00 <= EPA_EPSILON && d11 <= EPA_EPSILON {
+                    Vec3::new(1.0, 0.0, 0.0)
+                } else {
+                    if d00 > EPA_EPSILON {
+                        let t: f32 = d20 / d00;
+
+                        Vec3::new(1.0 - t, t, 0.0)
+                    } else if d11 > EPA_EPSILON {
+                        let t: f32 = d21 / d11;
+
+                        Vec3::new(1.0 - t, 0.0, t)
+                    } else {
+                        Vec3::new(1.0, 0.0, 0.0)
+                    }
+                }
+            } else {
+                let k = Vec2::new(d11 * d20 - d01 * d21, d00 * d21 - d01 * d20) / denom;
+
+                Vec3::new(1.0 - k.x - k.y, k.x, k.y)
+            }
+        }
+
+        fn barycentric_to_global(weights: Vec3, face: [Vec3; 3]) -> Vec3 {
+            weights.x * face[0] + weights.y * face[1] + weights.z * face[2]
+        }
+
+        let polytope_face = [face[0].0, face[1].0, face[2].0];
+        let real_face_1 = [face[0].1, face[1].1, face[2].1];
+        let real_face_2 = [face[0].2, face[1].2, face[2].2];
+
+        let weights = to_barycentric(p, polytope_face);
+
+        let a = barycentric_to_global(weights, real_face_1);
+        let b = barycentric_to_global(weights, real_face_2);
+
+        Some(((a + b) / 2.0, min_normal, min_distance + EPA_EPSILON))
+    } else {
+        None
+    }
 }
 
 fn add_if_unique_edge(
@@ -356,19 +446,29 @@ fn add_if_unique_edge(
     }
 }
 
-fn get_face_normals(polytope: &[Vec3], faces: &[[usize; 3]]) -> (Vec<(Vec3, f32)>, usize) {
+fn get_face_normals(
+    polytope: &[(Vec3, Vec3, Vec3)],
+    faces: &[[usize; 3]],
+) -> (Vec<(Vec3, f32)>, usize) {
     let mut normals = Vec::new();
 
     let mut min_triangle = 0;
-    let mut min_distance = None;
+    let mut min_distance = f32::MAX;
 
     for (face_idx, face) in faces.iter().enumerate() {
-        let a = polytope[face[0]];
-        let b = polytope[face[1]];
-        let c = polytope[face[2]];
+        let a = polytope[face[0]].0;
+        let b = polytope[face[1]].0;
+        let c = polytope[face[2]].0;
 
-        let mut normal = (b - a).cross(c - a).normalized();
-        let mut distance = normal.dot(a);
+        let unnormalised = (b - a).cross(c - a);
+        let l = unnormalised.mag();
+
+        let (mut normal, mut distance) = if l < EPA_EPSILON {
+            (Vec3::zero(), f32::MAX)
+        } else {
+            let normal = unnormalised / l;
+            (normal, normal.dot(a))
+        };
 
         if distance < 0.0 {
             normal *= -1.0;
@@ -377,9 +477,9 @@ fn get_face_normals(polytope: &[Vec3], faces: &[[usize; 3]]) -> (Vec<(Vec3, f32)
 
         normals.push((normal, distance));
 
-        if min_distance.is_none_or(|d| distance < d) {
+        if distance < min_distance {
             min_triangle = face_idx;
-            min_distance = Some(distance);
+            min_distance = distance;
         }
     }
 

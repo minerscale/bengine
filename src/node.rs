@@ -1,8 +1,4 @@
-use std::{
-    cell::{Cell, RefCell},
-    future::Future,
-    rc::Rc,
-};
+use std::{cell::RefCell, future::Future, rc::Rc};
 
 use genawaiter::{rc::gen, yield_};
 
@@ -22,9 +18,49 @@ pub enum Object {
 }
 
 pub struct Node {
-    pub transform: Cell<Isometry3>,
-    pub children: Vec<Node>,
-    pub objects: RefCell<Vec<Object>>,
+    pub transform: Isometry3,
+    pub children: Vec<Rc<RefCell<Node>>>,
+    pub objects: Vec<Object>,
+}
+
+pub struct GameTree {
+    pub root_node: Rc<RefCell<Node>>,
+}
+
+impl GameTree {
+    pub fn new(root_node: Rc<RefCell<Node>>) -> Self {
+        GameTree { root_node }
+    }
+
+    pub fn breadth_first(
+        &self,
+    ) -> genawaiter::rc::Gen<(Isometry3, Rc<RefCell<Node>>), (), impl Future<Output = ()> + use<'_>>
+    {
+        gen!({
+            let mut stack: Vec<(Isometry3, Rc<RefCell<Node>>)> =
+                vec![(self.root_node.borrow().transform, self.root_node.clone())];
+
+            loop {
+                match stack.pop() {
+                    Some((transform, node)) => {
+                        for child in &node.borrow().children {
+                            let t = transform * child.borrow().transform;
+
+                            stack.push((t, child.clone()));
+                        }
+                        yield_!((transform, node));
+                    }
+                    None => break,
+                }
+            }
+        })
+    }
+}
+
+impl Into<Rc<RefCell<Node>>> for Node {
+    fn into(self) -> Rc<RefCell<Node>> {
+        Rc::new(RefCell::new(self))
+    }
 }
 
 impl Node {
@@ -36,45 +72,27 @@ impl Node {
         }
     }
 
-    pub fn new(transform: Isometry3, children: Vec<Node>, objects: Vec<Object>) -> Self {
+    pub fn new(
+        transform: Isometry3,
+        children: Vec<Rc<RefCell<Node>>>,
+        objects: Vec<Object>,
+    ) -> Self {
         Self {
-            transform: transform.into(),
+            transform,
             children,
-            objects: objects.into(),
+            objects,
         }
     }
 
-    pub fn add_child(mut self, child: Node) -> Self {
+    pub fn add_child(mut self, child: Rc<RefCell<Node>>) -> Self {
         self.children.push(child);
 
         self
     }
 
     pub fn add_object(mut self, object: Object) -> Self {
-        self.objects.get_mut().push(object);
+        self.objects.push(object);
 
         self
-    }
-
-    pub fn breadth_first(
-        &self,
-    ) -> genawaiter::rc::Gen<(Isometry3, &Node), (), impl Future<Output = ()> + use<'_>> {
-        gen!({
-            let mut stack: Vec<(Isometry3, &Node)> = vec![(self.transform.get(), self)];
-
-            loop {
-                match stack.pop() {
-                    Some((transform, node)) => {
-                        for child in &node.children {
-                            let t = transform * child.transform.get();
-
-                            stack.push((t, child));
-                        }
-                        yield_!((transform, node));
-                    }
-                    None => break,
-                }
-            }
-        })
     }
 }

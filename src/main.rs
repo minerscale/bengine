@@ -8,7 +8,7 @@ mod renderer;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
-use physics::RigidBody;
+use physics::{do_physics, RigidBody};
 use renderer::{
     buffer::MappedBuffer,
     command_buffer::ActiveMultipleSubmitCommandBuffer,
@@ -22,11 +22,10 @@ use renderer::{
 };
 
 use ash::vk;
-use collision::{collide, Polyhedron, TransformedPolyhedron};
+use collision::Polyhedron;
 use event_loop::EventLoop;
-use itertools::Itertools;
 use log::info;
-use node::{Node, Object};
+use node::{GameTree, Node, Object};
 use renderer::{Renderer, UniformBufferObject};
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
@@ -37,109 +36,172 @@ fn main() {
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
     macro_rules! collider {
-        ($filename:literal) => {
-            node::Object::Collider(Polyhedron::new(Cursor::new(include_bytes!($filename))))
+        ($filename:literal, $scale:expr, $transform:expr) => {
+            node::Object::Collider(Polyhedron::new(
+                Cursor::new(include_bytes!($filename)),
+                $scale,
+                $transform,
+            ))
         };
     }
 
-    let cube_scale = Vec3::new(0.01, 1.0, 2.5);
-    let cube_mass = 30.0;
-    let cube_moment_of_inertia = cube_mass / 12.0 * {
-        let (x, y, z) = cube_scale.into();
-        Vec3::new(y * y + z * z, x * x + z * z, x * x + y * y)
+    let cube_inverse_moment_of_inertia = |mass: f32, scale: Vec3| {
+        12.0 / mass * {
+            let (x, y, z) = scale.into();
+            Vec3::new(
+                1.0 / (y * y + z * z),
+                1.0 / (x * x + z * z),
+                1.0 / (x * x + y * y),
+            )
+        }
     };
 
-    let (/*teapot, suzanne,*/ room, cube /*icosehedron*/) =
-        gfx.command_pool
-            .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
-                macro_rules! image {
-                    ($filename:literal) => {
-                        Rc::new(Image::from_bytes(
-                            &gfx.instance,
-                            gfx.device.physical_device,
-                            gfx.device.device.clone(),
-                            cmd_buf,
-                            include_bytes!($filename),
+    let cube_1_scale = Vec3::new(0.1, 0.5, 1.0);
+    let cube_1_mass = 200.0;
+    let cube_1_inverse_moment_of_inertia =
+        cube_inverse_moment_of_inertia(cube_1_mass, cube_1_scale);
+
+    let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
+    let cube_2_mass = 100.0;
+    let cube_2_inverse_moment_of_inertia =
+        cube_inverse_moment_of_inertia(cube_2_mass, cube_2_scale);
+
+    let (/*teapot, suzanne,*/ room, cube_1, cube_2 /*, icosehedron*/) = gfx
+        .command_pool
+        .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
+            macro_rules! image {
+                ($filename:literal) => {
+                    Rc::new(Image::from_bytes(
+                        &gfx.instance,
+                        gfx.device.physical_device,
+                        gfx.device.device.clone(),
+                        cmd_buf,
+                        include_bytes!($filename),
+                    ))
+                };
+            }
+
+            macro_rules! mesh {
+                ($filename:literal, $scale:expr) => {
+                    Rc::new(Mesh::new(
+                        &gfx.instance,
+                        gfx.device.physical_device,
+                        gfx.device.device.clone(),
+                        Cursor::new(include_bytes!($filename)),
+                        cmd_buf,
+                        $scale,
+                    ))
+                };
+            }
+
+            macro_rules! texture {
+                ($sampler:expr, $texture:expr) => {
+                    Rc::new(Texture::new(
+                        &gfx.device,
+                        $texture.clone(),
+                        $sampler.clone(),
+                        &gfx.descriptor_pool,
+                        &gfx.texture_layout,
+                    ))
+                };
+            }
+
+            let sampler = Rc::new(Sampler::new(
+                &gfx.instance,
+                gfx.device.device.clone(),
+                &gfx.device.physical_device,
+            ));
+
+            //let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
+
+            let floor_tiles = texture!(
+                sampler,
+                image!("../test-scene/textures/floor_tiles_06_diff_1k.jpg")
+            );
+
+            let middle_grey = texture!(sampler, image!("../test-scene/middle-grey.png"));
+
+            (
+                /*Object::Model((
+                    mesh!("../test-objects/teapot-triangulated.obj"),
+                    agad_texture.clone(),
+                )),
+                Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),*/
+                Object::Model((mesh!("../test-scene/room.obj", None), floor_tiles)),
+                Object::Model((
+                    mesh!("../test-scene/cube.obj", Some(cube_1_scale)),
+                    middle_grey.clone(),
+                )),
+                Object::Model((
+                    mesh!("../test-scene/cube.obj", Some(cube_2_scale)),
+                    middle_grey.clone(),
+                )),
+                //Object::Model((mesh!("../test-scene/icosehedron.obj", None), middle_grey)),
+            )
+        });
+
+    let root_node = GameTree::new(
+        Node::empty()
+            .add_child(
+                Node::empty() /*.add_object(teapot)*/
+                    .add_object(cube_2)
+                    .add_object(collider!(
+                        "../test-scene/cube.obj",
+                        Some(cube_2_scale),
+                        None
+                    ))
+                    .add_object(node::Object::RigidBody(RigidBody::new(
+                        Vec3::new(0.0, 3.0, 3.0),
+                        Rotor3::from_euler_angles(0.1, 0.2, 0.4),
+                        Vec3::zero(),
+                        Vec3::new(0.0, 0.0, 0.0),
+                        cube_2_inverse_moment_of_inertia,
+                        1.0 / cube_2_mass,
+                    )))
+                    .into(),
+            )
+            .add_child(
+                Node::empty()
+                    //.add_object(suzanne)
+                    .add_object(cube_1)
+                    .add_object(collider!(
+                        "../test-scene/cube.obj",
+                        Some(cube_1_scale),
+                        None
+                    ))
+                    .add_object(node::Object::RigidBody(RigidBody::new(
+                        Vec3::new(0.0, 7.0, 3.0),
+                        Rotor3::from_euler_angles(-0.5, 0.8, 0.2),
+                        -2.0 * Vec3::unit_y(),
+                        Vec3::new(0.6642715, 0.20601688, -0.030171312),
+                        cube_1_inverse_moment_of_inertia,
+                        1.0 / cube_1_mass,
+                    )))
+                    .into(),
+            )
+            .add_child(
+                Node::empty()
+                    .add_object(room)
+                    .add_object(collider!(
+                        "../test-scene/cube.obj",
+                        Some(Vec3::new(20.0, 20.0, 20.0)),
+                        Some(Isometry3::new(
+                            Vec3::new(0.0, -20.0, 0.0),
+                            Rotor3::identity()
                         ))
-                    };
-                }
-
-                macro_rules! mesh {
-                    ($filename:literal, $scale:expr) => {
-                        Rc::new(Mesh::new(
-                            &gfx.instance,
-                            gfx.device.physical_device,
-                            gfx.device.device.clone(),
-                            Cursor::new(include_bytes!($filename)),
-                            cmd_buf,
-                            $scale,
-                        ))
-                    };
-                }
-
-                macro_rules! texture {
-                    ($sampler:expr, $texture:expr) => {
-                        Rc::new(Texture::new(
-                            &gfx.device,
-                            $texture.clone(),
-                            $sampler.clone(),
-                            &gfx.descriptor_pool,
-                            &gfx.texture_layout,
-                        ))
-                    };
-                }
-
-                let sampler = Rc::new(Sampler::new(
-                    &gfx.instance,
-                    gfx.device.device.clone(),
-                    &gfx.device.physical_device,
-                ));
-
-                //let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
-
-                let floor_tiles = texture!(
-                    sampler,
-                    image!("../test-scene/textures/floor_tiles_06_diff_1k.jpg")
-                );
-
-                let middle_grey = texture!(sampler, image!("../test-scene/middle-grey.png"));
-
-                (
-                    /*Object::Model((
-                        mesh!("../test-objects/teapot-triangulated.obj"),
-                        agad_texture.clone(),
-                    )),
-                    Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),*/
-                    Object::Model((mesh!("../test-scene/room.obj", None), floor_tiles)),
-                    Object::Model((
-                        mesh!("../test-scene/cube.obj", Some(cube_scale)),
-                        middle_grey.clone(),
-                    )),
-                    /*Object::Model((mesh!("../test-scene/icosehedron.obj"), middle_grey)),*/
-                )
-            });
-
-    let root_node = Node::empty()
-        /*.add_child(
-            Node::empty() /*.add_object(teapot)*/
-                .add_object(icosehedron)
-                .add_object(collider!("../test-scene/icosehedron.obj")),
-        )*/
-        .add_child(
-            Node::empty()
-                //.add_object(suzanne)
-                .add_object(cube)
-                .add_object(collider!("../test-scene/cube.obj"))
-                .add_object(node::Object::RigidBody(RigidBody::new(
-                    Vec3::new(0.0, 3.0, 0.0),
-                    Rotor3::identity(),
-                    Vec3::zero(),
-                    Vec3::new(2.0, 30.0, 0.0),
-                    cube_moment_of_inertia,
-                    1.0,
-                ))),
-        )
-        .add_child(Node::empty().add_object(room));
+                    ))
+                    .add_object(node::Object::RigidBody(RigidBody::new(
+                        Vec3::new(0.0, 0.0, 0.0),
+                        Rotor3::identity(),
+                        Vec3::zero(),
+                        Vec3::new(0.0, 0.0, 0.0),
+                        Vec3::zero(),
+                        0.0,
+                    )))
+                    .into(),
+            )
+            .into(),
+    );
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
@@ -153,25 +215,36 @@ fn main() {
 
     info!("finished loading");
 
-    let start_time = std::time::Instant::now();
+    //let start_time = std::time::Instant::now();
 
     let mut previous_time =
         std::time::Instant::now() - std::time::Duration::from_secs_f64(1.0 / 60.0);
+
+    for (_, node) in root_node.breadth_first() {
+        let mut new_transform = Isometry3::identity();
+
+        for object in &mut node.borrow_mut().objects {
+            match object {
+                Object::RigidBody(ref mut rigid_body) => {
+                    new_transform = Isometry3::new(rigid_body.position, rigid_body.orientation);
+                }
+                _ => (),
+            }
+        }
+
+        node.borrow_mut().transform = new_transform;
+    }
+
     event_loop.run(
         |inputs| {
             // Delta time calculation
             let new_time = std::time::Instant::now();
-            let dt = (new_time - previous_time).as_secs_f32();
+            let dt = 1.0 / 60.0; //(new_time - previous_time).as_secs_f32();
             previous_time = new_time;
 
-            let time_secs = (new_time - start_time).as_secs_f32();
+            //let time_secs = (new_time - start_time).as_secs_f32();
 
             let camera_rotation = get_camera_rotor(inputs.camera_rotation);
-
-            root_node.children[0].transform.replace(Isometry3::new(
-                Vec3::new(0.0, 0.0, 0.0),
-                Rotor3::from_rotation_xz(0.0 * time_secs),
-            ));
 
             const MOVEMENT_SPEED: f32 = 5.0;
             let camera_movement = if inputs.forward {
@@ -201,31 +274,7 @@ fn main() {
 
             let camera_transform = Isometry3::new(camera_position, camera_rotation.reversed());
 
-            let mut collisions_to_check: Vec<TransformedPolyhedron<Vec3>> = vec![];
-            // handle collisions
-            for (transform, node) in root_node.breadth_first() {
-                for object in node.objects.borrow_mut().iter_mut() {
-                    match object {
-                        Object::Collider(polyhedron) => {
-                            collisions_to_check.push(polyhedron.transform(transform));
-                        }
-                        Object::RigidBody(rigid_body) => {
-                            const NUM_SUBSTEPS: usize = 4;
-                            for _ in 0..NUM_SUBSTEPS {
-                                rigid_body.update(dt / (NUM_SUBSTEPS as f32));
-                            }
-
-                            node.transform
-                                .set(Isometry3::new(rigid_body.position, rigid_body.orientation));
-                        }
-                        _ => (),
-                    }
-                }
-            }
-
-            for (p, q) in collisions_to_check.iter().tuple_combinations() {
-                println!("{:?}", collide(p, q));
-            }
+            do_physics(&root_node, dt);
 
             inputs.recreate_swapchain = gfx.draw(
                 |device, pipeline, command_buffer, uniform_buffer, image| {
@@ -297,7 +346,7 @@ pub fn record_command_buffer(
     command_buffer: ActiveMultipleSubmitCommandBuffer,
     uniform_buffer: &mut MappedBuffer<UniformBufferObject>,
     image: &SwapchainImage,
-    root_node: &Node,
+    root_node: &GameTree,
     camera_transform: Isometry3,
 ) -> ActiveMultipleSubmitCommandBuffer {
     let clear_color = [
@@ -382,7 +431,7 @@ pub fn record_command_buffer(
                 ),
             );
 
-            for object in node.objects.borrow().iter() {
+            for object in node.borrow().objects.iter() {
                 if let Object::Model((mesh, texture)) = object {
                     let descriptor_sets = [texture.descriptor_set.descriptor_set];
 
