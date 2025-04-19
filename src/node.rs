@@ -2,19 +2,13 @@ use std::{cell::RefCell, future::Future, rc::Rc};
 
 use genawaiter::{rc::gen, yield_};
 
-use crate::{
-    collision::Polyhedron,
-    physics::RigidBody,
-    renderer::{mesh::Mesh, texture::Texture},
-};
+use crate::renderer::{mesh::Mesh, texture::Texture};
 
-use ultraviolet::{Isometry3, Vec3};
+use ultraviolet::Isometry3;
 
 #[derive(Clone, Debug)]
 pub enum Object {
     Model((Rc<Mesh>, Rc<Texture>)),
-    Collider(Polyhedron<Vec3>),
-    RigidBody(RigidBody),
 }
 
 pub struct Node {

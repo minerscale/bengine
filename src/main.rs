@@ -1,9 +1,7 @@
 #![windows_subsystem = "windows"]
 
-mod collision;
 mod event_loop;
 mod node;
-pub mod physics;
 mod player;
 mod renderer;
 
@@ -94,18 +92,11 @@ fn main() {
                 &gfx.device.physical_device,
             ));
 
-            //let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
-
             let grid = texture!(sampler, image!("../textures/grid.png"));
 
             let middle_grey = texture!(sampler, image!("../test-scene/middle-grey.png"));
 
             (
-                /*Object::Model((
-                    mesh!("../test-objects/teapot-triangulated.obj"),
-                    agad_texture.clone(),
-                )),
-                Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),*/
                 Object::Model((mesh!("../test-objects/ground-plane.obj", None), grid)),
                 Object::Model((
                     mesh!("../test-scene/icosehedron.obj", None),
@@ -115,7 +106,6 @@ fn main() {
                     mesh!("../test-scene/cube.obj", Some(cube_2_scale)),
                     middle_grey.clone(),
                 )),
-                //Object::Model((mesh!("../test-scene/icosehedron.obj", None), middle_grey)),
             )
         });
 
@@ -181,9 +171,10 @@ fn main() {
     let player = RigidBodyBuilder::dynamic()
         .translation(vector![7.0, 8.0, 0.0])
         .lock_rotations();
-    let player_collider = ColliderBuilder::capsule_y(1.0, 0.5)
+    let player_collider = ColliderBuilder::capsule_y(0.9, 0.4)
         .restitution(0.0)
-        .friction(0.0);
+        .friction(0.0)
+        .friction_combine_rule(rapier3d::prelude::CoefficientCombineRule::Multiply);
 
     let player_handle = rigid_body_set.insert(player);
     let player_collider_handle =
@@ -222,8 +213,6 @@ fn main() {
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
-    //let mut camera_position = Vec3::new(6.0, 5.0, 6.0);
-
     fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
         Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
     }
@@ -232,33 +221,18 @@ fn main() {
 
     info!("finished loading");
 
-    //let start_time = std::time::Instant::now();
-
     let mut previous_time =
         std::time::Instant::now() - std::time::Duration::from_secs_f64(1.0 / 60.0);
 
-    for (_, node) in root_node.breadth_first() {
-        let mut new_transform = Isometry3::identity();
-
-        for object in &mut node.borrow_mut().objects {
-            match object {
-                Object::RigidBody(ref mut rigid_body) => {
-                    new_transform = Isometry3::new(rigid_body.position, rigid_body.orientation);
-                }
-                _ => (),
-            }
-        }
-
-        node.borrow_mut().transform = new_transform;
-    }
-
     let mut time_since_left_ground = f32::MAX;
+    let mut jump_buffer = false;
+    let mut previous_jump_input = false;
 
     event_loop.run(
         |inputs| {
             // Delta time calculation
             let new_time = std::time::Instant::now();
-            let dt = 1.0 / 60.0; //(new_time - previous_time).as_secs_f32();
+            let dt = (new_time - previous_time).as_secs_f32();
             previous_time = new_time;
 
             physics_pipeline.step(
@@ -277,78 +251,39 @@ fn main() {
                 &event_handler,
             );
 
-            /*
-            while let Ok(collision_event) = collision_recv.try_recv() {
-                /*let player_collision = if collision_event.collider1() {
-
-                };*/
-                let opposite_actually = if collision_event.collider1() == player_collider_handle {
-                    false
-                } else if collision_event.collider2() == player_collider_handle {
-                    true
-                } else {
-                    panic!("expected collision to involve player");
-                };
-
-                let found_collision = false;
-                if let Some(contact_pair) = narrow_phase
-                    .contact_pair(collision_event.collider1(), collision_event.collider2())
-                {
-                    for manifold in &contact_pair.manifolds {
-                        //manifold.contacts();
-
-                        for point in &manifold.points {
-                            println!("{point:?}");
-
-                            if point.dist <= 0.0
-                                && (if opposite_actually {
-                                    point.local_p2.y
-                                } else {
-                                    point.local_p1.y
-                                } < FLOOR_COLLISION_HEIGHT)
-                            {
-                                on_floor = true;
-                            }
-                        }
-                    }
-                }
-
-                println!("Collision!! {:?}", collision_event);
-            }*/
-
-            //let time_secs = (new_time - start_time).as_secs_f32();
-
             let camera_rotation = get_camera_rotor(inputs.camera_rotation);
 
             let player_info = &rigid_body_set[player_handle];
-            //let player_collider_info = &collider_set[player_collider_handle];
 
             let player_transform = from_nalgebra(rigid_body_set[player_handle].position());
 
-            let impulse = rapier3d::na::Vector3::from_row_slice(
-                get_movement_impulse(
-                    &narrow_phase,
-                    player_collider_handle,
-                    inputs,
-                    player_info,
-                    camera_rotation,
-                    dt,
-                    &mut time_since_left_ground,
-                )
-                .as_slice(),
+            if inputs.up == true && previous_jump_input == false {
+                jump_buffer = true;
+            } else if inputs.up == false && previous_jump_input == true {
+                jump_buffer = false;
+            }
+
+            previous_jump_input = inputs.up;
+
+            let (player_impulse, friction) = get_movement_impulse(
+                &narrow_phase,
+                player_collider_handle,
+                inputs,
+                player_info,
+                camera_rotation,
+                dt,
+                &mut time_since_left_ground,
+                &mut jump_buffer,
             );
-            rigid_body_set[player_handle].apply_impulse(impulse, true);
 
-            //rigid_body_set[player_handle].set_position(to_nalgebra(&player_transform), true);
+            collider_set[player_collider_handle].set_friction(friction);
 
-            /*camera_position += (vertical_movement + camera_movement.rotated_by(camera_rotation))
-             * (MOVEMENT_SPEED * dt);*/
+            rigid_body_set[player_handle].apply_impulse(player_impulse, true);
 
-            let camera_transform =
-                Isometry3::new(player_transform.translation, camera_rotation.reversed());
-
-            //let cube_1_rb = rigid_body_set[cube_1_handle];
-            //let cube_2_rb = rigid_body_set[cube_2_handle];
+            let camera_transform = Isometry3::new(
+                player_transform.translation + Vec3::new(0.0, 0.8, 0.0),
+                camera_rotation.reversed(),
+            );
 
             let n = root_node.root_node.borrow();
 
@@ -361,28 +296,10 @@ fn main() {
                 )
             }
 
-            /*
-            fn to_nalgebra(p: &Isometry3) -> rapier3d::na::Isometry3<f32> {
-                rapier3d::na::Isometry3::<f32>::from_parts(
-                    rapier3d::na::Point3::from_slice(p.translation.as_array()).into(),
-                    rapier3d::na::UnitQuaternion::from_quaternion(
-                        rapier3d::na::Quaternion::from_vector(
-                            rapier3d::na::Vector4::from_row_slice(
-                                &p.rotation.into_quaternion_array(),
-                            ),
-                        ),
-                    ),
-                )
-            }*/
-
             n.children[0].borrow_mut().transform =
                 from_nalgebra(rigid_body_set[cube_1_handle].position());
             n.children[1].borrow_mut().transform =
                 from_nalgebra(rigid_body_set[cube_2_handle].position());
-
-            //rigid_body_set[cube_1_handle].position();
-
-            //do_physics(&root_node, dt);
 
             inputs.recreate_swapchain = gfx.draw(
                 |device, pipeline, command_buffer, uniform_buffer, image| {
@@ -540,40 +457,39 @@ pub fn record_command_buffer(
             );
 
             for object in node.borrow().objects.iter() {
-                if let Object::Model((mesh, texture)) = object {
-                    let descriptor_sets = [texture.descriptor_set.descriptor_set];
+                let Object::Model((mesh, texture)) = object;
+                let descriptor_sets = [texture.descriptor_set.descriptor_set];
 
-                    device.cmd_bind_descriptor_sets(
-                        cmd_buf,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        pipeline.pipeline_layout,
-                        1,
-                        &descriptor_sets,
-                        &[],
-                    );
+                device.cmd_bind_descriptor_sets(
+                    cmd_buf,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline.pipeline_layout,
+                    1,
+                    &descriptor_sets,
+                    &[],
+                );
 
-                    let mesh = mesh.as_ref();
+                let mesh = mesh.as_ref();
 
-                    let vertex_buffers = [mesh.vertex_buffer.buffer];
-                    let offsets = [vk::DeviceSize::from(0u64)];
+                let vertex_buffers = [mesh.vertex_buffer.buffer];
+                let offsets = [vk::DeviceSize::from(0u64)];
 
-                    device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
-                    device.cmd_bind_index_buffer(
-                        cmd_buf,
-                        mesh.index_buffer.buffer,
-                        0,
-                        vk::IndexType::UINT32,
-                    );
+                device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
+                device.cmd_bind_index_buffer(
+                    cmd_buf,
+                    mesh.index_buffer.buffer,
+                    0,
+                    vk::IndexType::UINT32,
+                );
 
-                    device.cmd_draw_indexed(
-                        cmd_buf,
-                        mesh.index_buffer.len().try_into().unwrap(),
-                        1,
-                        0,
-                        0,
-                        0,
-                    );
-                }
+                device.cmd_draw_indexed(
+                    cmd_buf,
+                    mesh.index_buffer.len().try_into().unwrap(),
+                    1,
+                    0,
+                    0,
+                    0,
+                );
             }
         }
 
