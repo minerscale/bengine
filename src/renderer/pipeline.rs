@@ -36,9 +36,9 @@ impl Pipeline {
 
         let ez = f32::tan(fov / 2.0).recip();
         let camera_parameters = Vec4::new(
-            -1.0,
-            -1.0 * ((extent.width as f32) / (extent.height as f32)),
             ez,
+            -1.0 * ((extent.width as f32) / (extent.height as f32)),
+            0.01,
             1000.0,
         );
 

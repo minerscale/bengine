@@ -20,7 +20,7 @@ pub trait Collider<T> {
 
 #[derive(Clone, Debug)]
 pub struct Polyhedron<T> {
-    vertices: Rc<[T]>,
+    pub vertices: Rc<[T]>,
 }
 
 #[derive(Clone, Debug)]

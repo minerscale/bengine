@@ -4,11 +4,13 @@ mod collision;
 mod event_loop;
 mod node;
 pub mod physics;
+mod player;
 mod renderer;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
-use physics::{do_physics, RigidBody};
+use obj::raw::RawObj;
+use player::get_movement_impulse;
 use renderer::{
     buffer::MappedBuffer,
     command_buffer::ActiveMultipleSubmitCommandBuffer,
@@ -22,10 +24,19 @@ use renderer::{
 };
 
 use ash::vk;
-use collision::Polyhedron;
 use event_loop::EventLoop;
 use log::info;
 use node::{GameTree, Node, Object};
+use rapier3d::{
+    self,
+    math::AngVector,
+    na::{self, vector},
+    prelude::{
+        CCDSolver, ColliderBuilder, ColliderSet, ColliderShape, DefaultBroadPhase, ImpulseJointSet,
+        IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline,
+        QueryPipeline, RigidBodyBuilder, RigidBodySet,
+    },
+};
 use renderer::{Renderer, UniformBufferObject};
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
@@ -35,36 +46,7 @@ fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT);
 
-    macro_rules! collider {
-        ($filename:literal, $scale:expr, $transform:expr) => {
-            node::Object::Collider(Polyhedron::new(
-                Cursor::new(include_bytes!($filename)),
-                $scale,
-                $transform,
-            ))
-        };
-    }
-
-    let cube_inverse_moment_of_inertia = |mass: f32, scale: Vec3| {
-        12.0 / mass * {
-            let (x, y, z) = scale.into();
-            Vec3::new(
-                1.0 / (y * y + z * z),
-                1.0 / (x * x + z * z),
-                1.0 / (x * x + y * y),
-            )
-        }
-    };
-
-    let cube_1_scale = Vec3::new(0.1, 0.5, 1.0);
-    let cube_1_mass = 200.0;
-    let cube_1_inverse_moment_of_inertia =
-        cube_inverse_moment_of_inertia(cube_1_mass, cube_1_scale);
-
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
-    let cube_2_mass = 100.0;
-    let cube_2_inverse_moment_of_inertia =
-        cube_inverse_moment_of_inertia(cube_2_mass, cube_2_scale);
 
     let (/*teapot, suzanne,*/ room, cube_1, cube_2 /*, icosehedron*/) = gfx
         .command_pool
@@ -114,10 +96,7 @@ fn main() {
 
             //let agad_texture = texture!(sampler, image!("../textures/agadwheel.png"));
 
-            let floor_tiles = texture!(
-                sampler,
-                image!("../test-scene/textures/floor_tiles_06_diff_1k.jpg")
-            );
+            let grid = texture!(sampler, image!("../textures/grid.png"));
 
             let middle_grey = texture!(sampler, image!("../test-scene/middle-grey.png"));
 
@@ -127,9 +106,9 @@ fn main() {
                     agad_texture.clone(),
                 )),
                 Object::Model((mesh!("../test-objects/suzanne.obj"), agad_texture)),*/
-                Object::Model((mesh!("../test-scene/room.obj", None), floor_tiles)),
+                Object::Model((mesh!("../test-objects/ground-plane.obj", None), grid)),
                 Object::Model((
-                    mesh!("../test-scene/cube.obj", Some(cube_1_scale)),
+                    mesh!("../test-scene/icosehedron.obj", None),
                     middle_grey.clone(),
                 )),
                 Object::Model((
@@ -140,72 +119,110 @@ fn main() {
             )
         });
 
+    fn collider_from_obj(
+        mesh: RawObj,
+        scale: Option<Vec3>,
+        transform: Option<Vec3>,
+    ) -> ColliderShape {
+        type Point = na::Point<f32, 3>;
+
+        let vertices: Box<[Point]> = mesh
+            .positions
+            .iter()
+            .map(|v| {
+                Point::from_slice(
+                    transform
+                        .unwrap_or(
+                            Vec3::zero() + scale.unwrap_or(Vec3::one()) * Vec3::new(v.0, v.1, v.2),
+                        )
+                        .as_array(),
+                )
+            })
+            .collect();
+
+        ColliderShape::convex_hull(&vertices).unwrap()
+    }
+
+    let mut rigid_body_set = RigidBodySet::new();
+    let mut collider_set = ColliderSet::new();
+
+    // Make the floor
+    collider_set.insert(
+        ColliderBuilder::cuboid(100.0, 0.1, 100.0)
+            .translation(vector![0.0, -0.1, 0.0])
+            .build(),
+    );
+
+    // Create the boxes
+    let cube_1_collider = ColliderBuilder::new(collider_from_obj(
+        obj::raw::parse_obj(&include_bytes!("../test-scene/icosehedron.obj")[..]).unwrap(),
+        None,
+        None,
+    ))
+    .build();
+
+    let cube_1_rigid_body = RigidBodyBuilder::dynamic()
+        .translation(vector![3.0, 10.0, 0.0])
+        .rotation(AngVector::new(0.5, 1.2, 3.1));
+    let cube_1_handle = rigid_body_set.insert(cube_1_rigid_body);
+    collider_set.insert_with_parent(cube_1_collider, cube_1_handle, &mut rigid_body_set);
+
+    let cube_2_collider = ColliderBuilder::new(collider_from_obj(
+        obj::raw::parse_obj(&include_bytes!("../test-scene/cube.obj")[..]).unwrap(),
+        Some(cube_2_scale),
+        None,
+    ))
+    .build();
+
+    let cube_2_rigid_body = RigidBodyBuilder::dynamic().translation(vector![0.0, 5.0, 0.0]);
+    let cube_2_handle = rigid_body_set.insert(cube_2_rigid_body);
+    collider_set.insert_with_parent(cube_2_collider, cube_2_handle, &mut rigid_body_set);
+
+    let player = RigidBodyBuilder::dynamic()
+        .translation(vector![7.0, 8.0, 0.0])
+        .lock_rotations();
+    let player_collider = ColliderBuilder::capsule_y(1.0, 0.5)
+        .restitution(0.0)
+        .friction(0.0);
+
+    let player_handle = rigid_body_set.insert(player);
+    let player_collider_handle =
+        collider_set.insert_with_parent(player_collider, player_handle, &mut rigid_body_set);
+
+    /* Create other structures necessary for the simulation. */
+    let gravity = vector![0.0, -9.81, 0.0];
+    let integration_parameters = IntegrationParameters::default();
+    let mut physics_pipeline = PhysicsPipeline::new();
+    let mut island_manager = IslandManager::new();
+    let mut broad_phase = DefaultBroadPhase::new();
+    let mut narrow_phase = NarrowPhase::new();
+    let mut impulse_joint_set = ImpulseJointSet::new();
+    let mut multibody_joint_set = MultibodyJointSet::new();
+    let mut ccd_solver = CCDSolver::new();
+    let mut query_pipeline = QueryPipeline::new();
+    let physics_hooks = ();
+    let event_handler = ();
+
     let root_node = GameTree::new(
         Node::empty()
             .add_child(
                 Node::empty() /*.add_object(teapot)*/
-                    .add_object(cube_2)
-                    .add_object(collider!(
-                        "../test-scene/cube.obj",
-                        Some(cube_2_scale),
-                        None
-                    ))
-                    .add_object(node::Object::RigidBody(RigidBody::new(
-                        Vec3::new(0.0, 3.0, 3.0),
-                        Rotor3::from_euler_angles(0.1, 0.2, 0.4),
-                        Vec3::zero(),
-                        Vec3::new(0.0, 0.0, 0.0),
-                        cube_2_inverse_moment_of_inertia,
-                        1.0 / cube_2_mass,
-                    )))
+                    .add_object(cube_1)
                     .into(),
             )
             .add_child(
                 Node::empty()
                     //.add_object(suzanne)
-                    .add_object(cube_1)
-                    .add_object(collider!(
-                        "../test-scene/cube.obj",
-                        Some(cube_1_scale),
-                        None
-                    ))
-                    .add_object(node::Object::RigidBody(RigidBody::new(
-                        Vec3::new(0.0, 7.0, 3.0),
-                        Rotor3::from_euler_angles(-0.5, 0.8, 0.2),
-                        -2.0 * Vec3::unit_y(),
-                        Vec3::new(0.6642715, 0.20601688, -0.030171312),
-                        cube_1_inverse_moment_of_inertia,
-                        1.0 / cube_1_mass,
-                    )))
+                    .add_object(cube_2)
                     .into(),
             )
-            .add_child(
-                Node::empty()
-                    .add_object(room)
-                    .add_object(collider!(
-                        "../test-scene/cube.obj",
-                        Some(Vec3::new(20.0, 20.0, 20.0)),
-                        Some(Isometry3::new(
-                            Vec3::new(0.0, -20.0, 0.0),
-                            Rotor3::identity()
-                        ))
-                    ))
-                    .add_object(node::Object::RigidBody(RigidBody::new(
-                        Vec3::new(0.0, 0.0, 0.0),
-                        Rotor3::identity(),
-                        Vec3::zero(),
-                        Vec3::new(0.0, 0.0, 0.0),
-                        Vec3::zero(),
-                        0.0,
-                    )))
-                    .into(),
-            )
+            .add_child(Node::empty().add_object(room).into())
             .into(),
     );
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
-    let mut camera_position = Vec3::new(6.0, 5.0, 6.0);
+    //let mut camera_position = Vec3::new(6.0, 5.0, 6.0);
 
     fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
         Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
@@ -235,6 +252,8 @@ fn main() {
         node.borrow_mut().transform = new_transform;
     }
 
+    let mut time_since_left_ground = f32::MAX;
+
     event_loop.run(
         |inputs| {
             // Delta time calculation
@@ -242,39 +261,128 @@ fn main() {
             let dt = 1.0 / 60.0; //(new_time - previous_time).as_secs_f32();
             previous_time = new_time;
 
+            physics_pipeline.step(
+                &gravity,
+                &integration_parameters,
+                &mut island_manager,
+                &mut broad_phase,
+                &mut narrow_phase,
+                &mut rigid_body_set,
+                &mut collider_set,
+                &mut impulse_joint_set,
+                &mut multibody_joint_set,
+                &mut ccd_solver,
+                Some(&mut query_pipeline),
+                &physics_hooks,
+                &event_handler,
+            );
+
+            /*
+            while let Ok(collision_event) = collision_recv.try_recv() {
+                /*let player_collision = if collision_event.collider1() {
+
+                };*/
+                let opposite_actually = if collision_event.collider1() == player_collider_handle {
+                    false
+                } else if collision_event.collider2() == player_collider_handle {
+                    true
+                } else {
+                    panic!("expected collision to involve player");
+                };
+
+                let found_collision = false;
+                if let Some(contact_pair) = narrow_phase
+                    .contact_pair(collision_event.collider1(), collision_event.collider2())
+                {
+                    for manifold in &contact_pair.manifolds {
+                        //manifold.contacts();
+
+                        for point in &manifold.points {
+                            println!("{point:?}");
+
+                            if point.dist <= 0.0
+                                && (if opposite_actually {
+                                    point.local_p2.y
+                                } else {
+                                    point.local_p1.y
+                                } < FLOOR_COLLISION_HEIGHT)
+                            {
+                                on_floor = true;
+                            }
+                        }
+                    }
+                }
+
+                println!("Collision!! {:?}", collision_event);
+            }*/
+
             //let time_secs = (new_time - start_time).as_secs_f32();
 
             let camera_rotation = get_camera_rotor(inputs.camera_rotation);
 
-            const MOVEMENT_SPEED: f32 = 5.0;
-            let camera_movement = if inputs.forward {
-                Vec3::unit_z()
-            } else if inputs.backward {
-                -Vec3::unit_z()
-            } else {
-                Vec3::zero()
-            } + if inputs.left {
-                Vec3::unit_x()
-            } else if inputs.right {
-                -Vec3::unit_x()
-            } else {
-                Vec3::zero()
-            };
+            let player_info = &rigid_body_set[player_handle];
+            //let player_collider_info = &collider_set[player_collider_handle];
 
-            let vertical_movement = if inputs.up {
-                Vec3::unit_y()
-            } else if inputs.down {
-                -Vec3::unit_y()
-            } else {
-                Vec3::zero()
-            };
+            let player_transform = from_nalgebra(rigid_body_set[player_handle].position());
 
-            camera_position += (vertical_movement + camera_movement.rotated_by(camera_rotation))
-                * (MOVEMENT_SPEED * dt);
+            let impulse = rapier3d::na::Vector3::from_row_slice(
+                get_movement_impulse(
+                    &narrow_phase,
+                    player_collider_handle,
+                    inputs,
+                    player_info,
+                    camera_rotation,
+                    dt,
+                    &mut time_since_left_ground,
+                )
+                .as_slice(),
+            );
+            rigid_body_set[player_handle].apply_impulse(impulse, true);
 
-            let camera_transform = Isometry3::new(camera_position, camera_rotation.reversed());
+            //rigid_body_set[player_handle].set_position(to_nalgebra(&player_transform), true);
 
-            do_physics(&root_node, dt);
+            /*camera_position += (vertical_movement + camera_movement.rotated_by(camera_rotation))
+             * (MOVEMENT_SPEED * dt);*/
+
+            let camera_transform =
+                Isometry3::new(player_transform.translation, camera_rotation.reversed());
+
+            //let cube_1_rb = rigid_body_set[cube_1_handle];
+            //let cube_2_rb = rigid_body_set[cube_2_handle];
+
+            let n = root_node.root_node.borrow();
+
+            fn from_nalgebra(p: &rapier3d::na::Isometry3<f32>) -> Isometry3 {
+                Isometry3::new(
+                    Vec3::from(p.translation.vector.as_slice().first_chunk().unwrap()),
+                    Rotor3::from_quaternion_array(
+                        *p.rotation.coords.as_slice().first_chunk().unwrap(),
+                    ),
+                )
+            }
+
+            /*
+            fn to_nalgebra(p: &Isometry3) -> rapier3d::na::Isometry3<f32> {
+                rapier3d::na::Isometry3::<f32>::from_parts(
+                    rapier3d::na::Point3::from_slice(p.translation.as_array()).into(),
+                    rapier3d::na::UnitQuaternion::from_quaternion(
+                        rapier3d::na::Quaternion::from_vector(
+                            rapier3d::na::Vector4::from_row_slice(
+                                &p.rotation.into_quaternion_array(),
+                            ),
+                        ),
+                    ),
+                )
+            }*/
+
+            n.children[0].borrow_mut().transform =
+                from_nalgebra(rigid_body_set[cube_1_handle].position());
+            n.children[1].borrow_mut().transform =
+                from_nalgebra(rigid_body_set[cube_2_handle].position());
+
+            //rigid_body_set[cube_1_handle].position();
+
+            //do_physics(&root_node, dt);
 
             inputs.recreate_swapchain = gfx.draw(
                 |device, pipeline, command_buffer, uniform_buffer, image| {
