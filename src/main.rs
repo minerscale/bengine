@@ -182,7 +182,7 @@ fn main() {
 
     /* Create other structures necessary for the simulation. */
     let gravity = vector![0.0, -9.81, 0.0];
-    let integration_parameters = IntegrationParameters::default();
+    let mut integration_parameters = IntegrationParameters::default();
     let mut physics_pipeline = PhysicsPipeline::new();
     let mut island_manager = IslandManager::new();
     let mut broad_phase = DefaultBroadPhase::new();
@@ -234,6 +234,8 @@ fn main() {
             let new_time = std::time::Instant::now();
             let dt = (new_time - previous_time).as_secs_f32();
             previous_time = new_time;
+
+            integration_parameters.set_inv_dt(1.0/dt);
 
             physics_pipeline.step(
                 &gravity,
