@@ -235,7 +235,6 @@ impl Renderer {
                 .position_centered()
                 .resizable()
                 .build()
-                .map_err(|e| e.to_string())
                 .unwrap()
         };
 

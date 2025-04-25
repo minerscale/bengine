@@ -185,14 +185,15 @@ impl Swapchain {
         avaliable_formats
             .iter()
             .find_map(|&available_format| {
-                (available_format
-                    == (vk::SurfaceFormatKHR {
-                        format: vk::Format::B8G8R8A8_SRGB,
-                        color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
-                    }))
-                .then_some(available_format)
+                matches!(available_format, vk::SurfaceFormatKHR {
+                    format: vk::Format::B8G8R8A8_SRGB,
+                    color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR
+                }).then_some(available_format)
             })
-            .unwrap_or(avaliable_formats[0])
+            .unwrap_or_else(|| {
+                info!("couldn't find suitable format! Falling back to {:?}", avaliable_formats[0]);
+                avaliable_formats[0]
+            })
     }
 }
 
