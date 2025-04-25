@@ -46,7 +46,7 @@ features = ["linked", "debug", "std"]
 [target.'cfg(not(any(target_os = "linux")))'.dependencies.sdl2]
 version = "0.37.0"
 default-features = false
-features = ["raw-window-handle"]
+features = ["raw-window-handle", "static-link", "bundled"]
 
 [target.'cfg(any(target_os = "linux"))'.dependencies.sdl2]
 version = "0.37.0"
