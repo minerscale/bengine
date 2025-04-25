@@ -152,19 +152,15 @@ fn pick_physical_device(
             let features = vk::PhysicalDeviceFeatures2::default();
 
             let mut features = if TARGET_API_VERSION >= vk::API_VERSION_1_1 {
-                let features = features.push_next(&mut features11);
-
                 if TARGET_API_VERSION >= vk::API_VERSION_1_2 {
-                    let features = features.push_next(&mut features12);
-
                     if TARGET_API_VERSION >= vk::API_VERSION_1_3 {
                         features.push_next(&mut features13)
                     } else {
                         features
-                    }
+                    }.push_next(&mut features12)
                 } else {
                     features
-                }
+                }.push_next(&mut features11)
             } else {
                 features
             };
