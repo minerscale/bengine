@@ -240,7 +240,6 @@ impl Renderer {
                 .vulkan()
                 .position_centered()
                 .resizable()
-                .metal_view()
                 .build()
                 .unwrap()
         };
