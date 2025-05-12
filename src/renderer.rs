@@ -49,6 +49,7 @@ pub struct Renderer {
     image_avaliable_semaphores: Vec<Semaphore>,
     render_finished_semaphores: Vec<Semaphore>,
     in_flight_fences: Vec<Fence>,
+    semaphore_ready_fences: Vec<Fence>,
 
     uniform_buffer_layout: DescriptorSetLayout,
     pub texture_layout: DescriptorSetLayout,
@@ -97,8 +98,8 @@ impl Renderer {
         framebuffer_resized: bool,
     ) -> bool {
         unsafe {
-            let fence = &[*self.in_flight_fences[self.current_frame]];
-            self.device.wait_for_fences(fence, true, u64::MAX).unwrap();
+            let fences = &[*self.in_flight_fences[self.current_frame], *self.semaphore_ready_fences[self.current_frame]];
+            self.device.wait_for_fences(fences, true, u64::MAX).unwrap();
 
             let (image_index, mut recreate_swapchain) = match (
                 self.swapchain.loader.acquire_next_image(
@@ -122,7 +123,7 @@ impl Renderer {
                 }
             };
 
-            self.device.reset_fences(fence).unwrap();
+            self.device.reset_fences(fences).unwrap();
 
             replace_with::replace_with_or_abort(
                 self.command_buffers.get_mut(self.current_frame).unwrap(),
@@ -152,11 +153,16 @@ impl Renderer {
             let swapchains = [*self.swapchain];
             let indices: [u32; 1] = [image_index];
 
+            let semaphore_ready_fence = [*self.semaphore_ready_fences[self.current_frame]];
+            let mut fence_info =
+                vk::SwapchainPresentFenceInfoEXT::default().fences(&semaphore_ready_fence);
+
             let wait_semaphore = [*self.render_finished_semaphores[self.current_frame]];
             let present_info = vk::PresentInfoKHR::default()
                 .wait_semaphores(&wait_semaphore)
                 .swapchains(&swapchains)
-                .image_indices(&indices);
+                .image_indices(&indices)
+                .push_next(&mut fence_info);
 
             match self
                 .swapchain
@@ -287,6 +293,7 @@ impl Renderer {
         let mut image_avaliable_semaphores = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
         let mut render_finished_semaphores = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
         let mut in_flight_fences = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
+        let mut semaphore_ready_fences = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
 
         let mut command_buffers = Vec::new();
         let mut uniform_buffers = Vec::new();
@@ -299,6 +306,7 @@ impl Renderer {
             image_avaliable_semaphores.push(Semaphore::new(device.device.clone()));
             render_finished_semaphores.push(Semaphore::new(device.device.clone()));
             in_flight_fences.push(Fence::new(device.device.clone()));
+            semaphore_ready_fences.push(Fence::new(device.device.clone()));
 
             uniform_buffers.push(MappedBuffer::new(
                 device.device.clone(),
@@ -316,6 +324,7 @@ impl Renderer {
             image_avaliable_semaphores,
             render_finished_semaphores,
             in_flight_fences,
+            semaphore_ready_fences,
             descriptor_pool,
             uniform_buffer_layout,
             texture_layout,

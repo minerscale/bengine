@@ -19,6 +19,11 @@ const MOVEMENT_SPEED: f32 = 40.0;
 const AIR_STRAFE_SPEED: f32 = 10.0;
 const TOP_SPEED: f32 = 7.0;
 const COYOTE_TIME: f32 = 0.1;
+const FLOOR_DRAG: f32 = 1.0 / 2.0;
+const AIR_DRAG: f32 = 1.0 / 50.0;
+const STATIC_FRICTION_CUTOFF: f32 = 3.0;
+const MAX_STATIC_FRICTION: f32 = 4.0;
+
 fn is_on_floor(narrow_phase: &NarrowPhase, player_collider_handle: ColliderHandle) -> bool {
     let is_colliding_with_floor = |contact_pair: &ContactPair| {
         let opposite_actually = if contact_pair.collider1 == player_collider_handle {
@@ -99,8 +104,6 @@ pub fn get_movement_impulse(
         Vec3::from(player_info.linvel().as_slice().first_chunk::<3>().unwrap())
             * Vec3::new(1.0, 0.0, 1.0);
 
-    const FLOOR_DRAG: f32 = 1.0 / 2.0;
-    const AIR_DRAG: f32 = 1.0 / 50.0;
     let correction = if horizontal_velocity != Vec3::zero() {
         let movement_direction = if movement_direction == Vec3::zero() {
             horizontal_velocity * if is_on_floor { FLOOR_DRAG } else { AIR_DRAG }
@@ -118,8 +121,6 @@ pub fn get_movement_impulse(
         Vec3::zero()
     };
 
-    const STATIC_FRICTION_CUTOFF: f32 = 3.0;
-    const MAX_STATIC_FRICTION: f32 = 4.0;
     let friction = if player_info.linvel().magnitude() < STATIC_FRICTION_CUTOFF
         && movement == Vec3::zero()
     {

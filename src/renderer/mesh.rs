@@ -1,7 +1,7 @@
 use std::{io::BufRead, rc::Rc};
 
 use ash::vk;
-use obj::{load_obj, Obj};
+use obj::{Obj, load_obj};
 use ultraviolet::Vec3;
 
 use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer, vertex::Vertex};

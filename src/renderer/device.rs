@@ -28,6 +28,7 @@ fn pick_physical_device(
     requested_features11: &vk::PhysicalDeviceVulkan11Features,
     requested_features12: &vk::PhysicalDeviceVulkan12Features,
     requested_features13: &vk::PhysicalDeviceVulkan13Features,
+    requested_swapchain_maintenance1: bool,
 ) -> Option<(vk::PhysicalDevice, (u32, u32), vk::SampleCountFlags)> {
     fn feature_subset(
         requested_features: &vk::PhysicalDeviceFeatures,
@@ -138,45 +139,44 @@ fn pick_physical_device(
     }
 
     physical_devices.iter().find_map(|physical_device| unsafe {
-        if TARGET_API_VERSION < vk::API_VERSION_1_1 {
-            let features = instance.get_physical_device_features(*physical_device);
+        let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
+        let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
+        let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+        let mut features_swapchain_maintenance1 =
+            vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default();
 
-            if !feature_subset(requested_features, &features) {
-                return None;
-            }
-        } else {
-            let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
-            let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
-            let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+        let features = vk::PhysicalDeviceFeatures2::default();
 
-            let features = vk::PhysicalDeviceFeatures2::default();
-
-            let mut features = if TARGET_API_VERSION >= vk::API_VERSION_1_1 {
-                if TARGET_API_VERSION >= vk::API_VERSION_1_2 {
-                    if TARGET_API_VERSION >= vk::API_VERSION_1_3 {
-                        features.push_next(&mut features13)
-                    } else {
-                        features
-                    }.push_next(&mut features12)
+        let mut features = if TARGET_API_VERSION >= vk::API_VERSION_1_1 {
+            if TARGET_API_VERSION >= vk::API_VERSION_1_2 {
+                if TARGET_API_VERSION >= vk::API_VERSION_1_3 {
+                    features.push_next(&mut features13)
                 } else {
                     features
-                }.push_next(&mut features11)
+                }
+                .push_next(&mut features12)
             } else {
                 features
-            };
-
-            instance.get_physical_device_features2(*physical_device, &mut features);
-
-            if !feature_subset(requested_features, &features.features)
-                || ((TARGET_API_VERSION >= vk::API_VERSION_1_1)
-                    && !feature_subset11(requested_features11, &features11))
-                || ((TARGET_API_VERSION >= vk::API_VERSION_1_2)
-                    && !feature_subset12(requested_features12, &features12))
-                || ((TARGET_API_VERSION >= vk::API_VERSION_1_3)
-                    && !feature_subset13(requested_features13, &features13))
-            {
-                return None;
             }
+            .push_next(&mut features11)
+        } else {
+            features
+        }
+        .push_next(&mut features_swapchain_maintenance1);
+
+        instance.get_physical_device_features2(*physical_device, &mut features);
+
+        if !feature_subset(requested_features, &features.features)
+            || ((TARGET_API_VERSION >= vk::API_VERSION_1_1)
+                && !feature_subset11(requested_features11, &features11))
+            || ((TARGET_API_VERSION >= vk::API_VERSION_1_2)
+                && !feature_subset12(requested_features12, &features12))
+            || ((TARGET_API_VERSION >= vk::API_VERSION_1_3)
+                && !feature_subset13(requested_features13, &features13))
+            || ((features_swapchain_maintenance1.swapchain_maintenance1 == 0)
+                && requested_swapchain_maintenance1)
+        {
+            return None;
         }
 
         let physical_device_properties = instance.get_physical_device_properties(*physical_device);
@@ -261,6 +261,8 @@ impl Device {
         let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
         let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
+        let mut features_swapchain_maintenance1 =
+            vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default().swapchain_maintenance1(true);
 
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
         let (physical_device, (graphics_index, present_index), mssa_samples) =
@@ -272,22 +274,29 @@ impl Device {
                 &features11,
                 &features12,
                 &features13,
+                true,
             )
             .expect("Couldn't find suitable device");
 
         let device_memory_properties =
             unsafe { instance.get_physical_device_memory_properties(physical_device) };
 
-        let mut device_extension_names = [khr::swapchain::NAME.as_ptr()].to_vec();
+        let mut device_extension_names = [
+            khr::swapchain::NAME.as_ptr(),
+            ash::ext::swapchain_maintenance1::NAME.as_ptr(),
+        ]
+        .to_vec();
 
-        if unsafe {
+        let extension_properties = unsafe {
             instance
                 .enumerate_device_extension_properties(physical_device)
                 .unwrap()
-                .iter()
-                .find(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME)
-        }
-        .is_some()
+        };
+
+        if extension_properties
+            .iter()
+            .find(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME)
+            .is_some()
         {
             device_extension_names.push(khr::portability_subset::NAME.as_ptr());
         };
@@ -304,7 +313,8 @@ impl Device {
             .enabled_features(&features)
             .push_next(&mut features11)
             .push_next(&mut features12)
-            .push_next(&mut features13);
+            .push_next(&mut features13)
+            .push_next(&mut features_swapchain_maintenance1);
 
         let device = Rc::new(
             unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap(),

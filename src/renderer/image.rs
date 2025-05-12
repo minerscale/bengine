@@ -5,7 +5,7 @@ use image::GenericImageView;
 use log::info;
 
 use crate::renderer::{
-    buffer::{find_memory_type, Buffer},
+    buffer::{Buffer, find_memory_type},
     command_buffer::ActiveCommandBuffer,
     pipeline::Pipeline,
 };

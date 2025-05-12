@@ -5,7 +5,7 @@ use log::info;
 
 use crate::renderer::{
     device::Device,
-    image::{find_supported_format, Image, SwapchainImage},
+    image::{Image, SwapchainImage, find_supported_format},
     pipeline::Pipeline,
 };
 
@@ -185,14 +185,22 @@ impl Swapchain {
         avaliable_formats
             .iter()
             .find_map(|&available_format| {
-                matches!(available_format, vk::SurfaceFormatKHR {
-                    format: vk::Format::B8G8R8A8_SRGB,
-                    color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR
-                }).then_some(available_format)
+                matches!(
+                    available_format,
+                    vk::SurfaceFormatKHR {
+                        format: vk::Format::B8G8R8A8_SRGB,
+                        color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR
+                    }
+                )
+                .then_some(available_format)
             })
             .unwrap_or_else(|| {
-                info!("couldn't find suitable format! Falling back to {:?}", avaliable_formats[0]);
-                avaliable_formats[0]
+                let format = avaliable_formats.first().unwrap();
+                info!(
+                    "couldn't find suitable format! Falling back to {:?}",
+                    format
+                );
+                *format
             })
     }
 }

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, future::Future, rc::Rc};
 
-use genawaiter::{rc::gen, yield_};
+use genawaiter::{rc::r#gen, yield_};
 
 use crate::renderer::{mesh::Mesh, texture::Texture};
 
@@ -30,7 +30,7 @@ impl GameTree {
         &self,
     ) -> genawaiter::rc::Gen<(Isometry3, Rc<RefCell<Node>>), (), impl Future<Output = ()> + use<'_>>
     {
-        gen!({
+        r#gen!({
             let mut stack: Vec<(Isometry3, Rc<RefCell<Node>>)> =
                 vec![(self.root_node.borrow().transform, self.root_node.clone())];
 

@@ -10,6 +10,7 @@ use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 use obj::raw::RawObj;
 use player::get_movement_impulse;
 use renderer::{
+    HEIGHT, WIDTH,
     buffer::MappedBuffer,
     command_buffer::ActiveMultipleSubmitCommandBuffer,
     device::Device,
@@ -18,7 +19,6 @@ use renderer::{
     pipeline::{Pipeline, VertexPushConstants},
     sampler::Sampler,
     texture::Texture,
-    HEIGHT, WIDTH,
 };
 
 use ash::vk;
@@ -235,7 +235,7 @@ fn main() {
             let dt = (new_time - previous_time).as_secs_f32();
             previous_time = new_time;
 
-            integration_parameters.set_inv_dt(1.0/dt);
+            integration_parameters.set_inv_dt(1.0 / dt);
 
             physics_pipeline.step(
                 &gravity,

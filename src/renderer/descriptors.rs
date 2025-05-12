@@ -4,7 +4,7 @@ use ash::vk;
 use log::info;
 
 use crate::renderer::{
-    buffer::Buffer, image::Image, sampler::Sampler, texture::MAX_TEXTURES, MAX_FRAMES_IN_FLIGHT,
+    MAX_FRAMES_IN_FLIGHT, buffer::Buffer, image::Image, sampler::Sampler, texture::MAX_TEXTURES,
 };
 
 #[derive(Clone)]
