@@ -311,10 +311,23 @@ impl Device {
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&device_extension_names)
             .enabled_features(&features)
-            .push_next(&mut features11)
-            .push_next(&mut features12)
-            .push_next(&mut features13)
             .push_next(&mut features_swapchain_maintenance1);
+        
+        let device_create_info = if TARGET_API_VERSION >= vk::API_VERSION_1_1 {
+            if TARGET_API_VERSION >= vk::API_VERSION_1_2 {
+                if TARGET_API_VERSION >= vk::API_VERSION_1_3 {
+                    device_create_info.push_next(&mut features13)
+                } else {
+                    device_create_info
+                }
+                .push_next(&mut features12)
+            } else {
+                device_create_info
+            }
+            .push_next(&mut features11)
+        } else {
+            device_create_info
+        };
 
         let device = Rc::new(
             unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap(),
