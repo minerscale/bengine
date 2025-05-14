@@ -1,5 +1,5 @@
 use ash::vk;
-use sdl2::sys::SDL_Vulkan_GetDrawableSize;
+use render_pass::RenderPass;
 use ultraviolet::Isometry3;
 
 pub mod buffer;
@@ -8,13 +8,13 @@ pub mod device;
 pub mod image;
 pub mod mesh;
 pub mod pipeline;
+pub mod render_pass;
 pub mod sampler;
 pub mod texture;
 
 mod debug_messenger;
 mod descriptors;
 mod instance;
-mod render_pass;
 mod shader_module;
 mod surface;
 mod swapchain;
@@ -29,7 +29,6 @@ use crate::renderer::{
     device::Device,
     image::SwapchainImage,
     instance::Instance,
-    pipeline::Pipeline,
     surface::Surface,
     swapchain::Swapchain,
     synchronization::{Fence, Semaphore},
@@ -73,8 +72,8 @@ pub struct Renderer {
     #[allow(dead_code)]
     entry: ash::Entry,
 
-    window: sdl2::video::Window,
-    pub sdl_context: sdl2::Sdl,
+    pub window: sdl3::video::Window,
+    pub sdl_context: sdl3::Sdl,
 
     current_frame: usize,
 }
@@ -87,7 +86,7 @@ impl Renderer {
     pub fn draw<
         F: FnMut(
             &Device,
-            &Pipeline,
+            &RenderPass,
             ActiveMultipleSubmitCommandBuffer,
             &mut MappedBuffer<UniformBufferObject>,
             &SwapchainImage,
@@ -98,7 +97,10 @@ impl Renderer {
         framebuffer_resized: bool,
     ) -> bool {
         unsafe {
-            let fences = &[*self.in_flight_fences[self.current_frame], *self.semaphore_ready_fences[self.current_frame]];
+            let fences = &[
+                *self.in_flight_fences[self.current_frame],
+                *self.semaphore_ready_fences[self.current_frame],
+            ];
             self.device.wait_for_fences(fences, true, u64::MAX).unwrap();
 
             let (image_index, mut recreate_swapchain) = match (
@@ -133,7 +135,7 @@ impl Renderer {
                         .record(|command_buffer| {
                             record_command_buffer(
                                 &self.device,
-                                &self.swapchain.pipeline,
+                                &self.swapchain.render_pass,
                                 command_buffer,
                                 &mut self.uniform_buffers[self.current_frame],
                                 &self.swapchain.images[image_index as usize],
@@ -187,25 +189,15 @@ impl Renderer {
     }
 
     pub fn recreate_swapchain(&mut self) {
-        let mut width: std::ffi::c_int = 0;
-        let mut height: std::ffi::c_int = 0;
-
-        if cfg!(target_os = "macos") {
-            width = WIDTH.try_into().unwrap();
-            height = HEIGHT.try_into().unwrap();
+        let extent = if cfg!(target_os = "macos") {
+            (WIDTH, HEIGHT)
         } else {
-            unsafe {
-                SDL_Vulkan_GetDrawableSize(
-                    self.window.raw(),
-                    (&mut width) as *mut std::ffi::c_int,
-                    (&mut height) as *mut std::ffi::c_int,
-                )
-            }
+            self.window.size_in_pixels()
         };
 
         let extent = vk::Extent2D {
-            width: width.try_into().unwrap(),
-            height: height.try_into().unwrap(),
+            width: extent.0,
+            height: extent.1,
         };
 
         self.wait_idle();
@@ -231,7 +223,7 @@ impl Renderer {
     pub fn new(width: u32, height: u32) -> Self {
         let entry = ash::Entry::linked();
 
-        let sdl_context = sdl2::init().unwrap();
+        let sdl_context = sdl3::init().unwrap();
         let window = {
             sdl_context
                 .video()

@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, ops::Deref};
+use std::ops::Deref;
 
 use ash::{
     khr,
@@ -12,34 +12,16 @@ pub struct Surface {
 }
 
 impl Surface {
-    pub fn new(entry: &ash::Entry, window: &sdl2::video::Window, instance: &ash::Instance) -> Self {
+    pub fn new(entry: &ash::Entry, window: &sdl3::video::Window, instance: &ash::Instance) -> Self {
         let loader = khr::surface::Instance::new(entry, instance);
 
-        unsafe {
-            let mut surface: MaybeUninit<sdl2::sys::VkSurfaceKHR> = MaybeUninit::uninit();
+        let surface = vk::SurfaceKHR::from_raw(
+            window
+                .vulkan_create_surface(instance.handle().as_raw() as sdl3::video::VkInstance)
+                .unwrap() as u64,
+        );
 
-            Surface {
-                loader,
-                surface: match sdl2::sys::SDL_Vulkan_CreateSurface(
-                    window.raw(),
-                    instance
-                        .handle()
-                        .as_raw()
-                        .try_into()
-                        .map_err(|_| "instance handle should fit in a u32!")
-                        .unwrap(),
-                    surface.as_mut_ptr(),
-                ) {
-                    sdl2::sys::SDL_bool::SDL_FALSE => {
-                        Err("failed to make vulkan surface".to_owned())
-                    }
-                    sdl2::sys::SDL_bool::SDL_TRUE => {
-                        Ok(vk::SurfaceKHR::from_raw(surface.assume_init()))
-                    }
-                }
-                .unwrap(),
-            }
-        }
+        Surface { loader, surface }
     }
 }
 

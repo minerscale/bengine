@@ -6,13 +6,13 @@ use log::info;
 use crate::renderer::{
     device::Device,
     image::{Image, SwapchainImage, find_supported_format},
-    pipeline::Pipeline,
+    render_pass::RenderPass,
 };
 
 pub struct Swapchain {
     pub loader: khr::swapchain::Device,
     pub swapchain: vk::SwapchainKHR,
-    pub pipeline: Pipeline,
+    pub render_pass: RenderPass,
     pub images: Vec<SwapchainImage>,
     pub depth_image: ManuallyDrop<Image>,
     pub color_image: Option<Image>,
@@ -138,11 +138,11 @@ impl Swapchain {
             )),
         };
 
-        let pipeline = Pipeline::new(
+        let render_pass = RenderPass::new(
             instance,
             device,
-            &extent,
             surface_format.format,
+            &extent,
             descriptor_set_layouts,
         );
 
@@ -156,7 +156,7 @@ impl Swapchain {
                     extent,
                     depth_image.view,
                     color_image.as_ref().map(|i| i.view),
-                    &pipeline,
+                    &render_pass,
                 )
             })
             .collect::<Vec<_>>();
@@ -164,7 +164,7 @@ impl Swapchain {
         Self {
             loader: swapchain_loader,
             swapchain,
-            pipeline,
+            render_pass,
             images,
             depth_image,
             color_image,
@@ -196,10 +196,7 @@ impl Swapchain {
             })
             .unwrap_or_else(|| {
                 let format = avaliable_formats.first().unwrap();
-                info!(
-                    "couldn't find suitable format! Falling back to {:?}",
-                    format
-                );
+                info!("couldn't find suitable format! Falling back to {format:?}");
                 *format
             })
     }

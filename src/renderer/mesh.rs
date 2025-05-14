@@ -23,11 +23,11 @@ impl Mesh {
     ) -> Self {
         let mut mesh: Obj<Vertex, u32> = load_obj(file).unwrap();
 
-        scale.map(|scale| {
+        if let Some(scale) = scale {
             for vertex in &mut mesh.vertices {
                 vertex.pos *= scale;
             }
-        });
+        }
 
         let vertex_buffer = Buffer::new_staged(
             instance,

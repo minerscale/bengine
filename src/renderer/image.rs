@@ -7,7 +7,7 @@ use log::info;
 use crate::renderer::{
     buffer::{Buffer, find_memory_type},
     command_buffer::ActiveCommandBuffer,
-    pipeline::Pipeline,
+    render_pass::RenderPass,
 };
 
 pub struct SwapchainImage {
@@ -26,7 +26,7 @@ impl SwapchainImage {
         extent: vk::Extent2D,
         depth_attachment: vk::ImageView,
         color_attachment: Option<vk::ImageView>,
-        pipeline: &Pipeline,
+        render_pass: &RenderPass,
     ) -> Self {
         let view = create_image_view(&device, image, format, vk::ImageAspectFlags::COLOR);
 
@@ -35,7 +35,7 @@ impl SwapchainImage {
             None => vec![view, depth_attachment],
         };
 
-        let framebuffer = create_framebuffer(&device, pipeline, &attachments, extent);
+        let framebuffer = create_framebuffer(&device, render_pass, &attachments, extent);
 
         SwapchainImage {
             image,
@@ -366,12 +366,12 @@ pub fn create_image_view(
 
 fn create_framebuffer(
     device: &ash::Device,
-    pipeline: &Pipeline,
+    render_pass: &RenderPass,
     attachments: &[vk::ImageView],
     extent: vk::Extent2D,
 ) -> vk::Framebuffer {
     let framebuffer_info = vk::FramebufferCreateInfo::default()
-        .render_pass(*pipeline.render_pass)
+        .render_pass(**render_pass)
         .attachments(attachments)
         .width(extent.width)
         .height(extent.height)

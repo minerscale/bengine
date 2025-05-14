@@ -1,8 +1,8 @@
-use sdl2::keyboard::Keycode;
+use sdl3::keyboard::Keycode;
 use ultraviolet::Vec2;
 
 pub struct EventLoop {
-    pump: sdl2::EventPump,
+    pump: sdl3::EventPump,
 }
 
 #[derive(Debug, Default)]
@@ -19,7 +19,7 @@ pub struct Inputs {
 }
 
 impl Inputs {
-    pub fn set_input(&mut self, key: sdl2::keyboard::Keycode, pressed: bool) {
+    pub fn set_input(&mut self, key: sdl3::keyboard::Keycode, pressed: bool) {
         type K = Keycode;
         if cfg!(feature = "colemak") {
             match key {
@@ -27,9 +27,9 @@ impl Inputs {
                 K::R => self.backward = pressed,
                 K::A => self.left = pressed,
                 K::S => self.right = pressed,
-                K::SPACE => self.up = pressed,
+                K::Space => self.up = pressed,
                 K::C => self.down = pressed,
-                K::ESCAPE => self.quit = pressed,
+                K::Escape => self.quit = pressed,
                 _ => (),
             }
         } else {
@@ -38,9 +38,9 @@ impl Inputs {
                 K::S => self.backward = pressed,
                 K::A => self.left = pressed,
                 K::D => self.right = pressed,
-                K::SPACE => self.up = pressed,
+                K::Space => self.up = pressed,
                 K::C => self.down = pressed,
-                K::ESCAPE => self.quit = pressed,
+                K::Escape => self.quit = pressed,
                 _ => (),
             }
         }
@@ -54,11 +54,11 @@ impl Inputs {
 }
 
 impl EventLoop {
-    pub fn new(pump: sdl2::EventPump) -> Self {
+    pub fn new(pump: sdl3::EventPump) -> Self {
         EventLoop { pump }
     }
 
-    pub fn run<F: FnMut(&mut Inputs), G: FnMut(sdl2::event::Event, &mut Inputs)>(
+    pub fn run<F: FnMut(&mut Inputs), G: FnMut(sdl3::event::Event, &mut Inputs)>(
         &mut self,
         mut render: F,
         mut process_event: G,

@@ -51,18 +51,18 @@ impl GameTree {
     }
 }
 
-impl Into<Rc<RefCell<Node>>> for Node {
-    fn into(self) -> Rc<RefCell<Node>> {
-        Rc::new(RefCell::new(self))
+impl From<Node> for Rc<RefCell<Node>> {
+    fn from(value: Node) -> Self {
+        Rc::new(RefCell::new(value))
     }
 }
 
 impl Node {
     pub fn empty() -> Self {
         Self {
-            transform: Isometry3::identity().into(),
+            transform: Isometry3::identity(),
             children: vec![],
-            objects: vec![].into(),
+            objects: vec![],
         }
     }
 

@@ -16,7 +16,8 @@ use renderer::{
     device::Device,
     image::{Image, SwapchainImage},
     mesh::Mesh,
-    pipeline::{Pipeline, VertexPushConstants},
+    pipeline::VertexPushConstants,
+    render_pass::RenderPass,
     sampler::Sampler,
     texture::Texture,
 };
@@ -38,7 +39,7 @@ use rapier3d::{
 use renderer::{Renderer, UniformBufferObject};
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
-use sdl2::event::Event;
+use sdl3::event::Event;
 
 fn main() {
     env_logger::init();
@@ -217,7 +218,9 @@ fn main() {
         Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
     }
 
-    gfx.sdl_context.mouse().set_relative_mouse_mode(true);
+    gfx.sdl_context
+        .mouse()
+        .set_relative_mouse_mode(&gfx.window, true);
 
     info!("finished loading");
 
@@ -259,9 +262,9 @@ fn main() {
 
             let player_transform = from_nalgebra(rigid_body_set[player_handle].position());
 
-            if inputs.up == true && previous_jump_input == false {
+            if inputs.up && !previous_jump_input {
                 jump_buffer = true;
-            } else if inputs.up == false && previous_jump_input == true {
+            } else if !inputs.up && previous_jump_input {
                 jump_buffer = false;
             }
 
@@ -304,10 +307,10 @@ fn main() {
                 from_nalgebra(rigid_body_set[cube_2_handle].position());
 
             inputs.recreate_swapchain = gfx.draw(
-                |device, pipeline, command_buffer, uniform_buffer, image| {
+                |device, render_pass, command_buffer, uniform_buffer, image| {
                     record_command_buffer(
                         device,
-                        pipeline,
+                        render_pass,
                         command_buffer,
                         uniform_buffer,
                         image,
@@ -356,7 +359,7 @@ fn main() {
             Event::Window {
                 timestamp: _,
                 window_id: _,
-                win_event: sdl2::event::WindowEvent::SizeChanged(_, _),
+                win_event: sdl3::event::WindowEvent::PixelSizeChanged(_, _),
             } => {
                 inputs.recreate_swapchain = true;
             }
@@ -369,7 +372,7 @@ fn main() {
 
 pub fn record_command_buffer(
     device: &Device,
-    pipeline: &Pipeline,
+    render_pass: &RenderPass,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
     uniform_buffer: &mut MappedBuffer<UniformBufferObject>,
     image: &SwapchainImage,
@@ -390,7 +393,7 @@ pub fn record_command_buffer(
     ];
 
     let render_pass_info = vk::RenderPassBeginInfo::default()
-        .render_pass(*pipeline.render_pass)
+        .render_pass(**render_pass)
         .framebuffer(image.framebuffer)
         .render_area(vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
@@ -410,7 +413,11 @@ pub fn record_command_buffer(
         let cmd_buf = *command_buffer;
         device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
 
-        device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **pipeline);
+        device.cmd_bind_pipeline(
+            cmd_buf,
+            vk::PipelineBindPoint::GRAPHICS,
+            *render_pass.pipeline,
+        );
 
         device.cmd_set_viewport(cmd_buf, 0, &viewport);
 
@@ -434,7 +441,7 @@ pub fn record_command_buffer(
         device.cmd_bind_descriptor_sets(
             cmd_buf,
             vk::PipelineBindPoint::GRAPHICS,
-            pipeline.pipeline_layout,
+            render_pass.pipeline.pipeline_layout,
             0,
             &uniform_buffer_descriptor_set,
             &[],
@@ -449,7 +456,7 @@ pub fn record_command_buffer(
 
             device.cmd_push_constants(
                 cmd_buf,
-                pipeline.pipeline_layout,
+                render_pass.pipeline.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 offset_of!(VertexPushConstants, model_transform) as u32,
                 std::slice::from_raw_parts(
@@ -465,7 +472,7 @@ pub fn record_command_buffer(
                 device.cmd_bind_descriptor_sets(
                     cmd_buf,
                     vk::PipelineBindPoint::GRAPHICS,
-                    pipeline.pipeline_layout,
+                    render_pass.pipeline.pipeline_layout,
                     1,
                     &descriptor_sets,
                     &[],

@@ -9,25 +9,20 @@ pub struct VertexPushConstants {
     pub model_transform: Isometry3,
 }
 
-use crate::renderer::{
-    device::Device, render_pass::RenderPass, shader_module::spv, vertex::Vertex,
-};
+use crate::renderer::{device::Device, shader_module::spv, vertex::Vertex};
 
 pub struct Pipeline {
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
-    pub render_pass: RenderPass,
-
     device: Rc<ash::Device>,
 }
 
 impl Pipeline {
     pub fn new(
-        instance: &ash::Instance,
         device: &Device,
         extent: &vk::Extent2D,
-        format: vk::Format,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
+        render_pass: vk::RenderPass,
     ) -> Self {
         let vert_shader_module = spv!(device.device.clone(), "shader.vert");
         let frag_shader_module = spv!(device.device.clone(), "shader.frag");
@@ -37,7 +32,7 @@ impl Pipeline {
         let ez = f32::tan(fov / 2.0).recip();
         let camera_parameters = Vec4::new(
             ez,
-            -1.0 * ((extent.width as f32) / (extent.height as f32)),
+            -((extent.width as f32) / (extent.height as f32)),
             0.01,
             1000.0,
         );
@@ -176,8 +171,6 @@ impl Pipeline {
                 .unwrap()
         };
 
-        let render_pass = RenderPass::new(instance, device, format);
-
         let pipeline_info = [vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input_info)
@@ -189,7 +182,7 @@ impl Pipeline {
             .color_blend_state(&color_blending)
             .dynamic_state(&dynamic_state)
             .layout(pipeline_layout)
-            .render_pass(*render_pass)
+            .render_pass(render_pass)
             .subpass(0)];
 
         let pipeline = unsafe {
@@ -202,7 +195,6 @@ impl Pipeline {
             device: device.device.clone(),
             pipeline,
             pipeline_layout,
-            render_pass,
         }
     }
 }

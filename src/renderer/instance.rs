@@ -15,7 +15,7 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub fn new(entry: &ash::Entry, window: &sdl2::video::Window) -> Self {
+    pub fn new(entry: &ash::Entry, window: &sdl3::video::Window) -> Self {
         let app_name = c"Bengine";
 
         let layer_names: &[&std::ffi::CStr] = if ENABLE_VALIDATION_LAYERS {
@@ -24,15 +24,15 @@ impl Instance {
             &[]
         };
         let layers_names_raw: Vec<*const c_char> = layer_names
-            .iter()
+            .into_iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();
 
         let required_instance_extensions = window
             .vulkan_instance_extensions()
             .unwrap()
-            .iter()
-            .map(|&raw_name| CString::new(raw_name))
+            .into_iter()
+            .map(|raw_name| CString::new(raw_name))
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 

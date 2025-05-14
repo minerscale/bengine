@@ -3,15 +3,22 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-use crate::renderer::{device::Device, swapchain::find_depth_format};
+use crate::renderer::{device::Device, pipeline::Pipeline, swapchain::find_depth_format};
 
 pub struct RenderPass {
     render_pass: vk::RenderPass,
+    pub pipeline: Pipeline,
     device: Rc<ash::Device>,
 }
 
 impl RenderPass {
-    pub fn new(instance: &ash::Instance, device: &Device, format: vk::Format) -> Self {
+    pub fn new(
+        instance: &ash::Instance,
+        device: &Device,
+        format: vk::Format,
+        extent: &vk::Extent2D,
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
+    ) -> Self {
         let color_attachment = vk::AttachmentDescription::default()
             .format(format)
             .samples(device.mssa_samples)
@@ -106,9 +113,12 @@ impl RenderPass {
                 .unwrap()
         };
 
+        let pipeline = Pipeline::new(device, &extent, descriptor_set_layouts, render_pass);
+
         Self {
             device: device.device.clone(),
             render_pass,
+            pipeline,
         }
     }
 }

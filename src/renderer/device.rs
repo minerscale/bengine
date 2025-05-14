@@ -20,6 +20,7 @@ pub struct Device {
     pub present_queue: vk::Queue,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pick_physical_device(
     instance: &ash::Instance,
     surface: &Surface,
@@ -262,7 +263,8 @@ impl Device {
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
         let mut features13 = vk::PhysicalDeviceVulkan13Features::default();
         let mut features_swapchain_maintenance1 =
-            vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default().swapchain_maintenance1(true);
+            vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default()
+                .swapchain_maintenance1(true);
 
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
         let (physical_device, (graphics_index, present_index), mssa_samples) =
@@ -295,8 +297,7 @@ impl Device {
 
         if extension_properties
             .iter()
-            .find(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME)
-            .is_some()
+            .any(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME)
         {
             device_extension_names.push(khr::portability_subset::NAME.as_ptr());
         };
@@ -312,7 +313,7 @@ impl Device {
             .enabled_extension_names(&device_extension_names)
             .enabled_features(&features)
             .push_next(&mut features_swapchain_maintenance1);
-        
+
         let device_create_info = if TARGET_API_VERSION >= vk::API_VERSION_1_1 {
             if TARGET_API_VERSION >= vk::API_VERSION_1_2 {
                 if TARGET_API_VERSION >= vk::API_VERSION_1_3 {

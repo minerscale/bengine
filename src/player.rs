@@ -60,6 +60,7 @@ fn is_on_floor(narrow_phase: &NarrowPhase, player_collider_handle: ColliderHandl
         .any(is_colliding_with_floor)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn get_movement_impulse(
     narrow_phase: &NarrowPhase,
     player_collider_handle: ColliderHandle,
@@ -89,7 +90,7 @@ pub fn get_movement_impulse(
     let is_jumping = inputs.up
         && *time_since_left_ground <= COYOTE_TIME
         && player_info.linvel().y < JUMP_CUTOFF
-        && *jump_buffer == true;
+        && *jump_buffer;
 
     if !is_on_floor {
         *time_since_left_ground += dt;
