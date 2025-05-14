@@ -113,7 +113,7 @@ impl RenderPass {
                 .unwrap()
         };
 
-        let pipeline = Pipeline::new(device, &extent, descriptor_set_layouts, render_pass);
+        let pipeline = Pipeline::new(device, extent, descriptor_set_layouts, render_pass);
 
         Self {
             device: device.device.clone(),

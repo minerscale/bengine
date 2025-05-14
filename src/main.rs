@@ -346,8 +346,7 @@ fn main() {
                 const SENSITIVITY: f32 = 0.005;
 
                 inputs.camera_rotation = {
-                    let mut rotation =
-                        inputs.camera_rotation + Vec2::new(xrel as f32, yrel as f32) * SENSITIVITY;
+                    let mut rotation = inputs.camera_rotation + Vec2::new(xrel, yrel) * SENSITIVITY;
 
                     rotation.y = rotation
                         .y

@@ -24,7 +24,7 @@ impl Instance {
             &[]
         };
         let layers_names_raw: Vec<*const c_char> = layer_names
-            .into_iter()
+            .iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();
 
@@ -32,7 +32,7 @@ impl Instance {
             .vulkan_instance_extensions()
             .unwrap()
             .into_iter()
-            .map(|raw_name| CString::new(raw_name))
+            .map(CString::new)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
