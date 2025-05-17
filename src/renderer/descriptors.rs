@@ -76,8 +76,8 @@ impl DescriptorSet {
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
-            self.dependencies.push(texture.clone());
-            self.dependencies.push(sampler.clone());
+            self.dependencies.push(texture);
+            self.dependencies.push(sampler);
         };
     }
 }
@@ -122,7 +122,7 @@ impl DescriptorPool {
 
         let pool_info = vk::DescriptorPoolCreateInfo::default()
             .pool_sizes(&pool_sizes)
-            .max_sets(MAX_FRAMES_IN_FLIGHT as u32 + MAX_TEXTURES);
+            .max_sets(u32::try_from(MAX_FRAMES_IN_FLIGHT).unwrap() + MAX_TEXTURES);
 
         let pool = unsafe { device.create_descriptor_pool(&pool_info, None).unwrap() };
 

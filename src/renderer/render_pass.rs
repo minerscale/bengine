@@ -6,11 +6,11 @@ use ultraviolet::Vec4;
 
 use crate::renderer::{
     device::Device,
-    pipeline::{Pipeline, PipelineBuilder},
+    pipeline::{Pipeline, PipelineBuilder, VertexPushConstants},
+    shader_module::{SpecializationInfo, spv},
     swapchain::find_depth_format,
+    vertex::Vertex,
 };
-
-use super::shader_module::{SpecializationInfo, spv};
 
 pub struct RenderPass {
     render_pass: vk::RenderPass,
@@ -40,7 +40,7 @@ impl RenderPass {
             });
 
         let depth_attachment = vk::AttachmentDescription::default()
-            .format(find_depth_format(instance, &device.physical_device))
+            .format(find_depth_format(instance, device.physical_device))
             .samples(device.msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::DONT_CARE)
@@ -49,10 +49,10 @@ impl RenderPass {
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-        let attachments = match device.msaa_samples {
-            vk::SampleCountFlags::TYPE_1 => vec![color_attachment, depth_attachment],
-            _ => {
-                let color_attachment_resolve = vk::AttachmentDescription::default()
+        let attachments = if device.msaa_samples == vk::SampleCountFlags::TYPE_1 {
+            vec![color_attachment, depth_attachment]
+        } else {
+            let color_attachment_resolve = vk::AttachmentDescription::default()
                     .format(format)
                     .samples(vk::SampleCountFlags::TYPE_1)
                     .load_op(vk::AttachmentLoadOp::DONT_CARE)
@@ -63,7 +63,6 @@ impl RenderPass {
                     .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
 
                 vec![color_attachment, depth_attachment, color_attachment_resolve]
-            }
         };
 
         let color_attachment_ref = [vk::AttachmentReference {
@@ -154,7 +153,7 @@ impl RenderPass {
             ],
             unsafe {
                 std::slice::from_raw_parts(
-                    &camera_parameters as *const Vec4 as *const u8,
+                    (&raw const camera_parameters).cast::<u8>(),
                     std::mem::size_of::<Vec4>(),
                 )
             },
@@ -175,13 +174,44 @@ impl RenderPass {
             ),
         ];
 
+        let push_constant_ranges = [vk::PushConstantRange::default()
+            .offset(0)
+            .size(
+                std::mem::size_of::<VertexPushConstants>()
+                    .try_into()
+                    .unwrap(),
+            )
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+
+        let viewport = [vk::Viewport::default()
+            .x(0.0)
+            .y(0.0)
+            .width(extent.width as f32)
+            .height(extent.height as f32)
+            .min_depth(0.0)
+            .max_depth(1.0)];
+
+        let scissor = [vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent,
+        }];
+
+        let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
+            .sample_shading_enable(false)
+            .rasterization_samples(device.msaa_samples)
+            .min_sample_shading(1.0);
+
         let pipeline = PipelineBuilder::new()
             .device(device.device.clone())
-            .extent(extent)
+            .viewports(&viewport)
+            .scissors(&scissor)
             .descriptor_set_layouts(descriptor_set_layouts)
             .render_pass(render_pass)
-            .msaa_samples(device.msaa_samples)
+            .multisampling(&multisampling)
             .shader_stages(&shader_stages)
+            .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR])
+            .vertex_input_info(&Vertex::get_input_state_create_info())
+            .push_constant_ranges(&push_constant_ranges)
             .build();
 
         Self {

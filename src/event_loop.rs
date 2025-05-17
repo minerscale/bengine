@@ -5,6 +5,7 @@ pub struct EventLoop {
     pump: sdl3::EventPump,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default)]
 pub struct Inputs {
     pub camera_rotation: Vec2,
@@ -55,7 +56,7 @@ impl Inputs {
 
 impl EventLoop {
     pub fn new(pump: sdl3::EventPump) -> Self {
-        EventLoop { pump }
+        Self { pump }
     }
 
     pub fn run<F: FnMut(&mut Inputs), G: FnMut(sdl3::event::Event, &mut Inputs)>(

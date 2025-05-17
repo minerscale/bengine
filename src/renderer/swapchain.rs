@@ -28,10 +28,10 @@ impl Swapchain {
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
         old_swapchain: Option<&Self>,
     ) -> Self {
-        let swapchain_loader = match old_swapchain {
-            Some(swapchain) => swapchain.loader.clone(),
-            None => khr::swapchain::Device::new(instance, device),
-        };
+        let swapchain_loader = old_swapchain.map_or_else(
+            || khr::swapchain::Device::new(instance, device),
+            |swapchain| swapchain.loader.clone()
+        );
 
         let surface_format =
             Self::choose_swap_surface_format(device.physical_device, surface_loader, surface);
@@ -70,8 +70,7 @@ impl Swapchain {
                 .unwrap()
         };
         let present_mode = present_modes
-            .iter()
-            .cloned()
+            .into_iter()
             .find(|&mode| mode == vk::PresentModeKHR::FIFO_RELAXED)
             .unwrap_or(vk::PresentModeKHR::FIFO);
 
@@ -88,10 +87,7 @@ impl Swapchain {
             .present_mode(present_mode)
             .clipped(true)
             .image_array_layers(1)
-            .old_swapchain(match old_swapchain {
-                Some(s) => s.swapchain,
-                None => vk::SwapchainKHR::null(),
-            });
+            .old_swapchain(old_swapchain.map_or_else(vk::SwapchainKHR::null, |s| s.swapchain));
 
         let swapchain = unsafe {
             swapchain_loader
@@ -100,7 +96,7 @@ impl Swapchain {
         };
 
         let depth_image = {
-            let depth_format = find_depth_format(instance, &device.physical_device);
+            let depth_format = find_depth_format(instance, device.physical_device);
 
             fn has_stencil_component(format: vk::Format) -> bool {
                 format == vk::Format::D32_SFLOAT_S8_UINT || format == vk::Format::D24_UNORM_S8_UINT
@@ -219,19 +215,19 @@ impl Drop for Swapchain {
             self.color_image.take();
 
             info!("dropped swapchain");
-            self.loader.destroy_swapchain(self.swapchain, None)
+            self.loader.destroy_swapchain(self.swapchain, None);
         }
     }
 }
 
 pub fn find_depth_format(
     instance: &ash::Instance,
-    physical_device: &vk::PhysicalDevice,
+    physical_device: vk::PhysicalDevice,
 ) -> vk::Format {
     find_supported_format(
         instance,
         physical_device,
-        vec![
+        &[
             vk::Format::D32_SFLOAT,
             vk::Format::D32_SFLOAT_S8_UINT,
             /*vk::Format::D24_UNORM_S8_UINT,*/

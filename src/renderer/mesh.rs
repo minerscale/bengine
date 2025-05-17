@@ -40,7 +40,7 @@ impl Mesh {
 
         let index_buffer = Buffer::new_staged(
             instance,
-            device.clone(),
+            device,
             physical_device,
             cmd_buf,
             vk::BufferUsageFlags::INDEX_BUFFER,

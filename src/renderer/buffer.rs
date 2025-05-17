@@ -16,6 +16,7 @@ pub struct Buffer<T: Copy> {
     phantom: PhantomData<T>,
 }
 
+#[allow(dead_code)]
 pub struct MappedBuffer<T: Copy + 'static> {
     pub buffer: Rc<Buffer<T>>,
     pub mapped_memory: &'static mut [T],
@@ -25,7 +26,7 @@ pub struct MappedBuffer<T: Copy + 'static> {
 impl<T: Copy + 'static> MappedBuffer<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        device: Rc<ash::Device>,
+        device: &Rc<ash::Device>,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         data: &[T],
@@ -37,13 +38,13 @@ impl<T: Copy + 'static> MappedBuffer<T> {
         let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
 
         let (buffer, memory) =
-            Buffer::<T>::create_buffer(&device, instance, physical_device, size, usage, properties);
+            Buffer::<T>::create_buffer(device, instance, physical_device, size, usage, properties);
 
         let mapped_memory = unsafe {
             std::slice::from_raw_parts_mut(
                 device
                     .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
-                    .unwrap() as *mut T,
+                    .unwrap().cast::<T>(),
                 data.len(),
             )
         };
@@ -59,9 +60,9 @@ impl<T: Copy + 'static> MappedBuffer<T> {
 
         let mut descriptor_set = descriptor_pool.create_descriptor_set(descriptor_set_layout);
 
-        descriptor_set.bind_buffer(&device, buffer.clone());
+        descriptor_set.bind_buffer(device, buffer.clone());
 
-        MappedBuffer {
+        Self {
             buffer,
             mapped_memory,
             descriptor_set,
@@ -75,7 +76,7 @@ impl<T: Copy> std::fmt::Debug for Buffer<T> {
             .field("buffer", &self.buffer)
             .field("memory", &self.memory)
             .field("size", &self.size)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -126,13 +127,17 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
     }];
 
     unsafe { device.cmd_copy_buffer(**cmd_buf, **buffer, new_buffer, &copy_region) };
-    cmd_buf.add_dependency(buffer.clone());
+    
+    let device = buffer.device.clone();
+    let size = buffer.size;
+
+    cmd_buf.add_dependency(buffer);
 
     Buffer {
         buffer: new_buffer,
         memory,
-        device: buffer.device.clone(),
-        size: buffer.size,
+        device,
+        size,
         phantom: PhantomData,
     }
 }
@@ -146,7 +151,7 @@ impl<T: Copy + 'static> Buffer<T> {
         usage: vk::BufferUsageFlags,
         data: &[T],
     ) -> Self {
-        let staging_buffer = Rc::new(Buffer::new(
+        let staging_buffer = Rc::new(Self::new(
             device,
             instance,
             physical_device,
@@ -221,7 +226,7 @@ impl<T: Copy + 'static> Buffer<T> {
                 std::slice::from_raw_parts_mut(
                     device
                         .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
-                        .unwrap() as *mut T,
+                        .unwrap().cast::<T>(),
                     data.len(),
                 )
             };

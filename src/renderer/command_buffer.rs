@@ -34,8 +34,8 @@ impl OneTimeSubmitCommandBuffer {
         unsafe {
             self.device
                 .end_command_buffer(self.command_buffer)
-                .expect("failed to record command buffer")
-        };
+                .expect("failed to record command buffer");
+        }
 
         let command_buffer_list = [self.command_buffer];
 
@@ -112,7 +112,7 @@ pub struct ActiveMultipleSubmitCommandBuffer {
 
 impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {
     fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any>) {
-        self.dependencies.push(dependency)
+        self.dependencies.push(dependency);
     }
 }
 
@@ -134,8 +134,8 @@ impl ActiveMultipleSubmitCommandBuffer {
             self.command_buffer
                 .device
                 .end_command_buffer(self.command_buffer.command_buffer)
-                .expect("failed to record command buffer")
-        };
+                .expect("failed to record command buffer");
+        }
 
         self.command_buffer
     }
@@ -215,8 +215,10 @@ impl CommandPool {
     pub fn destroy_command_buffer(&self, command_buffer: MultipleSubmitCommandBuffer) {
         unsafe {
             self.device
-                .free_command_buffers(self.command_pool, &[command_buffer.command_buffer])
-        };
+                .free_command_buffers(self.command_pool, &[command_buffer.command_buffer]);
+        }
+
+        drop(command_buffer);
     }
 }
 

@@ -21,7 +21,7 @@ impl Surface {
                 .unwrap() as u64,
         );
 
-        Surface { loader, surface }
+        Self { loader, surface }
     }
 }
 

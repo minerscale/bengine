@@ -38,6 +38,7 @@ pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 600;
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UniformBufferObject {
     pub view_transform: Isometry3,
@@ -176,7 +177,7 @@ impl Renderer {
                 }
                 Err(e) => panic!("{}", e),
                 _ => (),
-            };
+            }
 
             if recreate_swapchain {
                 self.recreate_swapchain();
@@ -301,7 +302,7 @@ impl Renderer {
             semaphore_ready_fences.push(Fence::new(device.device.clone()));
 
             uniform_buffers.push(MappedBuffer::new(
-                device.device.clone(),
+                &device.device,
                 &instance,
                 device.physical_device,
                 &[UniformBufferObject::default()],

@@ -1,3 +1,11 @@
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::struct_field_names)]
+#![allow(clippy::if_not_else)]
+
 #![windows_subsystem = "windows"]
 
 mod event_loop;
@@ -55,7 +63,7 @@ fn main() {
                     Rc::new(Image::from_bytes(
                         &gfx.instance,
                         gfx.device.physical_device,
-                        gfx.device.device.clone(),
+                        &gfx.device.device,
                         cmd_buf,
                         include_bytes!($filename),
                     ))
@@ -90,7 +98,7 @@ fn main() {
             let sampler = Rc::new(Sampler::new(
                 &gfx.instance,
                 gfx.device.device.clone(),
-                &gfx.device.physical_device,
+                gfx.device.physical_device,
             ));
 
             let grid = texture!(sampler, image!("../textures/grid.png"));
@@ -105,13 +113,13 @@ fn main() {
                 )),
                 Object::Model((
                     mesh!("../test-scene/cube.obj", Some(cube_2_scale)),
-                    middle_grey.clone(),
+                    middle_grey,
                 )),
             )
         });
 
     fn collider_from_obj(
-        mesh: RawObj,
+        mesh: &RawObj,
         scale: Option<Vec3>,
         transform: Option<Vec3>,
     ) -> ColliderShape {
@@ -123,9 +131,7 @@ fn main() {
             .map(|v| {
                 Point::from_slice(
                     transform
-                        .unwrap_or(
-                            Vec3::zero() + scale.unwrap_or(Vec3::one()) * Vec3::new(v.0, v.1, v.2),
-                        )
+                        .unwrap_or_else(|| Vec3::zero() + scale.unwrap_or_else(Vec3::one) * Vec3::new(v.0, v.1, v.2))
                         .as_array(),
                 )
             })
@@ -146,7 +152,7 @@ fn main() {
 
     // Create the boxes
     let cube_1_collider = ColliderBuilder::new(collider_from_obj(
-        obj::raw::parse_obj(&include_bytes!("../test-scene/icosehedron.obj")[..]).unwrap(),
+        &obj::raw::parse_obj(&include_bytes!("../test-scene/icosehedron.obj")[..]).unwrap(),
         None,
         None,
     ))
@@ -159,7 +165,7 @@ fn main() {
     collider_set.insert_with_parent(cube_1_collider, cube_1_handle, &mut rigid_body_set);
 
     let cube_2_collider = ColliderBuilder::new(collider_from_obj(
-        obj::raw::parse_obj(&include_bytes!("../test-scene/cube.obj")[..]).unwrap(),
+        &obj::raw::parse_obj(&include_bytes!("../test-scene/cube.obj")[..]).unwrap(),
         Some(cube_2_scale),
         None,
     ))
@@ -214,10 +220,6 @@ fn main() {
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
-    fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
-        Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
-    }
-
     gfx.sdl_context
         .mouse()
         .set_relative_mouse_mode(&gfx.window, true);
@@ -225,7 +227,7 @@ fn main() {
     info!("finished loading");
 
     let mut previous_time =
-        std::time::Instant::now() - std::time::Duration::from_secs_f64(1.0 / 60.0);
+        std::time::Instant::now().checked_sub(std::time::Duration::from_secs_f64(1.0 / 60.0)).unwrap();
 
     let mut time_since_left_ground = f32::MAX;
     let mut jump_buffer = false;
@@ -256,9 +258,22 @@ fn main() {
                 &event_handler,
             );
 
+            fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
+                Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
+            }
+            
             let camera_rotation = get_camera_rotor(inputs.camera_rotation);
 
             let player_info = &rigid_body_set[player_handle];
+
+            fn from_nalgebra(p: &rapier3d::na::Isometry3<f32>) -> Isometry3 {
+                Isometry3::new(
+                    Vec3::from(p.translation.vector.as_slice().first_chunk().unwrap()),
+                    Rotor3::from_quaternion_array(
+                        *p.rotation.coords.as_slice().first_chunk().unwrap(),
+                    ),
+                )
+            }
 
             let player_transform = from_nalgebra(rigid_body_set[player_handle].position());
 
@@ -291,15 +306,6 @@ fn main() {
             );
 
             let n = root_node.root_node.borrow();
-
-            fn from_nalgebra(p: &rapier3d::na::Isometry3<f32>) -> Isometry3 {
-                Isometry3::new(
-                    Vec3::from(p.translation.vector.as_slice().first_chunk().unwrap()),
-                    Rotor3::from_quaternion_array(
-                        *p.rotation.coords.as_slice().first_chunk().unwrap(),
-                    ),
-                )
-            }
 
             n.children[0].borrow_mut().transform =
                 from_nalgebra(rigid_body_set[cube_1_handle].position());
@@ -369,7 +375,7 @@ fn main() {
     gfx.wait_idle();
 }
 
-pub fn record_command_buffer(
+fn record_command_buffer(
     device: &Device,
     render_pass: &RenderPass,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
@@ -457,14 +463,14 @@ pub fn record_command_buffer(
                 cmd_buf,
                 render_pass.pipeline.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                offset_of!(VertexPushConstants, model_transform) as u32,
+                offset_of!(VertexPushConstants, model_transform).try_into().unwrap(),
                 std::slice::from_raw_parts(
-                    addr_of!(modelview_transform) as *const u8,
+                    addr_of!(modelview_transform).cast::<u8>(),
                     std::mem::size_of::<Isometry3>(),
                 ),
             );
 
-            for object in node.borrow().objects.iter() {
+            for object in &node.borrow().objects {
                 let Object::Model((mesh, texture)) = object;
                 let descriptor_sets = [texture.descriptor_set.descriptor_set];
 

@@ -1,6 +1,6 @@
-use std::mem::offset_of;
+use std::{marker::PhantomData, mem::offset_of};
 
-use ash::vk;
+use ash::vk::{self, TaggedStructure};
 use obj::FromRawVertex;
 use ultraviolet::{Vec2, Vec3};
 
@@ -22,7 +22,7 @@ impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
 
         Ok((
             v.iter()
-                .map(|v| Vertex {
+                .map(|v| Self {
                     pos: Vec3::from(v.position),
                     normal: Vec3::from(v.normal),
                     tex_coord: Vec2::new(v.texture[0], v.texture[1]),
@@ -37,7 +37,7 @@ impl Vertex {
     pub const fn get_binding_description() -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription {
             binding: 0,
-            stride: size_of::<Vertex>() as u32,
+            stride: size_of::<Self>() as u32,
             input_rate: vk::VertexInputRate::VERTEX,
         }
     }
@@ -63,5 +63,23 @@ impl Vertex {
                 offset: offset_of!(Self, tex_coord) as u32,
             },
         ]
+    }
+
+    pub const fn get_input_state_create_info() -> vk::PipelineVertexInputStateCreateInfo<'static> {
+        const BINDING_DESCRIPTION: &[vk::VertexInputBindingDescription] =
+            &[Vertex::get_binding_description()];
+        const ATTRIBUTE_DESCRIPTIONS: &[vk::VertexInputAttributeDescription] =
+            &Vertex::get_attribute_descriptions();
+
+        vk::PipelineVertexInputStateCreateInfo {
+            s_type: vk::PipelineVertexInputStateCreateInfo::STRUCTURE_TYPE,
+            p_next: ::core::ptr::null(),
+            flags: vk::PipelineVertexInputStateCreateFlags::empty(),
+            vertex_binding_description_count: BINDING_DESCRIPTION.len() as u32,
+            p_vertex_binding_descriptions: BINDING_DESCRIPTION.as_ptr(),
+            vertex_attribute_description_count: ATTRIBUTE_DESCRIPTIONS.len() as u32,
+            p_vertex_attribute_descriptions: ATTRIBUTE_DESCRIPTIONS.as_ptr(),
+            _marker: PhantomData,
+        }
     }
 }

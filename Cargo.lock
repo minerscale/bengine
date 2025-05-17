@@ -132,9 +132,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
-version = "2.9.0"
+version = "2.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
+checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
 name = "bytemuck"
@@ -156,9 +156,9 @@ checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
 name = "cc"
-version = "1.2.22"
+version = "1.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32db95edf998450acc7881c932f94cd9b05c87b4b2599e8bab064753da4acfd1"
+checksum = "5f4ac86a9e5bc1e2b3449ab9d7d3a6a405e3d1bb28d7b9be8614f55846ae3766"
 dependencies = [
  "shlex",
 ]
@@ -598,7 +598,7 @@ checksum = "a50f0d5730859f8326b26c8057aae09b790804f3e6c9dec38f4b2a1b91664529"
 dependencies = [
  "approx",
  "arrayvec",
- "bitflags 2.9.0",
+ "bitflags 2.9.1",
  "downcast-rs",
  "either",
  "ena",
@@ -712,7 +712,7 @@ dependencies = [
  "approx",
  "arrayvec",
  "bit-vec",
- "bitflags 2.9.0",
+ "bitflags 2.9.1",
  "crossbeam",
  "downcast-rs",
  "log",
@@ -789,7 +789,7 @@ version = "0.14.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5df6e0341e614731afa18601401dd6921c173b5c22bcf87c56aee30e462622f"
 dependencies = [
- "bitflags 2.9.0",
+ "bitflags 2.9.1",
  "lazy_static",
  "libc",
  "objc2",
@@ -819,15 +819,15 @@ dependencies = [
 
 [[package]]
 name = "sdl3-src"
-version = "3.2.12"
+version = "3.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd6f184bd2dd067bb29b01868104d393b8ee4b5349308d8a468fccf755b7a5f"
+checksum = "a5b9b63e1ae8b23fd763e37b9ce155c5718e520c65c78db07c9ec45e02e3fd06"
 
 [[package]]
 name = "sdl3-sys"
-version = "0.5.0+SDL3-3.2.12"
+version = "0.5.1+SDL3-3.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "332d2fcf274e61d96c5e2c72bba37456ac59930c727f13869ddcfe1019109bba"
+checksum = "9be4ae099823870a9c9de3f72ec181d602d8d0550c8f5b2dfdfa9bbaa8ddccd2"
 dependencies = [
  "cmake",
  "rpkg-config",

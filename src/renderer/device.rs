@@ -24,7 +24,7 @@ pub struct Device {
 fn pick_physical_device(
     instance: &ash::Instance,
     surface: &Surface,
-    physical_devices: Vec<vk::PhysicalDevice>,
+    physical_devices: &[vk::PhysicalDevice],
     requested_features: &vk::PhysicalDeviceFeatures,
     requested_features11: &vk::PhysicalDeviceVulkan11Features,
     requested_features12: &vk::PhysicalDeviceVulkan12Features,
@@ -41,7 +41,7 @@ fn pick_physical_device(
         //         effectively making it an array and we can cast it accordingly.
         let features_to_slice = |features: &vk::PhysicalDeviceFeatures| unsafe {
             slice_from_raw_parts(
-                &features.robust_buffer_access as *const vk::Bool32,
+                &raw const features.robust_buffer_access,
                 features_len,
             )
             .as_ref()
@@ -70,7 +70,7 @@ fn pick_physical_device(
         //         effectively making it an array and we can cast it accordingly.
         let features_to_slice = |features: &vk::PhysicalDeviceVulkan11Features| unsafe {
             slice_from_raw_parts(
-                &features.storage_buffer16_bit_access as *const vk::Bool32,
+                &raw const features.storage_buffer16_bit_access,
                 features_len,
             )
             .as_ref()
@@ -99,7 +99,7 @@ fn pick_physical_device(
         //         effectively making it an array and we can cast it accordingly.
         let features_to_slice = |features: &vk::PhysicalDeviceVulkan12Features| unsafe {
             slice_from_raw_parts(
-                &features.sampler_mirror_clamp_to_edge as *const vk::Bool32,
+                &raw const features.sampler_mirror_clamp_to_edge,
                 features_len,
             )
             .as_ref()
@@ -125,7 +125,7 @@ fn pick_physical_device(
         //         effectively making it an array and we can cast it accordingly.
         let features_to_slice = |features: &vk::PhysicalDeviceVulkan13Features| unsafe {
             slice_from_raw_parts(
-                &features.robust_image_access as *const vk::Bool32,
+                &raw const features.robust_image_access,
                 features_len,
             )
             .as_ref()
@@ -271,7 +271,7 @@ impl Device {
             pick_physical_device(
                 instance,
                 surface,
-                physical_devices,
+                &physical_devices,
                 &features,
                 &features11,
                 &features12,
@@ -300,7 +300,7 @@ impl Device {
             .any(|&s| s.extension_name_as_c_str().unwrap() == khr::portability_subset::NAME)
         {
             device_extension_names.push(khr::portability_subset::NAME.as_ptr());
-        };
+        }
 
         let priorities = [1.0];
 

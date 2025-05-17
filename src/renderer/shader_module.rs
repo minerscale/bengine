@@ -65,15 +65,28 @@ impl<'a> ShaderModule<'a> {
         specialization_info: Option<SpecializationInfo<'a>>,
     ) -> Self {
         ShaderModule {
-            shader,
             device,
+            shader,
             stage,
             specialization_info,
         }
     }
+
+    pub fn stage_info(&'a self) -> vk::PipelineShaderStageCreateInfo<'a> {
+        let mut stage_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(self.stage)
+            .module(**self)
+            .name(c"main");
+
+        if let Some(info) = self.specialization_info.as_ref() {
+            stage_info = stage_info.specialization_info(info);
+        }
+
+        stage_info
+    }
 }
 
-impl<'a> Deref for ShaderModule<'a> {
+impl Deref for ShaderModule<'_> {
     type Target = vk::ShaderModule;
 
     fn deref(&self) -> &Self::Target {
@@ -81,7 +94,7 @@ impl<'a> Deref for ShaderModule<'a> {
     }
 }
 
-impl<'a> Drop for ShaderModule<'a> {
+impl Drop for ShaderModule<'_> {
     fn drop(&mut self) {
         info!("dropped shader module");
         unsafe {

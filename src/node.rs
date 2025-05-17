@@ -23,7 +23,7 @@ pub struct GameTree {
 
 impl GameTree {
     pub fn new(root_node: Rc<RefCell<Node>>) -> Self {
-        GameTree { root_node }
+        Self { root_node }
     }
 
     pub fn breadth_first(
@@ -53,7 +53,7 @@ impl GameTree {
 
 impl From<Node> for Rc<RefCell<Node>> {
     fn from(value: Node) -> Self {
-        Rc::new(RefCell::new(value))
+        Self::new(RefCell::new(value))
     }
 }
 
@@ -68,7 +68,7 @@ impl Node {
 
     pub fn new(
         transform: Isometry3,
-        children: Vec<Rc<RefCell<Node>>>,
+        children: Vec<Rc<RefCell<Self>>>,
         objects: Vec<Object>,
     ) -> Self {
         Self {
@@ -78,7 +78,7 @@ impl Node {
         }
     }
 
-    pub fn add_child(mut self, child: Rc<RefCell<Node>>) -> Self {
+    pub fn add_child(mut self, child: Rc<RefCell<Self>>) -> Self {
         self.children.push(child);
 
         self

@@ -84,7 +84,7 @@ impl Drop for DebugMessenger {
         info!("dropped debug messenger");
         unsafe {
             self.debug_utils_loader
-                .destroy_debug_utils_messenger(self.debug_callback, None)
+                .destroy_debug_utils_messenger(self.debug_callback, None);
         }
     }
 }

@@ -12,7 +12,7 @@ impl Sampler {
     pub fn new(
         instance: &ash::Instance,
         device: Rc<ash::Device>,
-        physical_device: &vk::PhysicalDevice,
+        physical_device: vk::PhysicalDevice,
     ) -> Self {
         let sampler_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)
@@ -23,7 +23,7 @@ impl Sampler {
             .anisotropy_enable(true)
             .max_anisotropy(unsafe {
                 instance
-                    .get_physical_device_properties(*physical_device)
+                    .get_physical_device_properties(physical_device)
                     .limits
                     .max_sampler_anisotropy
             })

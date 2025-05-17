@@ -10,6 +10,7 @@ use crate::renderer::{
     render_pass::RenderPass,
 };
 
+#[allow(dead_code)]
 pub struct SwapchainImage {
     pub image: vk::Image,
     pub view: vk::ImageView,
@@ -30,14 +31,11 @@ impl SwapchainImage {
     ) -> Self {
         let view = create_image_view(&device, image, format, vk::ImageAspectFlags::COLOR);
 
-        let attachments = match color_attachment {
-            Some(color_attachment) => vec![color_attachment, depth_attachment, view],
-            None => vec![view, depth_attachment],
-        };
+        let attachments = color_attachment.map_or_else(|| vec![view, depth_attachment], |color_attachment| vec![color_attachment, depth_attachment, view]);
 
         let framebuffer = create_framebuffer(&device, render_pass, &attachments, extent);
 
-        SwapchainImage {
+        Self {
             image,
             view,
             framebuffer,
@@ -144,7 +142,7 @@ fn transition_layout<C: ActiveCommandBuffer>(
             &[],
             &[],
             &barrier,
-        )
+        );
     }
 }
 
@@ -152,7 +150,7 @@ impl Image {
     pub fn from_bytes<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: Rc<ash::Device>,
+        device: &Rc<ash::Device>,
         cmd_buf: &mut C,
         bytes: &[u8],
     ) -> Self {
@@ -160,10 +158,10 @@ impl Image {
         let extent = image.dimensions();
         let img = image.into_rgba8().into_vec();
 
-        Image::new_staged(
+        Self::new_staged(
             instance,
             physical_device,
-            device.clone(),
+            device,
             vk::Extent2D {
                 width: extent.0,
                 height: extent.1,
@@ -182,7 +180,7 @@ impl Image {
     pub fn new_staged<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: Rc<ash::Device>,
+        device: &Rc<ash::Device>,
         extent: vk::Extent2D,
         image_data: &[u8],
         cmd_buf: &mut C,
@@ -192,7 +190,7 @@ impl Image {
         properties: vk::MemoryPropertyFlags,
         aspect_flags: vk::ImageAspectFlags,
     ) -> Self {
-        let image = Image::new(
+        let image = Self::new(
             instance,
             physical_device,
             device.clone(),
@@ -215,17 +213,17 @@ impl Image {
         ));
 
         transition_layout(
-            &device,
+            device,
             image.image,
             cmd_buf,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         );
 
-        copy_buffer_to_image(&device, image.image, extent, cmd_buf, staging_buffer);
+        copy_buffer_to_image(device, image.image, extent, cmd_buf, staging_buffer);
 
         transition_layout(
-            &device,
+            device,
             image.image,
             cmd_buf,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -301,8 +299,8 @@ impl Drop for Image {
         info!("dropped image");
         unsafe {
             self.device.destroy_image(self.image, None);
-            self.device.free_memory(self.memory, None)
-        };
+            self.device.free_memory(self.memory, None);
+        }
     }
 }
 
@@ -318,8 +316,8 @@ impl Drop for SwapchainImage {
 
 pub fn find_supported_format(
     instance: &ash::Instance,
-    physical_device: &vk::PhysicalDevice,
-    candidates: Vec<vk::Format>,
+    physical_device: vk::PhysicalDevice,
+    candidates: &[vk::Format],
     tiling: vk::ImageTiling,
     features: vk::FormatFeatureFlags,
 ) -> vk::Format {
@@ -327,7 +325,7 @@ pub fn find_supported_format(
         .iter()
         .find(|&&format| {
             let properties =
-                unsafe { instance.get_physical_device_format_properties(*physical_device, format) };
+                unsafe { instance.get_physical_device_format_properties(physical_device, format) };
 
             (tiling == vk::ImageTiling::LINEAR
                 && properties.linear_tiling_features.contains(features))
