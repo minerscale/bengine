@@ -113,7 +113,7 @@ impl Swapchain {
                 device.physical_device,
                 device.device.clone(),
                 extent,
-                device.mssa_samples,
+                device.msaa_samples,
                 depth_format,
                 vk::ImageTiling::OPTIMAL,
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
@@ -122,14 +122,14 @@ impl Swapchain {
             ))
         };
 
-        let color_image = match device.mssa_samples {
+        let color_image = match device.msaa_samples {
             vk::SampleCountFlags::TYPE_1 => None,
             _ => Some(Image::new(
                 instance,
                 device.physical_device,
                 device.device.clone(),
                 extent,
-                device.mssa_samples,
+                device.msaa_samples,
                 surface_format.format,
                 vk::ImageTiling::OPTIMAL,
                 vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
@@ -142,7 +142,7 @@ impl Swapchain {
             instance,
             device,
             surface_format.format,
-            &extent,
+            extent,
             descriptor_set_layouts,
         );
 

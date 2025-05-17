@@ -1,15 +1,15 @@
-use std::{mem::offset_of, ops::Deref, rc::Rc};
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
-use ultraviolet::{Isometry3, Vec4};
+use ultraviolet::Isometry3;
 
 #[repr(C)]
 pub struct VertexPushConstants {
     pub model_transform: Isometry3,
 }
 
-use crate::renderer::{device::Device, shader_module::spv, vertex::Vertex};
+use crate::renderer::{shader_module::ShaderModule, vertex::Vertex};
 
 pub struct Pipeline {
     pub pipeline: vk::Pipeline,
@@ -17,69 +17,96 @@ pub struct Pipeline {
     device: Rc<ash::Device>,
 }
 
-impl Pipeline {
-    pub fn new(
-        device: &Device,
-        extent: &vk::Extent2D,
-        descriptor_set_layouts: &[vk::DescriptorSetLayout],
-        render_pass: vk::RenderPass,
+#[derive(Default)]
+pub struct PipelineBuilder<'a> {
+    device: Option<Rc<ash::Device>>,
+    extent: Option<vk::Extent2D>,
+    descriptor_set_layouts: Option<&'a [vk::DescriptorSetLayout]>,
+    render_pass: Option<vk::RenderPass>,
+    msaa_samples: Option<vk::SampleCountFlags>,
+    shader_stages: Option<&'a [ShaderModule<'a>]>,
+}
+
+impl<'a> PipelineBuilder<'a> {
+    pub fn new() -> Self {
+        PipelineBuilder::default()
+    }
+
+    pub fn device(self, device: Rc<ash::Device>) -> Self {
+        PipelineBuilder {
+            device: Some(device),
+            ..self
+        }
+    }
+
+    pub fn extent(self, extent: vk::Extent2D) -> Self {
+        PipelineBuilder {
+            extent: Some(extent),
+            ..self
+        }
+    }
+
+    pub fn descriptor_set_layouts(
+        self,
+        descriptor_set_layouts: &'a [vk::DescriptorSetLayout],
     ) -> Self {
-        let vert_shader_module = spv!(device.device.clone(), "shader.vert");
-        let frag_shader_module = spv!(device.device.clone(), "shader.frag");
+        PipelineBuilder {
+            descriptor_set_layouts: Some(descriptor_set_layouts),
+            ..self
+        }
+    }
 
-        let fov = 90f32.to_radians();
+    pub fn render_pass(self, render_pass: vk::RenderPass) -> Self {
+        PipelineBuilder {
+            render_pass: Some(render_pass),
+            ..self
+        }
+    }
 
-        let ez = f32::tan(fov / 2.0).recip();
-        let camera_parameters = Vec4::new(
-            ez,
-            -((extent.width as f32) / (extent.height as f32)),
-            0.01,
-            1000.0,
-        );
+    pub fn msaa_samples(self, msaa_samples: vk::SampleCountFlags) -> Self {
+        PipelineBuilder {
+            msaa_samples: Some(msaa_samples),
+            ..self
+        }
+    }
 
-        let specialization_map_entries = [
-            vk::SpecializationMapEntry {
-                constant_id: 0,
-                offset: offset_of!(Vec4, x) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-            vk::SpecializationMapEntry {
-                constant_id: 1,
-                offset: offset_of!(Vec4, y) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-            vk::SpecializationMapEntry {
-                constant_id: 2,
-                offset: offset_of!(Vec4, z) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-            vk::SpecializationMapEntry {
-                constant_id: 3,
-                offset: offset_of!(Vec4, w) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-        ];
+    pub fn shader_stages(self, shader_stages: &'a [ShaderModule<'a>]) -> Self {
+        PipelineBuilder {
+            shader_stages: Some(shader_stages),
+            ..self
+        }
+    }
 
-        let specialization_info = vk::SpecializationInfo::default()
-            .map_entries(&specialization_map_entries)
-            .data(unsafe {
-                std::slice::from_raw_parts(
-                    &camera_parameters as *const Vec4 as *const u8,
-                    std::mem::size_of::<Vec4>(),
-                )
-            });
+    pub fn build(self) -> Pipeline {
+        let device = self
+            .device
+            .expect("pipeline build error: device is required");
 
-        let shader_stages = [
-            vk::PipelineShaderStageCreateInfo::default()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(*vert_shader_module)
-                .name(c"main")
-                .specialization_info(&specialization_info),
-            vk::PipelineShaderStageCreateInfo::default()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(*frag_shader_module)
-                .name(c"main"),
-        ];
+        let extent = self
+            .extent
+            .expect("pipeline build error: extent is required");
+
+        fn make_stage_info<'a>(
+            shader_module: &'a ShaderModule<'a>,
+        ) -> vk::PipelineShaderStageCreateInfo<'a> {
+            let mut stage_info = vk::PipelineShaderStageCreateInfo::default()
+                .stage(shader_module.stage)
+                .module(**shader_module)
+                .name(c"main");
+
+            if let Some(info) = shader_module.specialization_info.as_ref() {
+                stage_info = stage_info.specialization_info(info)
+            }
+
+            stage_info
+        }
+
+        let shader_stages = self
+            .shader_stages
+            .expect("pipeline build error: shader_stages required")
+            .iter()
+            .map(make_stage_info)
+            .collect::<Vec<_>>();
 
         let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let dynamic_state =
@@ -126,7 +153,10 @@ impl Pipeline {
 
         let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
             .sample_shading_enable(false)
-            .rasterization_samples(device.mssa_samples)
+            .rasterization_samples(
+                self.msaa_samples
+                    .expect("pipeline build error: msaa_samples required"),
+            )
             .min_sample_shading(1.0);
 
         let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default()
@@ -162,7 +192,10 @@ impl Pipeline {
             .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::default()
-            .set_layouts(descriptor_set_layouts)
+            .set_layouts(
+                self.descriptor_set_layouts
+                    .expect("pipeline build error: descriptor_set_layouts required"),
+            )
             .push_constant_ranges(&push_constant_ranges);
 
         let pipeline_layout = unsafe {
@@ -182,7 +215,10 @@ impl Pipeline {
             .color_blend_state(&color_blending)
             .dynamic_state(&dynamic_state)
             .layout(pipeline_layout)
-            .render_pass(render_pass)
+            .render_pass(
+                self.render_pass
+                    .expect("pipeline build error: render_pass required"),
+            )
             .subpass(0)];
 
         let pipeline = unsafe {
@@ -191,8 +227,8 @@ impl Pipeline {
                 .expect("failed to create graphics pipeline!")[0]
         };
 
-        Self {
-            device: device.device.clone(),
+        Pipeline {
+            device: device.clone(),
             pipeline,
             pipeline_layout,
         }

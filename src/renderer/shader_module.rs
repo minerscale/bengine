@@ -3,14 +3,39 @@ use std::{ops::Deref, rc::Rc};
 use ash::vk;
 use log::info;
 
-pub struct ShaderModule {
-    shader: vk::ShaderModule,
+pub struct SpecializationInfo<'a> {
+    info: vk::SpecializationInfo<'a>,
+}
+
+impl<'a> SpecializationInfo<'a> {
+    pub fn new(info: &'a [vk::SpecializationMapEntry], data: &'a [u8]) -> Self {
+        Self {
+            info: vk::SpecializationInfo::default()
+                .map_entries(info)
+                .data(data),
+        }
+    }
+}
+
+impl<'a> Deref for SpecializationInfo<'a> {
+    type Target = vk::SpecializationInfo<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.info
+    }
+}
+
+pub struct ShaderModule<'a> {
     device: Rc<ash::Device>,
+    shader: vk::ShaderModule,
+    pub stage: vk::ShaderStageFlags,
+    pub specialization_info: Option<SpecializationInfo<'a>>,
 }
 
 macro_rules! spv {
-    ($device:expr, $filename:literal) => {{
+    ($device:expr, $filename:literal, $stage:expr, $specialization:expr) => {{
         crate::renderer::shader_module::ShaderModule::new(
+            $device,
             unsafe {
                 let mut code = std::io::Cursor::new(
                     &(include_bytes!(concat!(env!("OUT_DIR"), "/", $filename, ".spv")))[..],
@@ -25,19 +50,30 @@ macro_rules! spv {
                     )
                     .expect("failed to build shader module!")
             },
-            $device,
+            $stage,
+            $specialization,
         )
     }};
 }
 pub(crate) use spv;
 
-impl ShaderModule {
-    pub fn new(shader: vk::ShaderModule, device: Rc<ash::Device>) -> Self {
-        ShaderModule { shader, device }
+impl<'a> ShaderModule<'a> {
+    pub fn new(
+        device: Rc<ash::Device>,
+        shader: vk::ShaderModule,
+        stage: vk::ShaderStageFlags,
+        specialization_info: Option<SpecializationInfo<'a>>,
+    ) -> Self {
+        ShaderModule {
+            shader,
+            device,
+            stage,
+            specialization_info,
+        }
     }
 }
 
-impl Deref for ShaderModule {
+impl<'a> Deref for ShaderModule<'a> {
     type Target = vk::ShaderModule;
 
     fn deref(&self) -> &Self::Target {
@@ -45,7 +81,7 @@ impl Deref for ShaderModule {
     }
 }
 
-impl Drop for ShaderModule {
+impl<'a> Drop for ShaderModule<'a> {
     fn drop(&mut self) {
         info!("dropped shader module");
         unsafe {

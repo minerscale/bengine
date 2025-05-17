@@ -15,7 +15,7 @@ pub struct Device {
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub graphics_index: u32,
     pub present_index: u32,
-    pub mssa_samples: vk::SampleCountFlags,
+    pub msaa_samples: vk::SampleCountFlags,
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
 }
@@ -343,7 +343,7 @@ impl Device {
             device_memory_properties,
             graphics_index,
             present_index,
-            mssa_samples,
+            msaa_samples: mssa_samples,
             graphics_queue,
             present_queue,
         }
