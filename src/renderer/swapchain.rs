@@ -6,6 +6,7 @@ use log::info;
 use crate::renderer::{
     device::Device,
     image::{Image, SwapchainImage, find_supported_format},
+    pipeline::Pipeline,
     render_pass::RenderPass,
 };
 
@@ -19,18 +20,29 @@ pub struct Swapchain {
 }
 
 impl Swapchain {
-    pub fn new(
+    pub fn new<
+        'a,
+        T: Iterator<
+            Item = &'a (impl Fn(
+                &Device,
+                vk::Extent2D,
+                vk::RenderPass,
+                &[vk::DescriptorSetLayout],
+            ) -> Pipeline + 'a),
+        >,
+    >(
         instance: &ash::Instance,
         device: &Device,
         surface_loader: &khr::surface::Instance,
         surface: vk::SurfaceKHR,
         extent: vk::Extent2D,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
+        pipelines: T,
         old_swapchain: Option<&Self>,
     ) -> Self {
         let swapchain_loader = old_swapchain.map_or_else(
             || khr::swapchain::Device::new(instance, device),
-            |swapchain| swapchain.loader.clone()
+            |swapchain| swapchain.loader.clone(),
         );
 
         let surface_format =
@@ -140,6 +152,7 @@ impl Swapchain {
             surface_format.format,
             extent,
             descriptor_set_layouts,
+            pipelines,
         );
 
         let images = unsafe { swapchain_loader.get_swapchain_images(swapchain).unwrap() }

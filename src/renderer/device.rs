@@ -40,12 +40,9 @@ fn pick_physical_device(
         // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
         //         effectively making it an array and we can cast it accordingly.
         let features_to_slice = |features: &vk::PhysicalDeviceFeatures| unsafe {
-            slice_from_raw_parts(
-                &raw const features.robust_buffer_access,
-                features_len,
-            )
-            .as_ref()
-            .unwrap()
+            slice_from_raw_parts(&raw const features.robust_buffer_access, features_len)
+                .as_ref()
+                .unwrap()
         };
 
         !zip(
@@ -124,12 +121,9 @@ fn pick_physical_device(
         // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
         //         effectively making it an array and we can cast it accordingly.
         let features_to_slice = |features: &vk::PhysicalDeviceVulkan13Features| unsafe {
-            slice_from_raw_parts(
-                &raw const features.robust_image_access,
-                features_len,
-            )
-            .as_ref()
-            .unwrap()
+            slice_from_raw_parts(&raw const features.robust_image_access, features_len)
+                .as_ref()
+                .unwrap()
         };
 
         !zip(

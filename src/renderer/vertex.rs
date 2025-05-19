@@ -65,21 +65,25 @@ impl Vertex {
         ]
     }
 
-    pub const fn get_input_state_create_info() -> vk::PipelineVertexInputStateCreateInfo<'static> {
+    pub const fn get_input_state_create_info()
+    -> &'static vk::PipelineVertexInputStateCreateInfo<'static> {
         const BINDING_DESCRIPTION: &[vk::VertexInputBindingDescription] =
             &[Vertex::get_binding_description()];
         const ATTRIBUTE_DESCRIPTIONS: &[vk::VertexInputAttributeDescription] =
             &Vertex::get_attribute_descriptions();
 
-        vk::PipelineVertexInputStateCreateInfo {
-            s_type: vk::PipelineVertexInputStateCreateInfo::STRUCTURE_TYPE,
-            p_next: ::core::ptr::null(),
-            flags: vk::PipelineVertexInputStateCreateFlags::empty(),
-            vertex_binding_description_count: BINDING_DESCRIPTION.len() as u32,
-            p_vertex_binding_descriptions: BINDING_DESCRIPTION.as_ptr(),
-            vertex_attribute_description_count: ATTRIBUTE_DESCRIPTIONS.len() as u32,
-            p_vertex_attribute_descriptions: ATTRIBUTE_DESCRIPTIONS.as_ptr(),
-            _marker: PhantomData,
-        }
+        const INPUT_STATE_CREATE_INFO: &vk::PipelineVertexInputStateCreateInfo =
+            &vk::PipelineVertexInputStateCreateInfo {
+                s_type: vk::PipelineVertexInputStateCreateInfo::STRUCTURE_TYPE,
+                p_next: ::core::ptr::null(),
+                flags: vk::PipelineVertexInputStateCreateFlags::empty(),
+                vertex_binding_description_count: BINDING_DESCRIPTION.len() as u32,
+                p_vertex_binding_descriptions: BINDING_DESCRIPTION.as_ptr(),
+                vertex_attribute_description_count: ATTRIBUTE_DESCRIPTIONS.len() as u32,
+                p_vertex_attribute_descriptions: ATTRIBUTE_DESCRIPTIONS.as_ptr(),
+                _marker: PhantomData,
+            };
+
+        INPUT_STATE_CREATE_INFO
     }
 }

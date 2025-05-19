@@ -78,6 +78,7 @@ impl<'a> PipelineBuilder<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn dynamic_states(self, dynamic_states: &'a [vk::DynamicState]) -> Self {
         Self {
             dynamic_states: Some(dynamic_states),
@@ -159,7 +160,8 @@ impl<'a> PipelineBuilder<'a> {
 
     pub fn build(&self) -> Pipeline {
         let device = self
-            .device.as_ref()
+            .device
+            .as_ref()
             .expect("pipeline build error: device is required");
 
         let shader_stages = self
@@ -179,10 +181,11 @@ impl<'a> PipelineBuilder<'a> {
                     .expect("pipeline build error: scissor required"),
             );
 
-        let mut pipeline_layout_info = vk::PipelineLayoutCreateInfo::default().set_layouts(
-            self.descriptor_set_layouts
-                .expect("pipeline build error: descriptor_set_layouts required"),
-        );
+        let mut pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
+
+        if let Some(descriptor_set_layouts) = self.descriptor_set_layouts {
+            pipeline_layout_info = pipeline_layout_info.set_layouts(descriptor_set_layouts)
+        }
 
         if let Some(push_constant_ranges) = self.push_constant_ranges {
             pipeline_layout_info = pipeline_layout_info.push_constant_ranges(push_constant_ranges);
@@ -203,13 +206,13 @@ impl<'a> PipelineBuilder<'a> {
             .rasterizer_discard_enable(false)
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
-            .cull_mode(vk::CullModeFlags::BACK)
+            .cull_mode(vk::CullModeFlags::NONE)
             .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false);
 
         let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(true)
-            .depth_write_enable(true)
+            .depth_test_enable(false)
+            .depth_write_enable(false)
             .depth_compare_op(vk::CompareOp::LESS)
             .depth_bounds_test_enable(false)
             .stencil_test_enable(false);
@@ -230,31 +233,24 @@ impl<'a> PipelineBuilder<'a> {
             .logic_op(vk::LogicOp::COPY)
             .attachments(&color_blend_attachment);
 
+        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::default();
+
         let mut pipeline_info = vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
             .vertex_input_state(
                 self.vertex_input_info
-                    .expect("pipeline build error: vertex_input_info required"),
+                    .unwrap_or(&vertex_input_info)
+                    //.expect("pipeline build error: vertex_input_info required"),
             )
-            .input_assembly_state(
-                self.input_assembly.unwrap_or(&input_assembly)
-            )
+            .input_assembly_state(self.input_assembly.unwrap_or(&input_assembly))
             .viewport_state(&viewport_state)
-            .rasterization_state(
-                self.rasterizer.unwrap_or(&rasterizer),
-            )
+            .rasterization_state(self.rasterizer.unwrap_or(&rasterizer))
             .multisample_state(
                 self.multisampling
                     .expect("pipeline build error: multisampling required"),
             )
-            .depth_stencil_state(
-                self.depth_stencil
-                    .unwrap_or(&depth_stencil),
-            )
-            .color_blend_state(
-                self.color_blending
-                    .unwrap_or(&color_blending),
-            )
+            .depth_stencil_state(self.depth_stencil.unwrap_or(&depth_stencil))
+            .color_blend_state(self.color_blending.unwrap_or(&color_blending))
             .layout(pipeline_layout)
             .render_pass(
                 self.render_pass

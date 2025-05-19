@@ -1,30 +1,34 @@
-use std::{mem::offset_of, ops::Deref, rc::Rc};
+use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::info;
-use ultraviolet::Vec4;
 
-use crate::renderer::{
-    device::Device,
-    pipeline::{Pipeline, PipelineBuilder, VertexPushConstants},
-    shader_module::{SpecializationInfo, spv},
-    swapchain::find_depth_format,
-    vertex::Vertex,
-};
+use crate::renderer::{device::Device, pipeline::Pipeline, swapchain::find_depth_format};
 
 pub struct RenderPass {
     render_pass: vk::RenderPass,
-    pub pipeline: Pipeline,
+    pub pipelines: Vec<Pipeline>,
     device: Rc<ash::Device>,
 }
 
 impl RenderPass {
-    pub fn new(
+    pub fn new<
+        'a,
+        T: Iterator<
+            Item = impl Fn(
+                &Device,
+                vk::Extent2D,
+                vk::RenderPass,
+                &[vk::DescriptorSetLayout],
+            ) -> Pipeline,
+        >,
+    >(
         instance: &ash::Instance,
         device: &Device,
         format: vk::Format,
         extent: vk::Extent2D,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
+        pipelines: T,
     ) -> Self {
         let color_attachment = vk::AttachmentDescription::default()
             .format(format)
@@ -53,16 +57,16 @@ impl RenderPass {
             vec![color_attachment, depth_attachment]
         } else {
             let color_attachment_resolve = vk::AttachmentDescription::default()
-                    .format(format)
-                    .samples(vk::SampleCountFlags::TYPE_1)
-                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
-                    .store_op(vk::AttachmentStoreOp::STORE)
-                    .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-                    .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-                    .initial_layout(vk::ImageLayout::UNDEFINED)
-                    .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+                .format(format)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
 
-                vec![color_attachment, depth_attachment, color_attachment_resolve]
+            vec![color_attachment, depth_attachment, color_attachment_resolve]
         };
 
         let color_attachment_ref = [vk::AttachmentReference {
@@ -119,105 +123,14 @@ impl RenderPass {
                 .unwrap()
         };
 
-        let fov = 90f32.to_radians();
-        let ez = f32::tan(fov / 2.0).recip();
-        let camera_parameters = Vec4::new(
-            ez,
-            -((extent.width as f32) / (extent.height as f32)),
-            0.01,
-            1000.0,
-        );
-
-        let vertex_specialization = SpecializationInfo::new(
-            &[
-                vk::SpecializationMapEntry {
-                    constant_id: 0,
-                    offset: offset_of!(Vec4, x) as u32,
-                    size: std::mem::size_of::<f32>(),
-                },
-                vk::SpecializationMapEntry {
-                    constant_id: 1,
-                    offset: offset_of!(Vec4, y) as u32,
-                    size: std::mem::size_of::<f32>(),
-                },
-                vk::SpecializationMapEntry {
-                    constant_id: 2,
-                    offset: offset_of!(Vec4, z) as u32,
-                    size: std::mem::size_of::<f32>(),
-                },
-                vk::SpecializationMapEntry {
-                    constant_id: 3,
-                    offset: offset_of!(Vec4, w) as u32,
-                    size: std::mem::size_of::<f32>(),
-                },
-            ],
-            unsafe {
-                std::slice::from_raw_parts(
-                    (&raw const camera_parameters).cast::<u8>(),
-                    std::mem::size_of::<Vec4>(),
-                )
-            },
-        );
-
-        let shader_stages = [
-            spv!(
-                device.device.clone(),
-                "shader.vert",
-                vk::ShaderStageFlags::VERTEX,
-                Some(vertex_specialization)
-            ),
-            spv!(
-                device.device.clone(),
-                "shader.frag",
-                vk::ShaderStageFlags::FRAGMENT,
-                None
-            ),
-        ];
-
-        let push_constant_ranges = [vk::PushConstantRange::default()
-            .offset(0)
-            .size(
-                std::mem::size_of::<VertexPushConstants>()
-                    .try_into()
-                    .unwrap(),
-            )
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
-
-        let viewport = [vk::Viewport::default()
-            .x(0.0)
-            .y(0.0)
-            .width(extent.width as f32)
-            .height(extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0)];
-
-        let scissor = [vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent,
-        }];
-
-        let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
-            .sample_shading_enable(false)
-            .rasterization_samples(device.msaa_samples)
-            .min_sample_shading(1.0);
-
-        let pipeline = PipelineBuilder::new()
-            .device(device.device.clone())
-            .viewports(&viewport)
-            .scissors(&scissor)
-            .descriptor_set_layouts(descriptor_set_layouts)
-            .render_pass(render_pass)
-            .multisampling(&multisampling)
-            .shader_stages(&shader_stages)
-            .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR])
-            .vertex_input_info(&Vertex::get_input_state_create_info())
-            .push_constant_ranges(&push_constant_ranges)
-            .build();
+        let pipelines = pipelines
+            .map(|pipeline| pipeline(&device, extent, render_pass, descriptor_set_layouts))
+            .collect::<Vec<_>>();
 
         Self {
             device: device.device.clone(),
             render_pass,
-            pipeline,
+            pipelines,
         }
     }
 }

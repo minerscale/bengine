@@ -5,7 +5,6 @@
 #![allow(clippy::missing_const_for_fn)]
 #![allow(clippy::struct_field_names)]
 #![allow(clippy::if_not_else)]
-
 #![windows_subsystem = "windows"]
 
 mod event_loop;
@@ -131,7 +130,10 @@ fn main() {
             .map(|v| {
                 Point::from_slice(
                     transform
-                        .unwrap_or_else(|| Vec3::zero() + scale.unwrap_or_else(Vec3::one) * Vec3::new(v.0, v.1, v.2))
+                        .unwrap_or_else(|| {
+                            Vec3::zero()
+                                + scale.unwrap_or_else(Vec3::one) * Vec3::new(v.0, v.1, v.2)
+                        })
                         .as_array(),
                 )
             })
@@ -226,8 +228,11 @@ fn main() {
 
     info!("finished loading");
 
-    let mut previous_time =
-        std::time::Instant::now().checked_sub(std::time::Duration::from_secs_f64(1.0 / 60.0)).unwrap();
+    let start_time = std::time::Instant::now();
+
+    let mut previous_time = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_secs_f64(1.0 / 60.0))
+        .unwrap();
 
     let mut time_since_left_ground = f32::MAX;
     let mut jump_buffer = false;
@@ -238,6 +243,8 @@ fn main() {
             // Delta time calculation
             let new_time = std::time::Instant::now();
             let dt = (new_time - previous_time).as_secs_f32();
+            let time = (new_time - start_time).as_secs_f32();
+
             previous_time = new_time;
 
             integration_parameters.set_inv_dt(1.0 / dt);
@@ -259,9 +266,10 @@ fn main() {
             );
 
             fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
-                Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
+                Rotor3::from_rotation_xz(camera_rotation.x)
+                    * Rotor3::from_rotation_yz(camera_rotation.y)
             }
-            
+
             let camera_rotation = get_camera_rotor(inputs.camera_rotation);
 
             let player_info = &rigid_body_set[player_handle];
@@ -305,6 +313,11 @@ fn main() {
                 camera_rotation.reversed(),
             );
 
+            let ubo = UniformBufferObject{
+                view_transform: camera_transform,
+                time,
+            };
+
             let n = root_node.root_node.borrow();
 
             n.children[0].borrow_mut().transform =
@@ -321,7 +334,7 @@ fn main() {
                         uniform_buffer,
                         image,
                         &root_node,
-                        camera_transform,
+                        ubo,
                     )
                 },
                 inputs.recreate_swapchain,
@@ -382,7 +395,7 @@ fn record_command_buffer(
     uniform_buffer: &mut MappedBuffer<UniformBufferObject>,
     image: &SwapchainImage,
     root_node: &GameTree,
-    camera_transform: Isometry3,
+    ubo: UniformBufferObject,
 ) -> ActiveMultipleSubmitCommandBuffer {
     let clear_color = [
         vk::ClearValue {
@@ -406,47 +419,32 @@ fn record_command_buffer(
         })
         .clear_values(&clear_color);
 
-    let viewport = [vk::Viewport::default()
-        .x(0.0)
-        .y(0.0)
-        .width(image.extent.width as f32)
-        .height(image.extent.height as f32)
-        .min_depth(0.0)
-        .max_depth(1.0)];
-
     unsafe {
+        let uniform_buffer_descriptor_set = [*uniform_buffer.descriptor_set];
+        let ubo_mapped = uniform_buffer.mapped_memory.first_mut().unwrap();
+        *ubo_mapped = ubo;
+
         let cmd_buf = *command_buffer;
         device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
 
-        device.cmd_bind_pipeline(
-            cmd_buf,
-            vk::PipelineBindPoint::GRAPHICS,
-            *render_pass.pipeline,
-        );
-
-        device.cmd_set_viewport(cmd_buf, 0, &viewport);
-
-        let scissor = [vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent: vk::Extent2D {
-                width: image.extent.width,
-                height: image.extent.height,
-            },
-        }];
-
-        device.cmd_set_scissor(cmd_buf, 0, &scissor);
-
-        let ubo = uniform_buffer.mapped_memory.first_mut().unwrap();
-
-        *ubo = UniformBufferObject {
-            view_transform: camera_transform,
-        };
-
-        let uniform_buffer_descriptor_set = [*uniform_buffer.descriptor_set];
+        let skybox_pipeline = &render_pass.pipelines[1];
+        device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **skybox_pipeline);
         device.cmd_bind_descriptor_sets(
             cmd_buf,
             vk::PipelineBindPoint::GRAPHICS,
-            render_pass.pipeline.pipeline_layout,
+            skybox_pipeline.pipeline_layout,
+            0,
+            &uniform_buffer_descriptor_set,
+            &[],
+        );
+        device.cmd_draw(cmd_buf, 3, 1, 0, 0);
+
+        let pipeline = &render_pass.pipelines[0];
+        device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **pipeline);
+        device.cmd_bind_descriptor_sets(
+            cmd_buf,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline.pipeline_layout,
             0,
             &uniform_buffer_descriptor_set,
             &[],
@@ -454,16 +452,18 @@ fn record_command_buffer(
 
         for (transform, node) in root_node.breadth_first() {
             let modelview_transform = Isometry3 {
-                translation: (transform.translation - camera_transform.translation)
-                    .rotated_by(camera_transform.rotation),
-                rotation: camera_transform.rotation * transform.rotation,
+                translation: (transform.translation - ubo.view_transform.translation)
+                    .rotated_by(ubo.view_transform.rotation),
+                rotation: ubo.view_transform.rotation * transform.rotation,
             };
 
             device.cmd_push_constants(
                 cmd_buf,
-                render_pass.pipeline.pipeline_layout,
+                pipeline.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                offset_of!(VertexPushConstants, model_transform).try_into().unwrap(),
+                offset_of!(VertexPushConstants, model_transform)
+                    .try_into()
+                    .unwrap(),
                 std::slice::from_raw_parts(
                     addr_of!(modelview_transform).cast::<u8>(),
                     std::mem::size_of::<Isometry3>(),
@@ -477,7 +477,7 @@ fn record_command_buffer(
                 device.cmd_bind_descriptor_sets(
                     cmd_buf,
                     vk::PipelineBindPoint::GRAPHICS,
-                    render_pass.pipeline.pipeline_layout,
+                    pipeline.pipeline_layout,
                     1,
                     &descriptor_sets,
                     &[],

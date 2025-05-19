@@ -42,7 +42,7 @@ void main() {
 
     vec3 rotated = rotate(in_position, modelview_rotor) + modelview_position;
 
-    vec2 scale = fov*vec2(-1.0, scale_y);
+    vec2 scale = -fov*vec2(1.0, scale_y);
 
     gl_Position = vec4(
         scale*rotated.xy,

@@ -26,14 +26,15 @@ layout(set = 0, binding = 0) uniform View {
     float ry;
     float rz;
     float rw;
+    float time;
 } view;
 
-vec3 sun_color = vec3(1.0, 0.91, 0.56);
-vec3 fill_light_color = vec3(0.5, 0.7, 0.9);
+vec3 sun_color = vec3( 0.7, 0.75, 1.0 );
+vec3 fill_light_color = vec3( 0.1, 0.6, 1.0 );
 
-float shininess = 32.0;
-float specular_reflection = 1.0;
-float lambertian_reflection = 0.5;
+float shininess = 4.0;
+float specular_reflection = 0.2;
+float lambertian_reflection = 1.0;
 
 vec3 lighting(vec3 view, vec3 light, vec3 color, vec3 normal) {
     float lambertian = max(dot(light, normalize(normal)), 0);
@@ -120,7 +121,7 @@ void main() {
     vec4 tex = texture(tex_sampler, vec2(frag_tex_coord.x, -frag_tex_coord.y));
     out_color = vec4(tex.xyz * (
                     lighting(vec3(0.0,0.0,-1.0), sun, sun_color, normal) +
-                    0.01 * fill_light_color +
+                    0.05 * fill_light_color +
                     0.1 * lighting(view, vec3(-sun.x,sun.y,-sun.z), fill_light_color, normal)
                 ), tex.w);
 }

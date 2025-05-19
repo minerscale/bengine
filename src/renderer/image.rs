@@ -31,7 +31,10 @@ impl SwapchainImage {
     ) -> Self {
         let view = create_image_view(&device, image, format, vk::ImageAspectFlags::COLOR);
 
-        let attachments = color_attachment.map_or_else(|| vec![view, depth_attachment], |color_attachment| vec![color_attachment, depth_attachment, view]);
+        let attachments = color_attachment.map_or_else(
+            || vec![view, depth_attachment],
+            |color_attachment| vec![color_attachment, depth_attachment, view],
+        );
 
         let framebuffer = create_framebuffer(&device, render_pass, &attachments, extent);
 

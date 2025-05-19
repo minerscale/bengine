@@ -44,7 +44,8 @@ impl<T: Copy + 'static> MappedBuffer<T> {
             std::slice::from_raw_parts_mut(
                 device
                     .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
-                    .unwrap().cast::<T>(),
+                    .unwrap()
+                    .cast::<T>(),
                 data.len(),
             )
         };
@@ -127,7 +128,7 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
     }];
 
     unsafe { device.cmd_copy_buffer(**cmd_buf, **buffer, new_buffer, &copy_region) };
-    
+
     let device = buffer.device.clone();
     let size = buffer.size;
 
@@ -226,7 +227,8 @@ impl<T: Copy + 'static> Buffer<T> {
                 std::slice::from_raw_parts_mut(
                     device
                         .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
-                        .unwrap().cast::<T>(),
+                        .unwrap()
+                        .cast::<T>(),
                     data.len(),
                 )
             };
