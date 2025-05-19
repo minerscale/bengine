@@ -11,6 +11,9 @@ mod event_loop;
 mod node;
 mod player;
 mod renderer;
+mod shader_pipelines;
+mod vertex;
+mod mesh;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
@@ -22,12 +25,13 @@ use renderer::{
     command_buffer::ActiveMultipleSubmitCommandBuffer,
     device::Device,
     image::{Image, SwapchainImage},
-    mesh::Mesh,
     pipeline::VertexPushConstants,
     render_pass::RenderPass,
     sampler::Sampler,
     texture::Texture,
 };
+
+use mesh::Mesh;
 
 use ash::vk;
 use event_loop::EventLoop;
@@ -50,7 +54,7 @@ use sdl3::event::Event;
 
 fn main() {
     env_logger::init();
-    let mut gfx = Renderer::new(WIDTH, HEIGHT);
+    let mut gfx = Renderer::new(WIDTH, HEIGHT, &shader_pipelines::PIPELINES);
 
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
 

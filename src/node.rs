@@ -2,7 +2,7 @@ use std::{cell::RefCell, future::Future, rc::Rc};
 
 use genawaiter::{rc::r#gen, yield_};
 
-use crate::renderer::{mesh::Mesh, texture::Texture};
+use crate::{mesh::Mesh, renderer::texture::Texture};
 
 use ultraviolet::Isometry3;
 

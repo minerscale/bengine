@@ -4,7 +4,9 @@ use ash::vk;
 use obj::{Obj, load_obj};
 use ultraviolet::Vec3;
 
-use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer, vertex::Vertex};
+use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer};
+
+use crate::vertex::Vertex;
 
 #[derive(Debug)]
 pub struct Mesh {
