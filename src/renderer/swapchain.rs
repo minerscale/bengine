@@ -23,12 +23,15 @@ impl Swapchain {
     pub fn new<
         'a,
         T: Iterator<
-            Item = &'a (impl Fn(
+            Item = &'a (
+                           impl Fn(
                 &Device,
                 vk::Extent2D,
                 vk::RenderPass,
                 &[vk::DescriptorSetLayout],
-            ) -> Pipeline + 'a),
+            ) -> Pipeline
+                           + 'a
+                       ),
         >,
     >(
         instance: &ash::Instance,

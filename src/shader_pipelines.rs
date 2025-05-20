@@ -3,7 +3,15 @@ use std::mem::offset_of;
 use ash::vk;
 use ultraviolet::{Vec2, Vec4};
 
-use crate::{renderer::{device::{self, Device}, pipeline::{Pipeline, PipelineBuilder, VertexPushConstants}, shader_module::{spv, SpecializationInfo}, FOV}, vertex::Vertex};
+use crate::{
+    renderer::{
+        FOV,
+        device::{self, Device},
+        pipeline::{Pipeline, PipelineBuilder, VertexPushConstants},
+        shader_module::{SpecializationInfo, spv},
+    },
+    vertex::Vertex,
+};
 
 fn make_main_pipeline(
     device: &Device,
@@ -94,13 +102,13 @@ fn make_main_pipeline(
     }];
 
     let rasterizer = vk::PipelineRasterizationStateCreateInfo::default()
-            .depth_clamp_enable(false)
-            .rasterizer_discard_enable(false)
-            .polygon_mode(vk::PolygonMode::FILL)
-            .line_width(1.0)
-            .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-            .depth_bias_enable(false);
+        .depth_clamp_enable(false)
+        .rasterizer_discard_enable(false)
+        .polygon_mode(vk::PolygonMode::FILL)
+        .line_width(1.0)
+        .cull_mode(vk::CullModeFlags::BACK)
+        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+        .depth_bias_enable(false);
 
     let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(true)
@@ -133,7 +141,7 @@ fn make_skybox_pipeline(
     let fov = FOV.to_radians();
     let camera_parameters = Vec2::new(
         f32::tan(fov / 2.0),
-        (extent.height as f32) / (extent.width as f32)
+        (extent.height as f32) / (extent.width as f32),
     );
 
     let fragment_specialization = SpecializationInfo::new(
@@ -147,7 +155,7 @@ fn make_skybox_pipeline(
                 constant_id: 1,
                 offset: offset_of!(Vec4, y) as u32,
                 size: std::mem::size_of::<f32>(),
-            }
+            },
         ],
         unsafe {
             std::slice::from_raw_parts(

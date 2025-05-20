@@ -8,12 +8,12 @@
 #![windows_subsystem = "windows"]
 
 mod event_loop;
+mod mesh;
 mod node;
 mod player;
 mod renderer;
 mod shader_pipelines;
 mod vertex;
-mod mesh;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
@@ -242,6 +242,8 @@ fn main() {
     let mut jump_buffer = false;
     let mut previous_jump_input = false;
 
+    let gems_and_jewel_location = Vec2::new(8.0, 8.0);
+
     event_loop.run(
         |inputs| {
             // Delta time calculation
@@ -289,6 +291,14 @@ fn main() {
 
             let player_transform = from_nalgebra(rigid_body_set[player_handle].position());
 
+            let distance = (Vec2::new(
+                player_transform.translation.x,
+                player_transform.translation.z,
+            ) - gems_and_jewel_location)
+                .mag();
+
+            println!("distance: {distance}");
+
             if inputs.up && !previous_jump_input {
                 jump_buffer = true;
             } else if !inputs.up && previous_jump_input {
@@ -317,7 +327,7 @@ fn main() {
                 camera_rotation.reversed(),
             );
 
-            let ubo = UniformBufferObject{
+            let ubo = UniformBufferObject {
                 view_transform: camera_transform,
                 time,
             };

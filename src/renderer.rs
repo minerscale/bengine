@@ -10,8 +10,8 @@ pub mod image;
 pub mod pipeline;
 pub mod render_pass;
 pub mod sampler;
-pub mod texture;
 pub mod shader_module;
+pub mod texture;
 
 mod debug_messenger;
 mod descriptors;
@@ -19,7 +19,6 @@ mod instance;
 mod surface;
 mod swapchain;
 mod synchronization;
-
 
 use crate::renderer::{
     buffer::MappedBuffer,
@@ -43,15 +42,11 @@ pub const FOV: f32 = 90.0;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UniformBufferObject {
     pub view_transform: Isometry3,
-    pub time: f32
+    pub time: f32,
 }
 
-type PipelineFunction = fn(
-                &Device,
-                vk::Extent2D,
-                vk::RenderPass,
-                &[vk::DescriptorSetLayout],
-            ) -> Pipeline;
+type PipelineFunction =
+    fn(&Device, vk::Extent2D, vk::RenderPass, &[vk::DescriptorSetLayout]) -> Pipeline;
 
 pub struct Renderer {
     // WARNING: Cleanup order matters here

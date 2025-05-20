@@ -238,9 +238,7 @@ impl<'a> PipelineBuilder<'a> {
         let mut pipeline_info = vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
             .vertex_input_state(
-                self.vertex_input_info
-                    .unwrap_or(&vertex_input_info)
-                    //.expect("pipeline build error: vertex_input_info required"),
+                self.vertex_input_info.unwrap_or(&vertex_input_info), //.expect("pipeline build error: vertex_input_info required"),
             )
             .input_assembly_state(self.input_assembly.unwrap_or(&input_assembly))
             .viewport_state(&viewport_state)
