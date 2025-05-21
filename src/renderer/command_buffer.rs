@@ -1,7 +1,7 @@
 use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
-use log::info;
+use log::debug;
 
 use crate::renderer::device::Device;
 
@@ -232,7 +232,7 @@ impl Deref for CommandPool {
 
 impl Drop for CommandPool {
     fn drop(&mut self) {
-        info!("dropped command pool");
+        debug!("dropped command pool");
         unsafe {
             self.device.destroy_command_pool(self.command_pool, None);
         }

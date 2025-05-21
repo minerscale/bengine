@@ -5,7 +5,7 @@ use std::{
 
 use ash::{ext, vk};
 use colored::Colorize;
-use log::info;
+use log::debug;
 
 pub const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
 
@@ -81,7 +81,7 @@ impl DebugMessenger {
 
 impl Drop for DebugMessenger {
     fn drop(&mut self) {
-        info!("dropped debug messenger");
+        debug!("dropped debug messenger");
         unsafe {
             self.debug_utils_loader
                 .destroy_debug_utils_messenger(self.debug_callback, None);

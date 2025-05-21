@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ops::Deref, rc::Rc};
 
 use ash::vk;
-use log::info;
+use log::debug;
 
 use crate::renderer::{
     command_buffer::ActiveCommandBuffer,
@@ -256,7 +256,7 @@ impl<T: Copy> Deref for Buffer<T> {
 
 impl<T: Copy> Drop for Buffer<T> {
     fn drop(&mut self) {
-        info!("dropped buffer");
+        debug!("dropped buffer");
         unsafe {
             self.device.destroy_buffer(self.buffer, None);
             self.device.free_memory(self.memory, None);

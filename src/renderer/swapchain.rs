@@ -1,7 +1,7 @@
 use std::{mem::ManuallyDrop, ops::Deref};
 
 use ash::{khr, vk};
-use log::info;
+use log::{debug, warn};
 
 use crate::renderer::{
     device::Device,
@@ -208,7 +208,7 @@ impl Swapchain {
             })
             .unwrap_or_else(|| {
                 let format = avaliable_formats.first().unwrap();
-                info!("couldn't find suitable format! Falling back to {format:?}");
+                warn!("couldn't find suitable format! Falling back to {format:?}");
                 *format
             })
     }
@@ -230,7 +230,7 @@ impl Drop for Swapchain {
             ManuallyDrop::drop(&mut self.depth_image);
             self.color_image.take();
 
-            info!("dropped swapchain");
+            debug!("dropped swapchain");
             self.loader.destroy_swapchain(self.swapchain, None);
         }
     }

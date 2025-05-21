@@ -1,7 +1,7 @@
 use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
-use log::info;
+use log::debug;
 
 use crate::renderer::{device::Device, pipeline::Pipeline, swapchain::find_depth_format};
 
@@ -145,7 +145,7 @@ impl Deref for RenderPass {
 
 impl Drop for RenderPass {
     fn drop(&mut self) {
-        info!("dropped render pass");
+        debug!("dropped render pass");
         unsafe {
             self.device.destroy_render_pass(self.render_pass, None);
         }

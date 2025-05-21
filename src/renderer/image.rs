@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use ash::vk;
 use image::GenericImageView;
-use log::info;
+use log::debug;
 
 use crate::renderer::{
     buffer::{Buffer, find_memory_type},
@@ -296,10 +296,10 @@ impl Image {
 
 impl Drop for Image {
     fn drop(&mut self) {
-        info!("dropped image view");
+        debug!("dropped image view");
         unsafe { self.device.destroy_image_view(self.view, None) };
 
-        info!("dropped image");
+        debug!("dropped image");
         unsafe {
             self.device.destroy_image(self.image, None);
             self.device.free_memory(self.memory, None);
@@ -309,10 +309,10 @@ impl Drop for Image {
 
 impl Drop for SwapchainImage {
     fn drop(&mut self) {
-        info!("dropped framebuffer");
+        debug!("dropped framebuffer");
         unsafe { self.device.destroy_framebuffer(self.framebuffer, None) };
 
-        info!("dropped image view");
+        debug!("dropped image view");
         unsafe { self.device.destroy_image_view(self.view, None) };
     }
 }

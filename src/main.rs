@@ -7,6 +7,7 @@
 #![allow(clippy::if_not_else)]
 #![windows_subsystem = "windows"]
 
+mod audio;
 mod event_loop;
 mod mesh;
 mod node;
@@ -17,6 +18,8 @@ mod vertex;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
 
+use audio::{Audio, AudioParameters};
+use cpal::traits::StreamTrait;
 use obj::raw::RawObj;
 use player::get_movement_impulse;
 use renderer::{
@@ -230,8 +233,6 @@ fn main() {
         .mouse()
         .set_relative_mouse_mode(&gfx.window, true);
 
-    info!("finished loading");
-
     let start_time = std::time::Instant::now();
 
     let mut previous_time = std::time::Instant::now()
@@ -243,6 +244,12 @@ fn main() {
     let mut previous_jump_input = false;
 
     let gems_and_jewel_location = Vec2::new(8.0, 8.0);
+
+    let audio = Audio::new();
+
+    audio.stream.play().unwrap();
+
+    info!("finished loading");
 
     event_loop.run(
         |inputs| {
@@ -297,7 +304,10 @@ fn main() {
             ) - gems_and_jewel_location)
                 .mag();
 
-            println!("distance: {distance}");
+            audio
+                .parameter_stream
+                .send(AudioParameters::new(distance.into()))
+                .unwrap();
 
             if inputs.up && !previous_jump_input {
                 jump_buffer = true;

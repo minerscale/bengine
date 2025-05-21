@@ -1,7 +1,7 @@
 use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
-use log::info;
+use log::debug;
 
 use crate::renderer::{
     MAX_FRAMES_IN_FLIGHT, buffer::Buffer, image::Image, sampler::Sampler, texture::MAX_TEXTURES,
@@ -98,7 +98,7 @@ impl DescriptorSetLayout {
 
 impl Drop for DescriptorSetLayout {
     fn drop(&mut self) {
-        info!("dropped descriptor set layout");
+        debug!("dropped descriptor set layout");
 
         unsafe { self.device.destroy_descriptor_set_layout(self.layout, None) };
     }
@@ -156,7 +156,7 @@ impl DescriptorPool {
 
 impl Drop for DescriptorPool {
     fn drop(&mut self) {
-        info!("dropped descriptor pool");
+        debug!("dropped descriptor pool");
 
         unsafe { self.device.destroy_descriptor_pool(self.pool, None) };
     }

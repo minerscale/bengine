@@ -1,7 +1,7 @@
 use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
-use log::info;
+use log::debug;
 use ultraviolet::Isometry3;
 
 #[repr(C)]
@@ -288,7 +288,7 @@ impl Deref for Pipeline {
 
 impl Drop for Pipeline {
     fn drop(&mut self) {
-        info!("dropped pipeline");
+        debug!("dropped pipeline");
         unsafe {
             self.device.destroy_pipeline(self.pipeline, None);
             self.device

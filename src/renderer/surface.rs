@@ -4,7 +4,7 @@ use ash::{
     khr,
     vk::{self, Handle},
 };
-use log::info;
+use log::debug;
 
 pub struct Surface {
     pub loader: khr::surface::Instance,
@@ -35,7 +35,7 @@ impl Deref for Surface {
 
 impl Drop for Surface {
     fn drop(&mut self) {
-        info!("dropped surface");
+        debug!("dropped surface");
         unsafe { self.loader.destroy_surface(self.surface, None) };
     }
 }

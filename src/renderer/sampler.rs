@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use ash::vk;
-use log::info;
+use log::debug;
 
 pub struct Sampler {
     pub sampler: vk::Sampler,
@@ -44,7 +44,7 @@ impl Sampler {
 
 impl Drop for Sampler {
     fn drop(&mut self) {
-        info!("dropped sampler");
+        debug!("dropped sampler");
         unsafe { self.device.destroy_sampler(self.sampler, None) };
     }
 }

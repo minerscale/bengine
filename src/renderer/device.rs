@@ -1,7 +1,7 @@
 use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, rc::Rc};
 
 use ash::{khr, vk};
-use log::info;
+use log::{info, debug};
 
 use crate::renderer::{
     instance::{Instance, TARGET_API_VERSION},
@@ -354,7 +354,7 @@ impl Deref for Device {
 
 impl Drop for Device {
     fn drop(&mut self) {
-        info!("dropped device");
+        debug!("dropped device");
         unsafe {
             self.device.destroy_device(None);
         };

@@ -4,7 +4,7 @@ use std::{
 };
 
 use ash::{ext, vk};
-use log::info;
+use log::debug;
 
 use crate::renderer::debug_messenger::ENABLE_VALIDATION_LAYERS;
 
@@ -85,7 +85,7 @@ impl Deref for Instance {
 
 impl Drop for Instance {
     fn drop(&mut self) {
-        info!("dropped instance");
+        debug!("dropped instance");
         unsafe { self.instance.destroy_instance(None) };
     }
 }

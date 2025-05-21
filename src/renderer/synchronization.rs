@@ -1,7 +1,7 @@
 use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
-use log::info;
+use log::debug;
 
 pub struct Fence {
     fence: vk::Fence,
@@ -30,7 +30,7 @@ impl Deref for Fence {
 
 impl Drop for Fence {
     fn drop(&mut self) {
-        info!("dropped fence");
+        debug!("dropped fence");
         unsafe { self.device.destroy_fence(self.fence, None) };
     }
 }
@@ -65,7 +65,7 @@ impl Deref for Semaphore {
 
 impl Drop for Semaphore {
     fn drop(&mut self) {
-        info!("dropped semaphore");
+        debug!("dropped semaphore");
         unsafe { self.device.destroy_semaphore(self.semaphore, None) };
     }
 }

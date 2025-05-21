@@ -1,7 +1,7 @@
 use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
-use log::info;
+use log::debug;
 
 pub struct SpecializationInfo<'a> {
     info: vk::SpecializationInfo<'a>,
@@ -96,7 +96,7 @@ impl Deref for ShaderModule<'_> {
 
 impl Drop for ShaderModule<'_> {
     fn drop(&mut self) {
-        info!("dropped shader module");
+        debug!("dropped shader module");
         unsafe {
             self.device.destroy_shader_module(self.shader, None);
         }
