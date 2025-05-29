@@ -28,7 +28,7 @@ struct OscillatorParameters {
     position: f64,
     smoothed_inputs: AudioParameters,
     latest_parameters: AudioParameters,
-    alpha: f64
+    alpha: f64,
 }
 
 impl OscillatorParameters {
@@ -37,7 +37,7 @@ impl OscillatorParameters {
             position: 0.0,
             smoothed_inputs: AudioParameters::new(100.0),
             latest_parameters: AudioParameters::new(100.0),
-            alpha: 1.0 - f64::exp(-(SAMPLE_RATE as f64).recip()/smoothing_constant)
+            alpha: 1.0 - f64::exp(-(SAMPLE_RATE as f64).recip() / smoothing_constant),
         }
     }
 
@@ -60,6 +60,7 @@ impl OscillatorParameters {
     }
 }
 
+// This is where art lives.
 fn write_audio<T: Sample + cpal::FromSample<f64>>(
     data: &mut [T],
     parameters: &mut OscillatorParameters,
@@ -67,8 +68,7 @@ fn write_audio<T: Sample + cpal::FromSample<f64>>(
     for sample in data.iter_mut() {
         parameters.update();
 
-        let d = (parameters.smoothed_inputs.distance + 1.0)
-            .recip();
+        let d = (parameters.smoothed_inputs.distance + 1.0).recip();
 
         parameters.position += (f64::consts::TAU * 440.0 * d.powf(1.5)) / SAMPLE_RATE as f64;
 
@@ -78,7 +78,6 @@ fn write_audio<T: Sample + cpal::FromSample<f64>>(
     }
 }
 
-
 const SAMPLE_RATE: u32 = 48000;
 const BUFFER_SIZE_SAMPLES: u32 = 2048;
 
@@ -86,10 +85,10 @@ impl Audio {
     pub fn new() -> Self {
         let host = cpal::default_host();
 
-
         let device = host
             .default_output_device()
             .expect("no output device available");
+
         let supported_config = device
             .supported_output_configs()
             .expect("error while querying configs")
@@ -98,7 +97,8 @@ impl Audio {
                     c.sample_format(),
                     SampleFormat::F32 | SampleFormat::I16 | SampleFormat::U16
                 ) && c.channels() == 2
-                    && (c.min_sample_rate()..=c.max_sample_rate()).contains(&cpal::SampleRate(SAMPLE_RATE))
+                    && (c.min_sample_rate()..=c.max_sample_rate())
+                        .contains(&cpal::SampleRate(SAMPLE_RATE))
                     && match c.buffer_size() {
                         cpal::SupportedBufferSize::Range { min, max } => {
                             (min..=max).contains(&&BUFFER_SIZE_SAMPLES)
@@ -111,7 +111,11 @@ impl Audio {
             .expect("no supported config?!")
             .with_sample_rate(cpal::SampleRate(SAMPLE_RATE));
 
-        info!("Audio Information | host: {} | device: {}", host.id().name(), device.name().unwrap());
+        info!(
+            "Audio Information | host: {} | device: {}",
+            host.id().name(),
+            device.name().unwrap()
+        );
 
         let mut config = supported_config.config();
         config.buffer_size = BufferSize::Fixed(BUFFER_SIZE_SAMPLES);

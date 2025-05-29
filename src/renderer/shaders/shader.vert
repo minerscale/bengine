@@ -7,10 +7,21 @@ layout(location = 2) in vec2 in_tex_coord;
 layout(location = 0) out vec3 frag_normal;
 layout(location = 1) out vec2 frag_tex_coord;
 
-layout(constant_id = 0) const float fov = 0.0;
-layout(constant_id = 1) const float scale_y = 0.0;
-layout(constant_id = 2) const float front_clip = 0.0;
-layout(constant_id = 3) const float back_clip = 0.0;
+layout(constant_id = 0) const float front_clip = 0.0;
+layout(constant_id = 1) const float back_clip = 0.0;
+
+layout(set = 0, binding = 0) uniform View {
+    float x;
+    float y;
+    float z;
+    float rx;
+    float ry;
+    float rz;
+    float rw;
+    float time;
+    float fov;
+    float scale_y;
+} view;
 
 layout( push_constant ) uniform constants
 {
@@ -42,7 +53,7 @@ void main() {
 
     vec3 rotated = rotate(in_position, modelview_rotor) + modelview_position;
 
-    vec2 scale = -fov*vec2(1.0, scale_y);
+    vec2 scale = -view.fov*vec2(1.0, view.scale_y);
 
     gl_Position = vec4(
         scale*rotated.xy,

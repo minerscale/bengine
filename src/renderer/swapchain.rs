@@ -1,7 +1,7 @@
 use std::{mem::ManuallyDrop, ops::Deref};
 
 use ash::{khr, vk};
-use log::{debug, warn};
+use log::{debug, info, warn};
 
 use crate::renderer::{
     device::Device,
@@ -43,6 +43,8 @@ impl Swapchain {
         pipelines: T,
         old_swapchain: Option<&Self>,
     ) -> Self {
+        info!("creating new swapchain");
+
         let swapchain_loader = old_swapchain.map_or_else(
             || khr::swapchain::Device::new(instance, device),
             |swapchain| swapchain.loader.clone(),

@@ -1,3 +1,5 @@
+// main.rs
+
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::cast_possible_truncation)]
@@ -14,6 +16,7 @@ mod node;
 mod player;
 mod renderer;
 mod shader_pipelines;
+mod skybox;
 mod vertex;
 
 use std::{io::Cursor, mem::offset_of, ptr::addr_of, rc::Rc};
@@ -51,15 +54,28 @@ use rapier3d::{
     },
 };
 use renderer::{Renderer, UniformBufferObject};
+use skybox::Skybox;
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
 use sdl3::event::Event;
+
+pub const FOV: f32 = 90.0;
 
 fn main() {
     env_logger::init();
     let mut gfx = Renderer::new(WIDTH, HEIGHT, &shader_pipelines::PIPELINES);
 
+    let skybox = Skybox::new(&gfx);
+
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
+
+    let sampler = Rc::new(Sampler::new(
+        &gfx.instance,
+        gfx.device.device.clone(),
+        gfx.device.physical_device,
+        vk::SamplerAddressMode::REPEAT,
+        true,
+    ));
 
     let (/*teapot, suzanne,*/ room, cube_1, cube_2 /*, icosehedron*/) = gfx
         .command_pool
@@ -100,12 +116,6 @@ fn main() {
                     ))
                 };
             }
-
-            let sampler = Rc::new(Sampler::new(
-                &gfx.instance,
-                gfx.device.device.clone(),
-                gfx.device.physical_device,
-            ));
 
             let grid = texture!(sampler, image!("../textures/grid.png"));
 
@@ -337,9 +347,15 @@ fn main() {
                 camera_rotation.reversed(),
             );
 
+            let fov = FOV.to_radians();
+            let ez = f32::tan(fov / 2.0).recip();
+
+            let extent = gfx.swapchain.images[0].extent;
             let ubo = UniformBufferObject {
                 view_transform: camera_transform,
                 time,
+                fov: ez,
+                scale_y: (extent.width as f32) / (extent.height as f32),
             };
 
             let n = root_node.root_node.borrow();
@@ -356,6 +372,7 @@ fn main() {
                         render_pass,
                         command_buffer,
                         uniform_buffer,
+                        &skybox,
                         image,
                         &root_node,
                         ubo,
@@ -391,9 +408,9 @@ fn main() {
                 inputs.camera_rotation = {
                     let mut rotation = inputs.camera_rotation + Vec2::new(xrel, yrel) * SENSITIVITY;
 
-                    rotation.y = rotation
-                        .y
-                        .clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
+                    let vertical_look_limit = 0.99 * std::f32::consts::FRAC_PI_2;
+
+                    rotation.y = rotation.y.clamp(-vertical_look_limit, vertical_look_limit);
 
                     rotation
                 };
@@ -417,6 +434,7 @@ fn record_command_buffer(
     render_pass: &RenderPass,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
     uniform_buffer: &mut MappedBuffer<UniformBufferObject>,
+    skybox: &Skybox,
     image: &SwapchainImage,
     root_node: &GameTree,
     ubo: UniformBufferObject,
@@ -444,24 +462,24 @@ fn record_command_buffer(
         .clear_values(&clear_color);
 
     unsafe {
+        //let mut command_buffer = command_buffer;
+
         let uniform_buffer_descriptor_set = [*uniform_buffer.descriptor_set];
         let ubo_mapped = uniform_buffer.mapped_memory.first_mut().unwrap();
         *ubo_mapped = ubo;
 
         let cmd_buf = *command_buffer;
+
+        let command_buffer = skybox.render(device, command_buffer, &uniform_buffer.descriptor_set);
+
         device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
 
-        let skybox_pipeline = &render_pass.pipelines[1];
-        device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **skybox_pipeline);
-        device.cmd_bind_descriptor_sets(
-            cmd_buf,
-            vk::PipelineBindPoint::GRAPHICS,
-            skybox_pipeline.pipeline_layout,
-            0,
-            &uniform_buffer_descriptor_set,
-            &[],
+        let command_buffer = skybox.blit(
+            device,
+            command_buffer,
+            &render_pass.pipelines[1],
+            &uniform_buffer.descriptor_set,
         );
-        device.cmd_draw(cmd_buf, 3, 1, 0, 0);
 
         let pipeline = &render_pass.pipelines[0];
         device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **pipeline);
@@ -532,7 +550,7 @@ fn record_command_buffer(
         }
 
         device.cmd_end_render_pass(cmd_buf);
-    }
 
-    command_buffer
+        command_buffer
+    }
 }

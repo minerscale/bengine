@@ -35,6 +35,90 @@ pub struct PipelineBuilder<'a> {
     color_blending: Option<&'a vk::PipelineColorBlendStateCreateInfo<'a>>,
 }
 
+#[derive(Default)]
+pub struct ComputePipelineBuilder<'a> {
+    device: Option<Rc<ash::Device>>,
+    shader: Option<&'a ShaderModule<'a>>,
+    layouts: Option<&'a [vk::DescriptorSetLayout]>,
+    push_constant_range: Option<&'a vk::PushConstantRange>,
+}
+
+impl<'a> ComputePipelineBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn device(self, device: Rc<ash::Device>) -> Self {
+        Self {
+            device: Some(device),
+            ..self
+        }
+    }
+
+    pub fn shader(self, shader: &'a ShaderModule<'a>) -> Self {
+        Self {
+            shader: Some(shader),
+            ..self
+        }
+    }
+
+    pub fn layouts(self, layouts: &'a [vk::DescriptorSetLayout]) -> Self {
+        Self {
+            layouts: Some(layouts),
+            ..self
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn push_constant_range(self, push_constant_range: &'a vk::PushConstantRange) -> Self {
+        Self {
+            push_constant_range: Some(push_constant_range),
+            ..self
+        }
+    }
+
+    pub fn build(self) -> Pipeline {
+        let device = self
+            .device
+            .as_ref()
+            .expect("pipeline build error: device is required");
+
+        let mut pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
+
+        if let Some(set_layouts) = self.layouts {
+            pipeline_layout_info = pipeline_layout_info.set_layouts(set_layouts)
+        }
+
+        let push_constant_ranges;
+        if let Some(push_constant_range) = self.push_constant_range {
+            push_constant_ranges = [*push_constant_range];
+            pipeline_layout_info = pipeline_layout_info.push_constant_ranges(&push_constant_ranges);
+        }
+
+        let pipeline_layout = unsafe {
+            device
+                .create_pipeline_layout(&pipeline_layout_info, None)
+                .unwrap()
+        };
+
+        let pipeline_info = vk::ComputePipelineCreateInfo::default()
+            .layout(pipeline_layout)
+            .stage(self.shader.expect("shader required").stage_info());
+
+        let pipeline = unsafe {
+            device
+                .create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)
+                .expect("failed to create compute pipeline!")[0]
+        };
+
+        Pipeline {
+            pipeline,
+            pipeline_layout,
+            device: device.clone(),
+        }
+    }
+}
+
 impl<'a> PipelineBuilder<'a> {
     pub fn new() -> Self {
         Self::default()

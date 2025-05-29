@@ -54,6 +54,25 @@ impl DescriptorSet {
         };
     }
 
+    pub fn bind_image(&mut self, device: &ash::Device, binding: u32, image: Rc<Image>) {
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_layout(vk::ImageLayout::GENERAL)
+            .image_view(image.view)];
+
+        let descriptor_writes = [vk::WriteDescriptorSet::default()
+            .dst_set(**self)
+            .dst_binding(binding)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
+            .descriptor_count(1)
+            .image_info(&image_info)];
+
+        unsafe {
+            device.update_descriptor_sets(&descriptor_writes, &[]);
+            self.dependencies.push(image);
+        };
+    }
+
     pub fn bind_texture(
         &mut self,
         device: &ash::Device,
@@ -109,6 +128,7 @@ pub struct DescriptorPool {
     device: Rc<ash::Device>,
 }
 
+const MAX_STORAGE_IMAGES: u32 = 1;
 impl DescriptorPool {
     pub fn new(device: Rc<ash::Device>) -> Self {
         let pool_sizes = [
@@ -118,6 +138,9 @@ impl DescriptorPool {
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .descriptor_count(MAX_TEXTURES),
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::STORAGE_IMAGE)
+                .descriptor_count(MAX_STORAGE_IMAGES),
         ];
 
         let pool_info = vk::DescriptorPoolCreateInfo::default()

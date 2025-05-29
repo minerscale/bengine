@@ -1,7 +1,7 @@
 use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, rc::Rc};
 
 use ash::{khr, vk};
-use log::{info, debug};
+use log::{debug, info};
 
 use crate::renderer::{
     instance::{Instance, TARGET_API_VERSION},
@@ -261,7 +261,7 @@ impl Device {
                 .swapchain_maintenance1(true);
 
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
-        let (physical_device, (graphics_index, present_index), mssa_samples) =
+        let (physical_device, (graphics_index, present_index), msaa_samples) =
             pick_physical_device(
                 instance,
                 surface,
@@ -337,7 +337,7 @@ impl Device {
             device_memory_properties,
             graphics_index,
             present_index,
-            msaa_samples: mssa_samples,
+            msaa_samples,
             graphics_queue,
             present_queue,
         }

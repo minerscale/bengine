@@ -13,14 +13,16 @@ impl Sampler {
         instance: &ash::Instance,
         device: Rc<ash::Device>,
         physical_device: vk::PhysicalDevice,
+        address_mode: vk::SamplerAddressMode,
+        anisotropy_enable: bool,
     ) -> Self {
         let sampler_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)
             .min_filter(vk::Filter::LINEAR)
-            .address_mode_u(vk::SamplerAddressMode::REPEAT)
-            .address_mode_v(vk::SamplerAddressMode::REPEAT)
-            .address_mode_w(vk::SamplerAddressMode::REPEAT)
-            .anisotropy_enable(true)
+            .address_mode_u(address_mode)
+            .address_mode_v(address_mode)
+            .address_mode_w(address_mode)
+            .anisotropy_enable(anisotropy_enable)
             .max_anisotropy(unsafe {
                 instance
                     .get_physical_device_properties(physical_device)

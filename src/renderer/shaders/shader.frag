@@ -5,7 +5,7 @@ layout(location = 1) in vec2 frag_tex_coord;
 
 layout(location = 0) out vec4 out_color;
 
-layout(set = 1, binding = 1) uniform sampler2D tex_sampler;
+layout(set = 1, binding = 0) uniform sampler2D tex_sampler;
 
 layout( push_constant ) uniform constants
 {
@@ -27,6 +27,8 @@ layout(set = 0, binding = 0) uniform View {
     float rz;
     float rw;
     float time;
+    float fov;
+    float scale_y;
 } view;
 
 vec3 sun_color = vec3( 0.7, 0.75, 1.0 );

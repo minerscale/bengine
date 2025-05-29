@@ -5,6 +5,7 @@ use ultraviolet::Isometry3;
 
 pub mod buffer;
 pub mod command_buffer;
+pub mod descriptors;
 pub mod device;
 pub mod image;
 pub mod pipeline;
@@ -14,7 +15,6 @@ pub mod shader_module;
 pub mod texture;
 
 mod debug_messenger;
-mod descriptors;
 mod instance;
 mod surface;
 mod swapchain;
@@ -36,13 +36,14 @@ use crate::renderer::{
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 600;
-pub const FOV: f32 = 90.0;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UniformBufferObject {
     pub view_transform: Isometry3,
     pub time: f32,
+    pub fov: f32,
+    pub scale_y: f32,
 }
 
 type PipelineFunction =
@@ -55,7 +56,7 @@ pub struct Renderer {
     in_flight_fences: Vec<Fence>,
     semaphore_ready_fences: Vec<Fence>,
 
-    uniform_buffer_layout: DescriptorSetLayout,
+    pub uniform_buffer_layout: DescriptorSetLayout,
     pub texture_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
     uniform_buffers: Vec<MappedBuffer<UniformBufferObject>>,
@@ -65,7 +66,7 @@ pub struct Renderer {
 
     pipelines: &'static [PipelineFunction],
 
-    swapchain: Swapchain,
+    pub swapchain: Swapchain,
 
     pub device: Device,
 
@@ -261,14 +262,18 @@ impl Renderer {
                 .binding(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .descriptor_count(1)
-                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
+                .stage_flags(
+                    vk::ShaderStageFlags::VERTEX
+                        | vk::ShaderStageFlags::FRAGMENT
+                        | vk::ShaderStageFlags::COMPUTE,
+                )];
 
             DescriptorSetLayout::new(device.device.clone(), &uniform_buffer_bindings)
         };
 
         let texture_layout = {
             let texture_bindings = [vk::DescriptorSetLayoutBinding::default()
-                .binding(1)
+                .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT)];

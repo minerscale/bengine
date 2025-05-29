@@ -7,7 +7,7 @@ use crate::renderer::{
     sampler::Sampler,
 };
 
-pub const MAX_TEXTURES: u32 = 3;
+pub const MAX_TEXTURES: u32 = 4;
 
 #[derive(Debug)]
 pub struct Texture {
@@ -24,7 +24,7 @@ impl Texture {
     ) -> Self {
         let mut descriptor_set = descriptor_pool.create_descriptor_set(descriptor_set_layout);
 
-        descriptor_set.bind_texture(device, 1, image, sampler);
+        descriptor_set.bind_texture(device, 0, image, sampler);
 
         Self { descriptor_set }
     }

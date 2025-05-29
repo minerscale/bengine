@@ -94,7 +94,7 @@ fn copy_buffer_to_image<C: ActiveCommandBuffer>(
     }
 }
 
-fn transition_layout<C: ActiveCommandBuffer>(
+pub fn transition_layout<C: ActiveCommandBuffer>(
     device: &ash::Device,
     image: vk::Image,
     cmd_buf: &mut C,
@@ -113,6 +113,24 @@ fn transition_layout<C: ActiveCommandBuffer>(
                 vk::AccessFlags::TRANSFER_WRITE,
                 vk::AccessFlags::SHADER_READ,
                 vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+            ),
+            (vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+                vk::AccessFlags::empty(),
+                vk::AccessFlags::SHADER_READ,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+            ),
+            (vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::GENERAL) => (
+                vk::AccessFlags::SHADER_READ,
+                vk::AccessFlags::SHADER_WRITE,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+            ),
+            (vk::ImageLayout::GENERAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+                vk::AccessFlags::SHADER_WRITE,
+                vk::AccessFlags::SHADER_READ,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
             ),
             _ => {
@@ -231,6 +249,44 @@ impl Image {
             cmd_buf,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
             vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+
+        image
+    }
+
+    pub fn new_with_layout<C: ActiveCommandBuffer>(
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        device: Rc<ash::Device>,
+        extent: vk::Extent2D,
+        sample_count: vk::SampleCountFlags,
+        format: vk::Format,
+        tiling: vk::ImageTiling,
+        usage: vk::ImageUsageFlags,
+        properties: vk::MemoryPropertyFlags,
+        aspect_flags: vk::ImageAspectFlags,
+        cmd_buf: &mut C,
+        layout: vk::ImageLayout,
+    ) -> Self {
+        let image = Self::new(
+            instance,
+            physical_device,
+            device.clone(),
+            extent,
+            sample_count,
+            format,
+            tiling,
+            usage,
+            properties,
+            aspect_flags,
+        );
+
+        transition_layout(
+            &device,
+            image.image,
+            cmd_buf,
+            vk::ImageLayout::UNDEFINED,
+            layout,
         );
 
         image
