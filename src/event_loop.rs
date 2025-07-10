@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use sdl3::keyboard::Keycode;
 use ultraviolet::Vec2;
 
@@ -6,7 +8,7 @@ pub struct EventLoop {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Inputs {
     pub camera_rotation: Vec2,
     pub forward: bool,
@@ -17,6 +19,39 @@ pub struct Inputs {
     pub down: bool,
     pub quit: bool,
     pub recreate_swapchain: bool,
+}
+
+#[derive(Debug)]
+pub struct Input {
+    inputs: Inputs,
+    pub previous: Inputs,
+}
+
+impl Deref for Input {
+    type Target = Inputs;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inputs
+    }
+}
+
+impl DerefMut for Input {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inputs
+    }
+}
+
+impl Input {
+    pub fn new(initial_state: Inputs) -> Self {
+        Self {
+            inputs: initial_state.clone(),
+            previous: initial_state,
+        }
+    }
+
+    pub fn update(&mut self) {
+        self.previous = self.inputs.clone()
+    }
 }
 
 impl Inputs {
@@ -59,24 +94,26 @@ impl EventLoop {
         Self { pump }
     }
 
-    pub fn run<F: FnMut(&mut Inputs), G: FnMut(sdl3::event::Event, &mut Inputs)>(
+    pub fn run<F: FnMut(&mut Input), G: FnMut(sdl3::event::Event, &mut Input)>(
         &mut self,
         mut render: F,
         mut process_event: G,
     ) {
-        let mut inputs = Inputs::default().camera_rotation(Vec2::new(
+        let mut input = Input::new(Inputs::default().camera_rotation(Vec2::new(
             3.0 * std::f32::consts::FRAC_PI_4,
             std::f32::consts::FRAC_PI_8,
-        ));
+        )));
 
         'quit: loop {
-            render(&mut inputs);
+            render(&mut input);
+
+            input.update();
 
             while let Some(event) = self.pump.poll_event() {
-                process_event(event, &mut inputs);
+                process_event(event, &mut input);
             }
 
-            if inputs.quit {
+            if input.quit {
                 break 'quit;
             }
         }

@@ -225,7 +225,7 @@ pub fn make_skybox_pipeline(
         .device(device.device.clone())
         .shader_stages(&shader_stages)
         .multisampling(&multisampling)
-        .descriptor_set_layouts(&descriptor_set_layouts)
+        .descriptor_set_layouts(descriptor_set_layouts)
         .viewports(&viewport)
         .scissors(&scissor)
         .render_pass(render_pass)

@@ -120,7 +120,7 @@ impl Audio {
         let mut config = supported_config.config();
         config.buffer_size = BufferSize::Fixed(BUFFER_SIZE_SAMPLES);
 
-        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
+        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {err}");
 
         let mut osc_parameters = OscillatorParameters::new(0.1);
 

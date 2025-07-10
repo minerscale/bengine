@@ -13,7 +13,6 @@ pub struct RenderPass {
 
 impl RenderPass {
     pub fn new<
-        'a,
         T: Iterator<
             Item = impl Fn(
                 &Device,
@@ -124,7 +123,7 @@ impl RenderPass {
         };
 
         let pipelines = pipelines
-            .map(|pipeline| pipeline(&device, extent, render_pass, descriptor_set_layouts))
+            .map(|pipeline| pipeline(device, extent, render_pass, descriptor_set_layouts))
             .collect::<Vec<_>>();
 
         Self {
