@@ -1,14 +1,17 @@
 use std::{cell::RefCell, future::Future, rc::Rc};
 
 use genawaiter::{rc::r#gen, yield_};
+use rapier3d::prelude::{Collider, ColliderHandle, RigidBody, RigidBodyHandle};
 
-use crate::{mesh::Mesh, renderer::texture::Texture};
+use crate::{mesh::Mesh, physics::Physics, renderer::texture::Texture};
 
 use ultraviolet::Isometry3;
 
 #[derive(Clone, Debug)]
 pub enum Object {
     Model((Rc<Mesh>, Rc<Texture>)),
+    Collider(ColliderHandle),
+    RigidBody((ColliderHandle, RigidBodyHandle)),
 }
 
 pub struct Node {
@@ -22,8 +25,10 @@ pub struct GameTree {
 }
 
 impl GameTree {
-    pub fn new(root_node: Rc<RefCell<Node>>) -> Self {
-        Self { root_node }
+    pub fn new<T: Into<Rc<RefCell<Node>>>>(root_node: T) -> Self {
+        Self {
+            root_node: root_node.into(),
+        }
     }
 
     pub fn breadth_first(
@@ -78,14 +83,40 @@ impl Node {
         }
     }
 
-    pub fn add_child(mut self, child: Rc<RefCell<Self>>) -> Self {
-        self.children.push(child);
+    pub fn child<T: Into<Rc<RefCell<Self>>>>(mut self, child: T) -> Self {
+        self.children.push(child.into());
 
         self
     }
 
-    pub fn add_object(mut self, object: Object) -> Self {
-        self.objects.push(object);
+    pub fn model(mut self, mesh: Rc<Mesh>, texture: Rc<Texture>) -> Self {
+        self.objects.push(Object::Model((mesh, texture)));
+
+        self
+    }
+
+    pub fn collider<T: Into<Collider>>(mut self, physics: &mut Physics, collider: T) -> Self {
+        let collider = physics.collider_set.insert(collider);
+
+        self.objects.push(Object::Collider(collider));
+
+        self
+    }
+
+    pub fn rigid_body<T: Into<Collider>, U: Into<RigidBody>>(
+        mut self,
+        physics: &mut Physics,
+        collider: T,
+        rigid_body: U,
+    ) -> Self {
+        let rigid_body = physics.rigid_body_set.insert(rigid_body);
+        let collider = physics.collider_set.insert_with_parent(
+            collider,
+            rigid_body,
+            &mut physics.rigid_body_set,
+        );
+
+        self.objects.push(Object::RigidBody((collider, rigid_body)));
 
         self
     }

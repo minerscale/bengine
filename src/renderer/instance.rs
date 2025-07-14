@@ -45,10 +45,6 @@ impl Instance {
             extension_names.push(ext::debug_utils::NAME.as_ptr());
         }
 
-        extension_names.push(ash::ext::surface_maintenance1::NAME.as_ptr());
-        extension_names.push(ash::khr::get_surface_capabilities2::NAME.as_ptr());
-        extension_names.push(ash::khr::get_physical_device_properties2::NAME.as_ptr());
-
         let instance_create_flags = if cfg!(target_os = "macos") {
             extension_names.push(c"VK_KHR_portability_enumeration".as_ptr());
             vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR

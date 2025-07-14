@@ -1,19 +1,21 @@
-use nalgebra::vector;
 use rapier3d::{
-    math::{Point, Vector}, parry::{query::ShapeCastOptions, shape::Capsule}, prelude::{
-        ColliderBuilder, ColliderHandle, ColliderSet, ContactPair, Cylinder, NarrowPhase, QueryFilter, QueryPipeline, Real, RigidBodyBuilder, RigidBodyHandle, RigidBodySet
-    }
+    math::{Point, Vector},
+    na::vector,
+    prelude::{
+        ColliderBuilder, ColliderHandle, ContactPair, NarrowPhase, QueryFilter, Ray, Real,
+        RigidBodyBuilder, RigidBodyHandle,
+    },
 };
 use ultraviolet::{Rotor3, Vec3};
 
-use crate::event_loop::Input;
+use crate::{event_loop::Input, physics::Physics};
 
 const HALF_HEIGHT: f32 = 0.9;
-const RADIUS: f32 = 0.4;
+const RADIUS: f32 = 0.2;
 
 const FLOOR_COLLISION_HEIGHT: f32 = -RADIUS;
 const JUMP_CUTOFF: f32 = 2.0;
-const JUMP_VELOCITY: f32 = 4.8;
+const JUMP_VELOCITY: f32 = 5.2;
 const MOVEMENT_SPEED: f32 = 40.0;
 const AIR_STRAFE_SPEED: f32 = 10.0;
 const TOP_SPEED: f32 = 5.0;
@@ -34,20 +36,24 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(rigid_body_set: &mut RigidBodySet, collider_set: &mut ColliderSet) -> Self {
+    pub fn new(physics: &mut Physics) -> Self {
         let collider = ColliderBuilder::capsule_y(HALF_HEIGHT, RADIUS)
             .restitution(0.0)
             .friction(0.0)
-            .friction_combine_rule(rapier3d::prelude::CoefficientCombineRule::Multiply);
+            .friction_combine_rule(rapier3d::prelude::CoefficientCombineRule::Multiply)
+            .density(4.0);
 
-        let rigid_body_handle = rigid_body_set.insert(
+        let rigid_body_handle = physics.rigid_body_set.insert(
             RigidBodyBuilder::dynamic()
                 .translation(vector![7.0, 8.0, 0.0])
                 .lock_rotations(),
         );
 
-        let collider_handle =
-            collider_set.insert_with_parent(collider, rigid_body_handle, rigid_body_set);
+        let collider_handle = physics.collider_set.insert_with_parent(
+            collider,
+            rigid_body_handle,
+            &mut physics.rigid_body_set,
+        );
 
         Player {
             collider_handle,
@@ -61,10 +67,7 @@ impl Player {
 
     pub fn update(
         &mut self,
-        rigid_body_set: &mut RigidBodySet,
-        collider_set: &mut ColliderSet,
-        narrow_phase: &NarrowPhase,
-        query_pipeline: &QueryPipeline,
+        physics: &mut Physics,
         input: &Input,
         camera_rotation: Rotor3,
         dt: f32,
@@ -75,9 +78,9 @@ impl Player {
             _ => self.jump_buffer,
         };
 
-        let floor_contact = floor_contact(narrow_phase, self.collider_handle);
+        let floor_contact = floor_contact(&physics.narrow_phase, self.collider_handle);
 
-        let rigid_body = &rigid_body_set[self.rigid_body_handle];
+        let rigid_body = &physics.rigid_body_set[self.rigid_body_handle];
 
         let is_jumping = input.up
             && self.time_since_left_ground <= COYOTE_TIME
@@ -87,30 +90,37 @@ impl Player {
         let on_floor = floor_contact.is_some();
 
         let cast_ray = |previous_floor_contact: &FloorContact| {
-            query_pipeline.cast_shape(
-                rigid_body_set, collider_set, rigid_body.position(), &vector![0.0, -1.0, 0.0], &Capsule::new_y(HALF_HEIGHT, RADIUS), ShapeCastOptions {
-                    max_time_of_impact: 1.0,
-                    target_distance: 0.0,
-                    stop_at_penetration: true,
-                    compute_impact_geometry_on_penetration: true,
-                }, QueryFilter::new().exclude_rigid_body(self.rigid_body_handle)
-            )
-                .and_then(|floor_shapecast| {
-                    let normal = &*floor_shapecast.1.normal1;
-                    println!("contact_normal: {:?}", normal);
+            let projection_distance = 0.05;
 
-                    (previous_floor_contact.normal.dot(&normal) >= 0.8).then(|| {
-                        let linvel = rigid_body.linvel();
-                        let velocity = -(linvel.dot(normal) * normal);
+            physics
+                .query_pipeline
+                .cast_ray_and_get_normal(
+                    &physics.rigid_body_set,
+                    &physics.collider_set,
+                    &Ray::new(
+                        previous_floor_contact.point
+                            + rigid_body.position().translation.vector
+                            + projection_distance * previous_floor_contact.normal,
+                        -previous_floor_contact.normal,
+                    ),
+                    2.0 * projection_distance,
+                    true,
+                    QueryFilter::new().exclude_rigid_body(self.rigid_body_handle),
+                )
+                .and_then(|floor_raycast| {
+                    let normal = &floor_raycast.1.normal;
 
-                        let normalised = ((velocity + linvel)
-                            * (linvel.magnitude() / (velocity + linvel).magnitude()))
-                            - linvel;
+                    ((previous_floor_contact.normal.dot(normal) >= 0.75) && (is_floor(normal)))
+                        .then(|| {
+                            let linvel = rigid_body.linvel();
+                            let velocity = -(linvel.dot(normal) * normal);
 
-                        println!("{normalised:?}\n{velocity:?}\n");
+                            let normalised = ((velocity + linvel)
+                                * (linvel.magnitude() / (velocity + linvel).magnitude()))
+                                - linvel;
 
-                        velocity * rigid_body.mass()
-                    })
+                            (normalised * 1.0 * rigid_body.mass(), *normal)
+                        })
                 })
         };
 
@@ -118,15 +128,20 @@ impl Player {
             .then(|| self.previous_floor_contact.as_ref().and_then(cast_ray))
             .flatten();
 
-        let on_floor = if floor_correction.is_some() {
+        let on_floor = if let Some((_, normal)) = floor_correction {
+            self.previous_floor_contact = Some(FloorContact {
+                point: self.previous_floor_contact.unwrap().point,
+                normal,
+            });
+
             true
         } else {
+            self.previous_floor_contact = floor_contact;
+
             on_floor
         };
 
         self.was_jumping = is_jumping;
-
-        self.previous_floor_contact = floor_contact;
 
         let movement = if input.forward {
             Vec3::unit_z()
@@ -154,7 +169,6 @@ impl Player {
         let horizontal_velocity =
             Vec3::from(rigid_body.linvel().as_slice().first_chunk::<3>().unwrap())
                 * Vec3::new(1.0, 0.0, 1.0);
-
 
         let correction = if horizontal_velocity != Vec3::zero() {
             let movement_direction = if movement_direction == Vec3::zero() {
@@ -199,11 +213,12 @@ impl Player {
                         Vec3::zero()
                     }))
             .as_slice(),
-        ) + floor_correction.unwrap_or(Vector::zeros());
+        ) + floor_correction
+            .unwrap_or((Vector::zeros(), Vector::default()))
+            .0;
 
-
-        collider_set[self.collider_handle].set_friction(friction);
-        rigid_body_set[self.rigid_body_handle].apply_impulse(impulse, true);
+        physics.collider_set[self.collider_handle].set_friction(friction);
+        physics.rigid_body_set[self.rigid_body_handle].apply_impulse(impulse, true);
     }
 }
 
@@ -211,6 +226,10 @@ impl Player {
 struct FloorContact {
     point: Point<Real>,
     normal: Vector<Real>,
+}
+
+fn is_floor(normal: &Vector<Real>) -> bool {
+    normal.dot(&vector![0.0, 1.0, 0.0]).abs() > MAX_SLOPE
 }
 
 fn floor_contact(
@@ -231,7 +250,7 @@ fn floor_contact(
         }
 
         for manifold in &contact_pair.manifolds {
-            if manifold.data.normal.dot(&vector![0.0, 1.0, 0.0]).abs() <= MAX_SLOPE {
+            if !is_floor(&manifold.data.normal) {
                 return None;
             }
 
@@ -249,7 +268,7 @@ fn floor_contact(
                 if point_of_interest.y < FLOOR_COLLISION_HEIGHT {
                     return Some(FloorContact {
                         point: point_of_interest,
-                        normal: -manifold.data.normal,
+                        normal: manifold.data.normal,
                     });
                 }
             }

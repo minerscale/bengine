@@ -20,7 +20,7 @@ replace_with = "0.1.7"
 itertools = "0.14.0"
 rapier3d = "0.26.0"
 nalgebra = "0.33.2"
-cpal = "0.15.3"
+cpal = "0.16.0"
 
 [dependencies.ultraviolet]
 version = "0.10.0"
@@ -47,7 +47,7 @@ features = ["linked", "debug", "std"]
 [dependencies.sdl3]
 version = "0.14.27"
 default-features = false
-features = ["raw-window-handle", "build-from-source"]
+features = ["raw-window-handle", "build-from-source-static"]
 
 [build-dependencies]
 anyhow = "1.0.89"

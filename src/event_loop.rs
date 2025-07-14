@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use sdl3::keyboard::Keycode;
+use sdl3::{event::Event, keyboard::Keycode};
 use ultraviolet::Vec2;
 
 pub struct EventLoop {
@@ -89,16 +89,58 @@ impl Inputs {
     }
 }
 
+fn process_event(event: Event, input: &mut Input) {
+    match event {
+        Event::Quit { timestamp: _ } => input.quit = true,
+        Event::KeyDown {
+            keycode: Some(key),
+            repeat: false,
+            ..
+        } => input.set_input(key, true),
+        Event::KeyUp {
+            keycode: Some(key),
+            repeat: false,
+            ..
+        } => input.set_input(key, false),
+        Event::MouseMotion {
+            timestamp: _,
+            window_id: _,
+            which: _,
+            mousestate: _,
+            x: _,
+            y: _,
+            xrel,
+            yrel,
+        } => {
+            const SENSITIVITY: f32 = 0.005;
+
+            input.camera_rotation = {
+                let mut rotation = input.camera_rotation + Vec2::new(xrel, yrel) * SENSITIVITY;
+
+                let vertical_look_limit = 0.99 * std::f32::consts::FRAC_PI_2;
+
+                rotation.y = rotation.y.clamp(-vertical_look_limit, vertical_look_limit);
+
+                rotation
+            };
+        }
+        Event::Window {
+            timestamp: _,
+            window_id: _,
+            win_event: sdl3::event::WindowEvent::PixelSizeChanged(_, _),
+        } => {
+            input.recreate_swapchain = true;
+        }
+        _ => (),
+    }
+}
+
 impl EventLoop {
     pub fn new(pump: sdl3::EventPump) -> Self {
         Self { pump }
     }
 
-    pub fn run<F: FnMut(&mut Input), G: FnMut(sdl3::event::Event, &mut Input)>(
-        &mut self,
-        mut render: F,
-        mut process_event: G,
-    ) {
+    pub fn run<F: FnMut(&mut Input)>(&mut self, mut render: F) {
         let mut input = Input::new(Inputs::default().camera_rotation(Vec2::new(
             3.0 * std::f32::consts::FRAC_PI_4,
             std::f32::consts::FRAC_PI_8,

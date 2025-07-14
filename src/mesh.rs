@@ -1,7 +1,10 @@
 use std::{io::BufRead, rc::Rc};
 
 use ash::vk;
+use obj::raw::RawObj;
 use obj::{Obj, load_obj};
+use rapier3d::na;
+use rapier3d::prelude::ColliderShape;
 use ultraviolet::Vec3;
 
 use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer};
@@ -54,4 +57,28 @@ impl Mesh {
             index_buffer,
         }
     }
+}
+
+pub fn collider_from_obj(
+    mesh: &RawObj,
+    scale: Option<Vec3>,
+    transform: Option<Vec3>,
+) -> ColliderShape {
+    type Point = na::Point<f32, 3>;
+
+    let vertices: Box<[Point]> = mesh
+        .positions
+        .iter()
+        .map(|v| {
+            Point::from_slice(
+                transform
+                    .unwrap_or_else(|| {
+                        Vec3::zero() + scale.unwrap_or_else(Vec3::one) * Vec3::new(v.0, v.1, v.2)
+                    })
+                    .as_array(),
+            )
+        })
+        .collect();
+
+    ColliderShape::convex_hull(&vertices).unwrap()
 }

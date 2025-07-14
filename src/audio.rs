@@ -3,12 +3,14 @@ use std::f64;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use cpal::BufferSize;
+use cpal::traits::StreamTrait;
 use cpal::{
     Sample, SampleFormat, Stream,
     traits::{DeviceTrait, HostTrait},
 };
 use log::info;
 
+#[allow(unused)]
 pub struct Audio {
     pub stream: Stream,
     pub parameter_stream: Sender<AudioParameters>,
@@ -137,6 +139,8 @@ impl Audio {
         let stream = device
             .build_output_stream(&config, callback, err_fn, None)
             .unwrap();
+
+        stream.play().unwrap();
 
         Self {
             stream,
