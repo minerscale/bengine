@@ -15,6 +15,7 @@ impl Sampler {
         physical_device: vk::PhysicalDevice,
         address_mode: vk::SamplerAddressMode,
         anisotropy_enable: bool,
+        mip_levels: u32,
     ) -> Self {
         let sampler_info = vk::SamplerCreateInfo::default()
             .mag_filter(vk::Filter::LINEAR)
@@ -36,7 +37,7 @@ impl Sampler {
             .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
             .mip_lod_bias(0.0)
             .min_lod(0.0)
-            .max_lod(0.0);
+            .max_lod(mip_levels as f32);
 
         let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };
 

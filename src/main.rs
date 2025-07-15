@@ -31,9 +31,10 @@ use player::Player;
 use renderer::{
     HEIGHT, Renderer, UniformBufferObject, WIDTH, buffer::MappedBuffer,
     command_buffer::ActiveMultipleSubmitCommandBuffer, device::Device, image::SwapchainImage,
-    pipeline::VertexPushConstants, render_pass::RenderPass,
+    material::MaterialProperties, render_pass::RenderPass,
 };
 use scene::create_scene;
+use shader_pipelines::PushConstants;
 use skybox::Skybox;
 
 use ash::vk;
@@ -216,7 +217,7 @@ fn record_command_buffer(
                 cmd_buf,
                 pipeline.pipeline_layout,
                 vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                offset_of!(VertexPushConstants, model_transform)
+                offset_of!(PushConstants, model_transform)
                     .try_into()
                     .unwrap(),
                 std::slice::from_raw_parts(
@@ -226,39 +227,54 @@ fn record_command_buffer(
             );
 
             for object in &node.borrow().objects {
-                if let Object::Model((mesh, texture)) = object {
-                    let descriptor_sets = [texture.descriptor_set.descriptor_set];
-
-                    device.cmd_bind_descriptor_sets(
-                        cmd_buf,
-                        vk::PipelineBindPoint::GRAPHICS,
-                        pipeline.pipeline_layout,
-                        1,
-                        &descriptor_sets,
-                        &[],
-                    );
-
+                if let Object::Mesh(mesh) = object {
                     let mesh = mesh.as_ref();
 
-                    let vertex_buffers = [mesh.vertex_buffer.buffer];
-                    let offsets = [vk::DeviceSize::from(0u64)];
+                    for primitive in mesh {
+                        let descriptor_sets = [*primitive.material.descriptor_set];
 
-                    device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
-                    device.cmd_bind_index_buffer(
-                        cmd_buf,
-                        mesh.index_buffer.buffer,
-                        0,
-                        vk::IndexType::UINT32,
-                    );
+                        device.cmd_push_constants(
+                            cmd_buf,
+                            pipeline.pipeline_layout,
+                            vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                            offset_of!(PushConstants, material_properties)
+                                .try_into()
+                                .unwrap(),
+                            std::slice::from_raw_parts(
+                                addr_of!(primitive.material.properties).cast::<u8>(),
+                                std::mem::size_of::<MaterialProperties>(),
+                            ),
+                        );
 
-                    device.cmd_draw_indexed(
-                        cmd_buf,
-                        mesh.index_buffer.len().try_into().unwrap(),
-                        1,
-                        0,
-                        0,
-                        0,
-                    );
+                        device.cmd_bind_descriptor_sets(
+                            cmd_buf,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            pipeline.pipeline_layout,
+                            1,
+                            &descriptor_sets,
+                            &[],
+                        );
+
+                        let vertex_buffers = [primitive.vertex_buffer.buffer];
+                        let offsets = [vk::DeviceSize::from(0u64)];
+
+                        device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
+                        device.cmd_bind_index_buffer(
+                            cmd_buf,
+                            primitive.index_buffer.buffer,
+                            0,
+                            vk::IndexType::UINT32,
+                        );
+
+                        device.cmd_draw_indexed(
+                            cmd_buf,
+                            primitive.index_buffer.len().try_into().unwrap(),
+                            1,
+                            0,
+                            0,
+                            0,
+                        );
+                    }
                 }
             }
         }

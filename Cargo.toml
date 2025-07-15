@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [profile.release]
-#debug = true
 lto = true
+#debug = true
 #strip = false
 
 [features]
@@ -21,6 +21,10 @@ itertools = "0.14.0"
 rapier3d = "0.26.0"
 nalgebra = "0.33.2"
 cpal = "0.16.0"
+gltf = "1.4.1"
+
+[profile.dev.package.zune-jpeg]
+opt-level = 3
 
 [dependencies.ultraviolet]
 version = "0.10.0"

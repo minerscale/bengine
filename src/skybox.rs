@@ -8,20 +8,20 @@ const SKYBOX_RESOLUTION: vk::Extent2D = vk::Extent2D {
 };
 
 use crate::renderer::{
-    self, HEIGHT, Renderer, WIDTH,
+    HEIGHT, Renderer, WIDTH,
     command_buffer::ActiveMultipleSubmitCommandBuffer,
     descriptors::{DescriptorSet, DescriptorSetLayout},
     device::Device,
     image::Image,
+    material::{Material, MaterialProperties},
     pipeline::{ComputePipelineBuilder, Pipeline, PipelineBuilder},
     sampler::Sampler,
     shader_module::spv,
-    texture::Texture,
 };
 
 pub struct Skybox {
     image: Rc<Image>,
-    texture: Texture,
+    texture: Material,
     compute_pipeline: Pipeline,
     descriptor: DescriptorSet,
 }
@@ -37,10 +37,10 @@ impl Skybox {
         let cmd_buf = *command_buffer;
 
         unsafe {
-            renderer::image::transition_layout(
-                &device.device,
-                self.image.image,
+            self.image.transition_layout(
+                device,
                 &mut command_buffer,
+                None,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 vk::ImageLayout::GENERAL,
             );
@@ -67,10 +67,10 @@ impl Skybox {
                 1,
             );
 
-            renderer::image::transition_layout(
+            self.image.transition_layout(
                 &device.device,
-                self.image.image,
                 &mut command_buffer,
+                None,
                 vk::ImageLayout::GENERAL,
                 vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
             );
@@ -157,14 +157,16 @@ impl Skybox {
             gfx.device.physical_device,
             vk::SamplerAddressMode::CLAMP_TO_EDGE,
             false,
+            0,
         ));
 
-        let texture = Texture::new(
+        let texture = Material::new(
             &gfx.device,
             image.clone(),
             skybox_sampler,
+            MaterialProperties::default(),
             &gfx.descriptor_pool,
-            &gfx.texture_layout,
+            &gfx.material_layout,
         );
 
         let compute_pipeline = ComputePipelineBuilder::new()

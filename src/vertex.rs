@@ -34,6 +34,14 @@ impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
 }
 
 impl Vertex {
+    pub const fn new(pos: Vec3, normal: Vec3, tex_coord: Vec2) -> Self {
+        Self {
+            pos,
+            normal,
+            tex_coord,
+        }
+    }
+
     pub const fn get_binding_description() -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription {
             binding: 0,

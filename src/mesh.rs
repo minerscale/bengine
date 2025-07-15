@@ -7,23 +7,79 @@ use rapier3d::na;
 use rapier3d::prelude::ColliderShape;
 use ultraviolet::Vec3;
 
-use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer};
+use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer, material::Material};
 
 use crate::vertex::Vertex;
 
 #[derive(Debug)]
 pub struct Mesh {
-    pub vertex_buffer: Buffer<Vertex>,
-    pub index_buffer: Buffer<u32>,
+    pub primitives: Vec<Primitive>,
+}
+
+impl<'a> IntoIterator for &'a Mesh {
+    type Item = &'a Primitive;
+    type IntoIter = std::slice::Iter<'a, Primitive>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.primitives.iter()
+    }
 }
 
 impl Mesh {
-    pub fn new<T: BufRead, C: ActiveCommandBuffer>(
+    pub fn new(primitives: Vec<Primitive>) -> Self {
+        Self { primitives }
+    }
+}
+
+#[derive(Debug)]
+pub struct Primitive {
+    pub vertex_buffer: Rc<Buffer<Vertex>>,
+    pub index_buffer: Rc<Buffer<u32>>,
+    pub material: Rc<Material>,
+}
+
+impl Primitive {
+    pub fn new<C: ActiveCommandBuffer>(
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        device: Rc<ash::Device>,
+        vertex_buffer: &[Vertex],
+        index_buffer: &[u32],
+        material: Rc<Material>,
+        cmd_buf: &mut C,
+    ) -> Self {
+        let vertex_buffer = Buffer::new_staged(
+            instance,
+            device.clone(),
+            physical_device,
+            cmd_buf,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            vertex_buffer,
+        );
+
+        let index_buffer = Buffer::new_staged(
+            instance,
+            device,
+            physical_device,
+            cmd_buf,
+            vk::BufferUsageFlags::INDEX_BUFFER,
+            &index_buffer,
+        );
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            material,
+        }
+    }
+
+    pub fn from_obj<T: BufRead, C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         device: Rc<ash::Device>,
         file: T,
         cmd_buf: &mut C,
+        material: Rc<Material>,
         scale: Option<Vec3>,
     ) -> Self {
         let mut mesh: Obj<Vertex, u32> = load_obj(file).unwrap();
@@ -55,6 +111,7 @@ impl Mesh {
         Self {
             vertex_buffer,
             index_buffer,
+            material,
         }
     }
 }

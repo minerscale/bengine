@@ -34,6 +34,7 @@ impl<T: Copy + 'static> MappedBuffer<T> {
         properties: vk::MemoryPropertyFlags,
         descriptor_pool: &DescriptorPool,
         descriptor_set_layout: &DescriptorSetLayout,
+        binding: u32,
     ) -> Self {
         let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
 
@@ -61,7 +62,7 @@ impl<T: Copy + 'static> MappedBuffer<T> {
 
         let mut descriptor_set = descriptor_pool.create_descriptor_set(descriptor_set_layout);
 
-        descriptor_set.bind_buffer(device, buffer.clone());
+        descriptor_set.bind_buffer(device, binding, buffer.clone());
 
         Self {
             buffer,
@@ -109,7 +110,7 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
     cmd_buf: &mut C,
     usage: vk::BufferUsageFlags,
     properties: vk::MemoryPropertyFlags,
-) -> Buffer<T> {
+) -> Rc<Buffer<T>> {
     let device = &buffer.device;
 
     let (new_buffer, memory) = Buffer::<T>::create_buffer(
@@ -134,13 +135,17 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
 
     cmd_buf.add_dependency(buffer);
 
-    Buffer {
+    let new_buffer = Rc::new(Buffer {
         buffer: new_buffer,
         memory,
         device,
         size,
         phantom: PhantomData,
-    }
+    });
+
+    cmd_buf.add_dependency(new_buffer.clone());
+
+    new_buffer
 }
 
 impl<T: Copy + 'static> Buffer<T> {
@@ -151,7 +156,7 @@ impl<T: Copy + 'static> Buffer<T> {
         cmd_buf: &mut C,
         usage: vk::BufferUsageFlags,
         data: &[T],
-    ) -> Self {
+    ) -> Rc<Self> {
         let staging_buffer = Rc::new(Self::new(
             device,
             instance,
@@ -171,7 +176,7 @@ impl<T: Copy + 'static> Buffer<T> {
         )
     }
 
-    pub fn create_buffer(
+    fn create_buffer(
         device: &ash::Device,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,

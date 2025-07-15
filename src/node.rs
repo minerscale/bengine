@@ -3,13 +3,13 @@ use std::{cell::RefCell, future::Future, rc::Rc};
 use genawaiter::{rc::r#gen, yield_};
 use rapier3d::prelude::{Collider, ColliderHandle, RigidBody, RigidBodyHandle};
 
-use crate::{mesh::Mesh, physics::Physics, renderer::texture::Texture};
+use crate::{mesh::Mesh, physics::Physics};
 
 use ultraviolet::Isometry3;
 
 #[derive(Clone, Debug)]
 pub enum Object {
-    Model((Rc<Mesh>, Rc<Texture>)),
+    Mesh(Rc<Mesh>),
     Collider(ColliderHandle),
     RigidBody((ColliderHandle, RigidBodyHandle)),
 }
@@ -89,8 +89,8 @@ impl Node {
         self
     }
 
-    pub fn model(mut self, mesh: Rc<Mesh>, texture: Rc<Texture>) -> Self {
-        self.objects.push(Object::Model((mesh, texture)));
+    pub fn mesh(mut self, mesh: Rc<Mesh>) -> Self {
+        self.objects.push(Object::Mesh(mesh));
 
         self
     }

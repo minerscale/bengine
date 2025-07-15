@@ -7,18 +7,32 @@ use crate::renderer::{
     sampler::Sampler,
 };
 
-pub const MAX_TEXTURES: u32 = 4;
+pub const MAX_TEXTURES: u32 = 40;
 
-#[derive(Debug)]
-pub struct Texture {
-    pub descriptor_set: DescriptorSet,
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct MaterialProperties {
+    pub alpha_cutoff: f32,
 }
 
-impl Texture {
+impl Default for MaterialProperties {
+    fn default() -> Self {
+        Self { alpha_cutoff: 0.0 }
+    }
+}
+
+#[derive(Debug)]
+pub struct Material {
+    pub descriptor_set: DescriptorSet,
+    pub properties: MaterialProperties,
+}
+
+impl Material {
     pub fn new(
         device: &Device,
         image: Rc<Image>,
         sampler: Rc<Sampler>,
+        properties: MaterialProperties,
         descriptor_pool: &DescriptorPool,
         descriptor_set_layout: &DescriptorSetLayout,
     ) -> Self {
@@ -26,6 +40,9 @@ impl Texture {
 
         descriptor_set.bind_texture(device, 0, image, sampler);
 
-        Self { descriptor_set }
+        Self {
+            descriptor_set,
+            properties,
+        }
     }
 }

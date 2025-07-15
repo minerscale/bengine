@@ -1,6 +1,12 @@
-use std::{io::Cursor, rc::Rc};
+use std::{
+    fs::File,
+    io::{BufReader, Cursor},
+    path::Path,
+    rc::Rc,
+};
 
 use ash::vk;
+use gltf::Gltf;
 use rapier3d::{
     math::AngVector,
     na::vector,
@@ -9,14 +15,129 @@ use rapier3d::{
 use ultraviolet::Vec3;
 
 use crate::{
-    mesh::{Mesh, collider_from_obj},
+    mesh::{Mesh, Primitive, collider_from_obj},
     node::{GameTree, Node},
     physics::Physics,
     renderer::{
-        Renderer, command_buffer::OneTimeSubmitCommandBuffer, image::Image, sampler::Sampler,
-        texture::Texture,
+        Renderer,
+        command_buffer::OneTimeSubmitCommandBuffer,
+        image::Image,
+        material::{Material, MaterialProperties},
+        sampler::Sampler,
     },
+    vertex::Vertex,
 };
+
+fn load_gltf(
+    gfx: &Renderer,
+    cmd_buf: &mut OneTimeSubmitCommandBuffer,
+    filename: &str,
+    scale: f32,
+) -> Node {
+    let root = Path::new(filename).parent().unwrap_or(Path::new("."));
+    let gltf = Gltf::open(filename).unwrap();
+    let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
+    let document = gltf.document;
+
+    let materials = document
+        .materials()
+        .map(|material| {
+            let image = match material
+                .pbr_metallic_roughness()
+                .base_color_texture()
+                .unwrap()
+                .texture()
+                .source()
+                .source()
+            {
+                gltf::image::Source::View {
+                    view: _,
+                    mime_type: _,
+                } => todo!(),
+                gltf::image::Source::Uri { uri, mime_type: _ } => image::ImageReader::new(
+                    BufReader::new(File::open(root.join(Path::new(uri))).unwrap()),
+                )
+                .with_guessed_format()
+                .unwrap()
+                .decode()
+                .unwrap(),
+            };
+
+            let properties = MaterialProperties {
+                alpha_cutoff: material.alpha_cutoff().unwrap_or(0.0),
+            };
+
+            let image = Image::from_image(
+                &gfx.instance,
+                gfx.device.physical_device,
+                &gfx.device.device,
+                cmd_buf,
+                image,
+            );
+
+            Rc::new(Material::new(
+                &gfx.device,
+                image.clone(),
+                Rc::new(Sampler::new(
+                    &gfx.instance,
+                    gfx.device.device.clone(),
+                    gfx.device.physical_device,
+                    vk::SamplerAddressMode::REPEAT,
+                    true,
+                    image.mip_levels,
+                )),
+                properties,
+                &gfx.descriptor_pool,
+                &gfx.material_layout,
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    let meshes = document
+        .meshes()
+        .map(|mesh| {
+            Rc::new(Mesh::new(
+                mesh.primitives()
+                    .map(|primitive| {
+                        let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+                        let vertex_buffer = reader
+                            .read_positions()
+                            .unwrap()
+                            .zip(reader.read_normals().unwrap())
+                            .zip(reader.read_tex_coords(0).unwrap().into_f32())
+                            .map(|((position, normal), tex_coord)| {
+                                Vertex::new(
+                                    Vec3::from(position) * scale,
+                                    normal.into(),
+                                    tex_coord.into(),
+                                )
+                            })
+                            .collect::<Box<[Vertex]>>();
+
+                        let index_buffer = reader
+                            .read_indices()
+                            .unwrap()
+                            .into_u32()
+                            .collect::<Box<[u32]>>();
+
+                        Primitive::new(
+                            &gfx.instance,
+                            gfx.device.physical_device,
+                            gfx.device.device.clone(),
+                            &vertex_buffer,
+                            &index_buffer,
+                            materials[primitive.material().index().unwrap()].clone(),
+                            cmd_buf,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    Node::empty().mesh(meshes[0].clone())
+}
 
 fn scene(
     gfx: &Renderer,
@@ -25,37 +146,39 @@ fn scene(
 ) -> GameTree {
     macro_rules! image {
         ($filename:literal) => {
-            Rc::new(Image::from_bytes(
+            Image::from_bytes(
                 &gfx.instance,
                 gfx.device.physical_device,
                 &gfx.device.device,
                 cmd_buf,
                 include_bytes!($filename),
-            ))
+            )
         };
     }
 
     macro_rules! mesh {
-        ($filename:literal, $scale:expr) => {
-            Rc::new(Mesh::new(
+        ($filename:literal, $material:expr, $scale:expr) => {
+            Rc::new(Mesh::new(vec![Primitive::from_obj(
                 &gfx.instance,
                 gfx.device.physical_device,
                 gfx.device.device.clone(),
                 Cursor::new(include_bytes!($filename)),
                 cmd_buf,
+                $material,
                 $scale,
-            ))
+            )]))
         };
     }
 
     macro_rules! texture {
         ($sampler:expr, $texture:expr) => {
-            Rc::new(Texture::new(
+            Rc::new(Material::new(
                 &gfx.device,
                 $texture.clone(),
                 $sampler.clone(),
+                MaterialProperties::default(),
                 &gfx.descriptor_pool,
-                &gfx.texture_layout,
+                &gfx.material_layout,
             ))
         };
     }
@@ -66,31 +189,35 @@ fn scene(
         };
     }
 
-    let sampler = Rc::new(Sampler::new(
+    let sampler = |mip_levels: u32| Rc::new(Sampler::new(
         &gfx.instance,
         gfx.device.device.clone(),
         gfx.device.physical_device,
         vk::SamplerAddressMode::REPEAT,
         true,
+        mip_levels,
     ));
 
-    let grid = texture!(sampler, image!("../textures/grid.png"));
+    let grid_image = image!("../test-objects/grid.png");
+    let grid = texture!(sampler(grid_image.mip_levels), grid_image);
 
-    let middle_grey = texture!(sampler, image!("../test-scene/middle-grey.png"));
+    let middle_grey_image = image!("../test-objects/middle-grey.png");
+    let middle_grey = texture!(sampler(middle_grey_image.mip_levels), middle_grey_image);
 
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
 
     let root_node = Node::empty()
         .child(
             Node::empty()
-                .model(
-                    mesh!("../test-scene/icosehedron.obj", None),
+                .mesh(mesh!(
+                    "../test-objects/icosehedron.obj",
                     middle_grey.clone(),
-                )
+                    None
+                ))
                 .rigid_body(
                     physics,
                     ColliderBuilder::new(collider_from_obj(
-                        raw_obj!("../test-scene/icosehedron.obj"),
+                        raw_obj!("../test-objects/icosehedron.obj"),
                         None,
                         None,
                     )),
@@ -101,14 +228,15 @@ fn scene(
         )
         .child(
             Node::empty()
-                .model(
-                    mesh!("../test-scene/cube.obj", Some(cube_2_scale)),
+                .mesh(mesh!(
+                    "../test-objects/cube.obj",
                     middle_grey.clone(),
-                )
+                    Some(cube_2_scale)
+                ))
                 .rigid_body(
                     physics,
                     ColliderBuilder::new(collider_from_obj(
-                        raw_obj!("../test-scene/cube.obj"),
+                        raw_obj!("../test-objects/cube.obj"),
                         Some(cube_2_scale),
                         None,
                     )),
@@ -117,12 +245,13 @@ fn scene(
         )
         .child(
             Node::empty()
-                .model(mesh!("../test-objects/ground-plane.obj", None), grid)
+                .mesh(mesh!("../test-objects/ground-plane.obj", grid, None))
                 .collider(
                     physics,
                     ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),
                 ),
-        );
+        )
+        .child(load_gltf(gfx, cmd_buf, "glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf", 0.025));
 
     GameTree::new(root_node)
 }

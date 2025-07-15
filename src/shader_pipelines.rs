@@ -1,12 +1,19 @@
 use std::mem::offset_of;
 
 use ash::vk;
-use ultraviolet::Vec2;
+use ultraviolet::{Isometry3, Vec2};
+
+#[repr(C)]
+pub struct PushConstants {
+    pub model_transform: Isometry3,
+    pub material_properties: MaterialProperties,
+}
 
 use crate::{
     renderer::{
         device::{self, Device},
-        pipeline::{Pipeline, PipelineBuilder, VertexPushConstants},
+        material::MaterialProperties,
+        pipeline::{Pipeline, PipelineBuilder},
         shader_module::{SpecializationInfo, spv},
     },
     skybox,
@@ -59,11 +66,7 @@ fn make_main_pipeline(
 
     let push_constant_ranges = [vk::PushConstantRange::default()
         .offset(0)
-        .size(
-            std::mem::size_of::<VertexPushConstants>()
-                .try_into()
-                .unwrap(),
-        )
+        .size(std::mem::size_of::<PushConstants>().try_into().unwrap())
         .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
     let multisampling = vk::PipelineMultisampleStateCreateInfo::default()

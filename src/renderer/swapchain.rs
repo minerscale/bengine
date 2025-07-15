@@ -132,6 +132,7 @@ impl Swapchain {
                 vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 vk::ImageAspectFlags::DEPTH,
+                false,
             ))
         };
 
@@ -148,6 +149,7 @@ impl Swapchain {
                 vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
                 vk::MemoryPropertyFlags::DEVICE_LOCAL,
                 vk::ImageAspectFlags::COLOR,
+                false,
             )),
         };
 

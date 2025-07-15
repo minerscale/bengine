@@ -4,7 +4,7 @@ use ash::vk;
 use log::debug;
 
 use crate::renderer::{
-    MAX_FRAMES_IN_FLIGHT, buffer::Buffer, image::Image, sampler::Sampler, texture::MAX_TEXTURES,
+    MAX_FRAMES_IN_FLIGHT, buffer::Buffer, image::Image, material::MAX_TEXTURES, sampler::Sampler,
 };
 
 #[derive(Clone)]
@@ -34,7 +34,12 @@ impl Deref for DescriptorSet {
 }
 
 impl DescriptorSet {
-    pub fn bind_buffer<T: Copy + 'static>(&mut self, device: &ash::Device, buffer: Rc<Buffer<T>>) {
+    pub fn bind_buffer<T: Copy + 'static>(
+        &mut self,
+        device: &ash::Device,
+        binding: u32,
+        buffer: Rc<Buffer<T>>,
+    ) {
         let buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(**buffer)
             .offset(0)
@@ -42,7 +47,7 @@ impl DescriptorSet {
 
         let descriptor_writes = [vk::WriteDescriptorSet::default()
             .dst_set(**self)
-            .dst_binding(0)
+            .dst_binding(binding)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .descriptor_count(1)

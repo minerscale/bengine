@@ -2,12 +2,6 @@ use std::{ops::Deref, rc::Rc};
 
 use ash::vk;
 use log::debug;
-use ultraviolet::Isometry3;
-
-#[repr(C)]
-pub struct VertexPushConstants {
-    pub model_transform: Isometry3,
-}
 
 use crate::renderer::shader_module::ShaderModule;
 
@@ -302,7 +296,7 @@ impl<'a> PipelineBuilder<'a> {
             .stencil_test_enable(false);
 
         let color_blend_attachment = [vk::PipelineColorBlendAttachmentState {
-            blend_enable: vk::TRUE,
+            blend_enable: vk::FALSE,
             src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
             dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
             color_blend_op: vk::BlendOp::ADD,

@@ -8,11 +8,11 @@ pub mod command_buffer;
 pub mod descriptors;
 pub mod device;
 pub mod image;
+pub mod material;
 pub mod pipeline;
 pub mod render_pass;
 pub mod sampler;
 pub mod shader_module;
-pub mod texture;
 
 mod debug_messenger;
 mod instance;
@@ -37,8 +37,8 @@ pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub const WIDTH: u32 = 800;
 pub const HEIGHT: u32 = 600;
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
 pub struct UniformBufferObject {
     pub view_transform: Isometry3,
     pub time: f32,
@@ -56,7 +56,7 @@ pub struct Renderer {
     in_flight_fences: Vec<Fence>,
 
     pub uniform_buffer_layout: DescriptorSetLayout,
-    pub texture_layout: DescriptorSetLayout,
+    pub material_layout: DescriptorSetLayout,
     pub descriptor_pool: DescriptorPool,
     uniform_buffers: Vec<MappedBuffer<UniformBufferObject>>,
 
@@ -203,7 +203,7 @@ impl Renderer {
 
         let descriptor_set_layouts = [
             self.uniform_buffer_layout.layout,
-            self.texture_layout.layout,
+            self.material_layout.layout,
         ];
 
         let swapchain = Swapchain::new(
@@ -267,17 +267,17 @@ impl Renderer {
             DescriptorSetLayout::new(device.device.clone(), &uniform_buffer_bindings)
         };
 
-        let texture_layout = {
-            let texture_bindings = [vk::DescriptorSetLayoutBinding::default()
+        let material_layout = {
+            let material_bindings = [vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
 
-            DescriptorSetLayout::new(device.device.clone(), &texture_bindings)
+            DescriptorSetLayout::new(device.device.clone(), &material_bindings)
         };
 
-        let descriptor_set_layouts = [uniform_buffer_layout.layout, texture_layout.layout];
+        let descriptor_set_layouts = [uniform_buffer_layout.layout, material_layout.layout];
 
         let swapchain = Swapchain::new(
             &instance,
@@ -318,6 +318,7 @@ impl Renderer {
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
                 &descriptor_pool,
                 &uniform_buffer_layout,
+                0,
             ));
         }
 
@@ -327,7 +328,7 @@ impl Renderer {
             in_flight_fences,
             descriptor_pool,
             uniform_buffer_layout,
-            texture_layout,
+            material_layout,
             uniform_buffers,
             command_buffers,
             command_pool,

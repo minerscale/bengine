@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
             ))?;
         }
 
-        println!("cargo::rerun-if-changed=src/shaders/{infile}");
+        println!("cargo::rerun-if-changed={infile}");
     }
 
     Ok(())
