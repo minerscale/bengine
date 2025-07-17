@@ -36,7 +36,9 @@ fn load_gltf(
     filename: &str,
     scale: f32,
 ) -> Node {
-    let root = Path::new(filename).parent().unwrap_or(Path::new("."));
+    let root = Path::new(filename)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
     let gltf = Gltf::open(filename).unwrap();
     let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
     let document = gltf.document;
@@ -238,7 +240,7 @@ fn scene(
             Node::empty()
                 .mesh(mesh!(
                     "../test-objects/cube.obj",
-                    middle_grey.clone(),
+                    middle_grey,
                     Some(cube_2_scale)
                 ))
                 .rigid_body(

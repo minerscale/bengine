@@ -1,4 +1,8 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use sdl3::{event::Event, keyboard::Keycode};
 use ultraviolet::Vec2;
@@ -50,7 +54,7 @@ impl Input {
     }
 
     pub fn update(&mut self) {
-        self.previous = self.inputs.clone()
+        self.previous = self.inputs.clone();
     }
 }
 
@@ -140,24 +144,54 @@ impl EventLoop {
         Self { pump }
     }
 
-    pub fn run<F: FnMut(&mut Input)>(&mut self, mut render: F) {
-        let mut input = Input::new(Inputs::default().camera_rotation(Vec2::new(
-            3.0 * std::f32::consts::FRAC_PI_4,
-            std::f32::consts::FRAC_PI_8,
-        )));
+    pub fn run<F: FnMut(Arc<Mutex<Input>>), G: FnMut(Arc<Mutex<Input>>) + Send>(
+        &mut self,
+        mut render: F,
+        mut update: G,
+    ) {
+        let input = Arc::new(Mutex::new(Input::new(Inputs::default().camera_rotation(
+            Vec2::new(
+                3.0 * std::f32::consts::FRAC_PI_4,
+                std::f32::consts::FRAC_PI_8,
+            ),
+        ))));
 
-        'quit: loop {
-            render(&mut input);
+        std::thread::scope(|scope| {
+            let update_thread = scope.spawn(|| {
+                let input = input.clone();
 
-            input.update();
+                'quit: loop {
+                    let start = Instant::now();
+                    update(input.clone());
 
-            while let Some(event) = self.pump.poll_event() {
-                process_event(event, &mut input);
+                    if input.lock().unwrap().quit {
+                        break 'quit;
+                    }
+
+                    if let Some(sleep_time) = Duration::from_secs_f64(1.0 / 120.0)
+                        .checked_sub(Instant::now().duration_since(start))
+                    {
+                        std::thread::sleep(sleep_time);
+                    }
+                }
+            });
+
+            'quit: loop {
+                render(input.clone());
+
+                let mut input = input.lock().unwrap();
+                input.update();
+
+                while let Some(event) = self.pump.poll_event() {
+                    process_event(event, &mut input);
+                }
+
+                if input.quit {
+                    break 'quit;
+                }
             }
 
-            if input.quit {
-                break 'quit;
-            }
-        }
+            update_thread.join().unwrap();
+        });
     }
 }

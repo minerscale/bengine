@@ -1,10 +1,17 @@
 use std::time::Instant;
 
+#[derive(Debug, Clone)]
 pub struct Clock {
     start_time: Instant,
     previous_time: Instant,
     pub time: f32,
     pub dt: f32,
+}
+
+impl Default for Clock {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Clock {

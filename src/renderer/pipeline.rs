@@ -80,7 +80,7 @@ impl<'a> ComputePipelineBuilder<'a> {
         let mut pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
 
         if let Some(set_layouts) = self.layouts {
-            pipeline_layout_info = pipeline_layout_info.set_layouts(set_layouts)
+            pipeline_layout_info = pipeline_layout_info.set_layouts(set_layouts);
         }
 
         let push_constant_ranges;
@@ -262,7 +262,7 @@ impl<'a> PipelineBuilder<'a> {
         let mut pipeline_layout_info = vk::PipelineLayoutCreateInfo::default();
 
         if let Some(descriptor_set_layouts) = self.descriptor_set_layouts {
-            pipeline_layout_info = pipeline_layout_info.set_layouts(descriptor_set_layouts)
+            pipeline_layout_info = pipeline_layout_info.set_layouts(descriptor_set_layouts);
         }
 
         if let Some(push_constant_ranges) = self.push_constant_ranges {

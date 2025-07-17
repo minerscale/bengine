@@ -20,7 +20,11 @@ mod shader_pipelines;
 mod skybox;
 mod vertex;
 
-use std::{mem::offset_of, ptr::addr_of};
+use std::{
+    mem::offset_of,
+    ptr::addr_of,
+    sync::{Arc, Mutex},
+};
 
 use audio::{Audio, AudioParameters};
 use clock::Clock;
@@ -34,118 +38,131 @@ use renderer::{
     material::MaterialProperties, render_pass::RenderPass,
 };
 use scene::create_scene;
-use shader_pipelines::PushConstants;
+use shader_pipelines::{DESCRIPTOR_SET_LAYOUTS, PIPELINES, PushConstants};
 use skybox::Skybox;
 
 use ash::vk;
 use log::info;
 use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
 
-pub const FOV: f32 = 90.0;
+pub const FOV: f32 = 100.0;
 
 fn main() {
     env_logger::init();
 
-    let mut gfx = Renderer::new(
-        WIDTH,
-        HEIGHT,
-        &shader_pipelines::DESCRIPTOR_SET_LAYOUTS,
-        &shader_pipelines::PIPELINES,
-    );
+    let mut gfx = Renderer::new(WIDTH, HEIGHT, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
     let skybox = Skybox::new(&gfx);
-    let mut physics = Physics::new();
-    let root_node = create_scene(&gfx, &mut physics);
-    let mut player = Player::new(&mut physics);
-    let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
-    let mut clock = Clock::new();
+    let physics = Arc::new(Mutex::new(Physics::new()));
+    let root_node = create_scene(&gfx, &mut physics.lock().unwrap());
+    let player = Arc::new(Mutex::new(Player::new(&mut physics.lock().unwrap())));
+    let clock = Arc::new(Mutex::new(Clock::new()));
+    let update_clock = clock.clone();
     let audio = Audio::new();
+
+    let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
     info!("finished loading");
 
-    event_loop.run(|input| {
-        clock.update();
+    event_loop.run(
+        |input| {
+            let player_transform = {
+                let physics = physics.lock().unwrap();
 
-        physics.step(clock.dt);
+                for (_transform, node) in root_node.breadth_first() {
+                    let transform = node.borrow().objects.iter().find_map(|o| {
+                        if let Object::RigidBody((_, rigid_body_handle)) = o {
+                            Some(from_nalgebra(
+                                physics.rigid_body_set[*rigid_body_handle].position(),
+                            ))
+                        } else {
+                            None
+                        }
+                    });
 
-        fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
-            Rotor3::from_rotation_xz(camera_rotation.x)
-                * Rotor3::from_rotation_yz(camera_rotation.y)
-        }
-
-        let camera_rotation = get_camera_rotor(input.camera_rotation);
-
-        fn from_nalgebra(p: &rapier3d::na::Isometry3<f32>) -> Isometry3 {
-            Isometry3::new(
-                Vec3::from(p.translation.vector.as_slice().first_chunk().unwrap()),
-                Rotor3::from_quaternion_array(*p.rotation.coords.as_slice().first_chunk().unwrap()),
-            )
-        }
-
-        let player_transform =
-            from_nalgebra(physics.rigid_body_set[player.rigid_body_handle].position());
-
-        let gems_and_jewel_location = Vec2::new(8.0, 8.0);
-        let distance = (Vec2::new(
-            player_transform.translation.x,
-            player_transform.translation.z,
-        ) - gems_and_jewel_location)
-            .mag();
-
-        audio
-            .parameter_stream
-            .send(AudioParameters::new(distance.into()))
-            .unwrap();
-
-        player.update(&mut physics, input, camera_rotation, clock.dt);
-
-        let camera_transform = Isometry3::new(
-            player_transform.translation + Vec3::new(0.0, 0.8, 0.0),
-            camera_rotation.reversed(),
-        );
-
-        let fov = FOV.to_radians();
-        let ez = f32::tan(fov / 2.0).recip();
-
-        let extent = gfx.swapchain.images[0].extent;
-        let ubo = UniformBufferObject {
-            view_transform: camera_transform,
-            time: clock.time,
-            fov: ez,
-            scale_y: (extent.width as f32) / (extent.height as f32),
-        };
-
-        for (_transform, node) in root_node.breadth_first() {
-            let transform = node.borrow().objects.iter().find_map(|o| {
-                if let Object::RigidBody((_, rigid_body_handle)) = o {
-                    Some(from_nalgebra(
-                        physics.rigid_body_set[*rigid_body_handle].position(),
-                    ))
-                } else {
-                    None
+                    if let Some(transform) = transform {
+                        node.borrow_mut().transform = transform;
+                    }
                 }
-            });
 
-            if let Some(transform) = transform {
-                node.borrow_mut().transform = transform;
-            }
-        }
-
-        input.recreate_swapchain = gfx.draw(
-            |device, render_pass, command_buffer, uniform_buffer, image| {
-                record_command_buffer(
-                    device,
-                    render_pass,
-                    command_buffer,
-                    uniform_buffer,
-                    &skybox,
-                    image,
-                    &root_node,
-                    ubo,
+                from_nalgebra(
+                    physics.rigid_body_set[player.lock().unwrap().rigid_body_handle].position(),
                 )
-            },
-            input.recreate_swapchain,
-        );
-    });
+            };
+
+            let minput = input.lock().unwrap();
+            let recreate_swapchain = minput.recreate_swapchain;
+            let camera_rotation = get_camera_rotor(minput.camera_rotation);
+            drop(minput);
+
+            let camera_transform = Isometry3::new(
+                player_transform.translation + Vec3::new(0.0, 0.8, 0.0),
+                camera_rotation.reversed(),
+            );
+
+            let fov = FOV.to_radians();
+            let ez = f32::tan(fov / 2.0).recip();
+            let extent = gfx.swapchain.images[0].extent;
+            let ubo = UniformBufferObject {
+                view_transform: camera_transform,
+                time: clock.lock().unwrap().time,
+                fov: ez,
+                scale_y: (extent.width as f32) / (extent.height as f32),
+            };
+
+            let recreate_swapchain = gfx.draw(
+                |device, render_pass, command_buffer, uniform_buffer, image| {
+                    record_command_buffer(
+                        device,
+                        render_pass,
+                        command_buffer,
+                        uniform_buffer,
+                        &skybox,
+                        image,
+                        &root_node,
+                        ubo,
+                    )
+                },
+                recreate_swapchain,
+            );
+
+            input.lock().unwrap().recreate_swapchain = recreate_swapchain;
+        },
+        |input| {
+            let mut physics = physics.lock().unwrap();
+            let mut player = player.lock().unwrap();
+            let mut clock = update_clock.lock().unwrap();
+            clock.update();
+            physics.step(clock.dt);
+
+            let input = input.lock().unwrap();
+
+            player.update(
+                &mut physics,
+                &input,
+                get_camera_rotor(input.camera_rotation),
+                clock.dt,
+            );
+            drop(input);
+            drop(clock);
+
+            let player_transform =
+                from_nalgebra(physics.rigid_body_set[player.rigid_body_handle].position());
+            drop(player);
+            drop(physics);
+
+            let gems_and_jewel_location = Vec2::new(8.0, 8.0);
+            let distance = (Vec2::new(
+                player_transform.translation.x,
+                player_transform.translation.z,
+            ) - gems_and_jewel_location)
+                .mag();
+
+            audio
+                .parameter_stream
+                .send(AudioParameters::new(distance.into()))
+                .unwrap();
+        },
+    );
 
     gfx.wait_idle();
 }
@@ -290,4 +307,15 @@ fn record_command_buffer(
 
         command_buffer
     }
+}
+
+fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
+    Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
+}
+
+fn from_nalgebra(p: &rapier3d::na::Isometry3<f32>) -> Isometry3 {
+    Isometry3::new(
+        Vec3::from(p.translation.vector.as_slice().first_chunk().unwrap()),
+        Rotor3::from_quaternion_array(*p.rotation.coords.as_slice().first_chunk().unwrap()),
+    )
 }

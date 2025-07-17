@@ -55,7 +55,7 @@ impl Player {
             &mut physics.rigid_body_set,
         );
 
-        Player {
+        Self {
             collider_handle,
             rigid_body_handle,
             previous_floor_contact: None,
@@ -214,7 +214,7 @@ impl Player {
                     }))
             .as_slice(),
         ) + floor_correction
-            .unwrap_or((Vector::zeros(), Vector::default()))
+            .unwrap_or_else(|| (Vector::zeros(), Vector::default()))
             .0;
 
         physics.collider_set[self.collider_handle].set_friction(friction);

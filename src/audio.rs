@@ -39,7 +39,7 @@ impl OscillatorParameters {
             position: 0.0,
             smoothed_inputs: AudioParameters::new(100.0),
             latest_parameters: AudioParameters::new(100.0),
-            alpha: 1.0 - f64::exp(-(SAMPLE_RATE as f64).recip() / smoothing_constant),
+            alpha: 1.0 - f64::exp(-(f64::from(SAMPLE_RATE)).recip() / smoothing_constant),
         }
     }
 
@@ -72,9 +72,9 @@ fn write_audio<T: Sample + cpal::FromSample<f64>>(
 
         let d = (parameters.smoothed_inputs.distance + 1.0).recip();
 
-        parameters.position += (f64::consts::TAU * 440.0 * d.powf(1.5)) / SAMPLE_RATE as f64;
+        parameters.position += (f64::consts::TAU * 440.0 * d.powf(1.5)) / f64::from(SAMPLE_RATE);
 
-        let out = d.powf(2.0) * parameters.position.sin();
+        let out = d.powi(2) * parameters.position.sin();
 
         *sample = Sample::from_sample(out);
     }

@@ -118,7 +118,7 @@ impl Skybox {
                 Rc::new(Image::new_with_layout(
                     &gfx.instance,
                     gfx.device.physical_device,
-                    gfx.device.device.clone(),
+                    &gfx.device.device,
                     SKYBOX_RESOLUTION,
                     vk::SampleCountFlags::TYPE_1,
                     vk::Format::R8G8B8A8_UNORM,
@@ -181,7 +181,7 @@ impl Skybox {
             .shader(&shader)
             .build();
 
-        Skybox {
+        Self {
             image,
             texture,
             compute_pipeline,

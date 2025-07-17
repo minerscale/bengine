@@ -347,8 +347,8 @@ impl Image {
                         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                         &blit,
                         vk::Filter::LINEAR,
-                    )
-                };
+                    );
+                }
 
                 mip_width = next_width;
                 mip_height = next_height;
@@ -381,7 +381,7 @@ impl Image {
     pub fn new_with_layout<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: Rc<ash::Device>,
+        device: &Rc<ash::Device>,
         extent: vk::Extent2D,
         sample_count: vk::SampleCountFlags,
         format: vk::Format,
@@ -406,7 +406,7 @@ impl Image {
             false,
         );
 
-        image.transition_layout(&device, cmd_buf, None, vk::ImageLayout::UNDEFINED, layout);
+        image.transition_layout(device, cmd_buf, None, vk::ImageLayout::UNDEFINED, layout);
 
         image
     }

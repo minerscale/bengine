@@ -63,7 +63,7 @@ impl Primitive {
             physical_device,
             cmd_buf,
             vk::BufferUsageFlags::INDEX_BUFFER,
-            &index_buffer,
+            index_buffer,
         );
 
         Self {
