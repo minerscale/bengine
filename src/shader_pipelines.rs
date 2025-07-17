@@ -1,4 +1,4 @@
-use std::{mem::offset_of, rc::Rc};
+use std::{mem::offset_of, sync::Arc};
 
 use ash::vk;
 use ultraviolet::{Isometry3, Vec2};
@@ -124,7 +124,7 @@ pub const UNIFORM_BUFFER_LAYOUT: usize = 0;
 pub const MATERIAL_LAYOUT: usize = 1;
 
 pub const DESCRIPTOR_SET_LAYOUTS: [DescriptorSetLayoutFunction; 2] = [
-    |device: Rc<ash::Device>| {
+    |device: Arc<ash::Device>| {
         DescriptorSetLayout::new(
             device,
             vk::DescriptorSetLayoutBinding::default()
@@ -138,7 +138,7 @@ pub const DESCRIPTOR_SET_LAYOUTS: [DescriptorSetLayoutFunction; 2] = [
                 ),
         )
     },
-    |device: Rc<ash::Device>| {
+    |device: Arc<ash::Device>| {
         DescriptorSetLayout::new(
             device,
             vk::DescriptorSetLayoutBinding::default()

@@ -1,4 +1,4 @@
-use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, rc::Rc};
+use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, sync::Arc};
 
 use ash::{khr, vk};
 use log::{debug, info};
@@ -9,7 +9,7 @@ use crate::renderer::{
 };
 
 pub struct Device {
-    pub device: Rc<ash::Device>,
+    pub device: Arc<ash::Device>,
 
     pub physical_device: vk::PhysicalDevice,
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
@@ -309,7 +309,7 @@ impl Device {
             device_create_info
         };
 
-        let device = Rc::new(
+        let device = Arc::new(
             unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap(),
         );
 

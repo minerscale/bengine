@@ -1,4 +1,4 @@
-use std::{ops::Deref, rc::Rc};
+use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
 use log::debug;
@@ -6,17 +6,17 @@ use log::debug;
 use crate::renderer::device::Device;
 
 pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {
-    fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any + 'static>);
+    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + 'static>);
 }
 
 pub struct OneTimeSubmitCommandBuffer {
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
     command_buffer: vk::CommandBuffer,
-    dependencies: Vec<Rc<dyn std::any::Any>>,
+    dependencies: Vec<Arc<dyn std::any::Any>>,
 }
 
 impl ActiveCommandBuffer for OneTimeSubmitCommandBuffer {
-    fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any>) {
+    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any>) {
         self.dependencies.push(dependency);
     }
 }
@@ -54,7 +54,7 @@ impl OneTimeSubmitCommandBuffer {
 }
 
 pub struct MultipleSubmitCommandBuffer {
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
     command_buffer: vk::CommandBuffer,
 }
 
@@ -107,11 +107,11 @@ impl MultipleSubmitCommandBuffer {
 
 pub struct ActiveMultipleSubmitCommandBuffer {
     command_buffer: MultipleSubmitCommandBuffer,
-    dependencies: Vec<Rc<dyn std::any::Any>>,
+    dependencies: Vec<Arc<dyn std::any::Any>>,
 }
 
 impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {
-    fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any>) {
+    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any>) {
         self.dependencies.push(dependency);
     }
 }
@@ -143,7 +143,7 @@ impl ActiveMultipleSubmitCommandBuffer {
 
 pub struct CommandPool {
     command_pool: vk::CommandPool,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
 
 impl CommandPool {

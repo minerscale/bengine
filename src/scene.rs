@@ -3,7 +3,7 @@ use std::{
     fs::File,
     io::{BufReader, Cursor},
     path::Path,
-    rc::Rc,
+    sync::Arc,
 };
 
 use ash::vk;
@@ -19,6 +19,7 @@ use crate::{
     mesh::{Mesh, Primitive, collider_from_obj},
     node::{GameTree, Node},
     physics::Physics,
+    player::Player,
     renderer::{
         Renderer,
         command_buffer::OneTimeSubmitCommandBuffer,
@@ -83,10 +84,10 @@ fn load_gltf(
                 alpha_cutoff: material.alpha_cutoff().unwrap_or(0.0),
             };
 
-            Rc::new(Material::new(
+            Arc::new(Material::new(
                 &gfx.device,
                 image.clone(),
-                Rc::new(Sampler::new(
+                Arc::new(Sampler::new(
                     &gfx.instance,
                     gfx.device.device.clone(),
                     gfx.device.physical_device,
@@ -104,7 +105,7 @@ fn load_gltf(
     let meshes = document
         .meshes()
         .map(|mesh| {
-            Rc::new(Mesh::new(
+            Arc::new(Mesh::new(
                 mesh.primitives()
                     .map(|primitive| {
                         let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -166,7 +167,7 @@ fn scene(
 
     macro_rules! mesh {
         ($filename:literal, $material:expr, $scale:expr) => {
-            Rc::new(Mesh::new(vec![Primitive::from_obj(
+            Arc::new(Mesh::new(vec![Primitive::from_obj(
                 &gfx.instance,
                 gfx.device.physical_device,
                 gfx.device.device.clone(),
@@ -180,7 +181,7 @@ fn scene(
 
     macro_rules! texture {
         ($sampler:expr, $texture:expr) => {
-            Rc::new(Material::new(
+            Arc::new(Material::new(
                 &gfx.device,
                 $texture.clone(),
                 $sampler.clone(),
@@ -198,7 +199,7 @@ fn scene(
     }
 
     let sampler = |mip_levels: u32| {
-        Rc::new(Sampler::new(
+        Arc::new(Sampler::new(
             &gfx.instance,
             gfx.device.device.clone(),
             gfx.device.physical_device,
@@ -217,6 +218,7 @@ fn scene(
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
 
     let root_node = Node::empty()
+        .child(Node::empty().player(Player::new(physics)))
         .child(
             Node::empty()
                 .mesh(mesh!(

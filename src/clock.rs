@@ -1,9 +1,11 @@
 use std::time::Instant;
 
+pub const FIXED_UPDATE_INTERVAL: f64 = 1.0 / 65.0;
+
 #[derive(Debug, Clone)]
 pub struct Clock {
-    start_time: Instant,
-    previous_time: Instant,
+    pub start_time: Instant,
+    pub previous_time: Instant,
     pub time: f32,
     pub dt: f32,
 }
@@ -19,7 +21,7 @@ impl Clock {
         let start_time = std::time::Instant::now();
 
         let previous_time = std::time::Instant::now()
-            .checked_sub(std::time::Duration::from_secs_f64(1.0 / 60.0))
+            .checked_sub(std::time::Duration::from_secs_f64(FIXED_UPDATE_INTERVAL))
             .unwrap();
 
         let dt = (start_time - previous_time).as_secs_f32();

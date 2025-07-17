@@ -1,4 +1,4 @@
-use std::{ops::Deref, rc::Rc};
+use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
 use log::debug;
@@ -12,17 +12,19 @@ pub struct DescriptorSetLayout {
     pub layout: vk::DescriptorSetLayout,
     pub descriptor_type: vk::DescriptorType,
     pub binding: u32,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
+
+type Any = dyn std::any::Any + Sync + Send;
 
 #[derive(Debug)]
 pub struct DescriptorSet {
     pub descriptor_set: vk::DescriptorSet,
-    dependencies: Vec<Rc<dyn std::any::Any>>,
+    dependencies: Vec<Arc<Any>>,
 }
 
 impl DescriptorSet {
-    pub fn add_dependency(&mut self, dependency: Rc<dyn std::any::Any>) {
+    pub fn add_dependency(&mut self, dependency: Arc<Any>) {
         self.dependencies.push(dependency);
     }
 }
@@ -36,11 +38,11 @@ impl Deref for DescriptorSet {
 }
 
 impl DescriptorSet {
-    pub fn bind_buffer<T: Copy + 'static>(
+    pub fn bind_buffer<T: Copy + Sync + Send + 'static>(
         &mut self,
         device: &ash::Device,
         binding: u32,
-        buffer: Rc<Buffer<T>>,
+        buffer: Arc<Buffer<T>>,
     ) {
         let buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(**buffer)
@@ -61,7 +63,7 @@ impl DescriptorSet {
         };
     }
 
-    pub fn bind_image(&mut self, device: &ash::Device, binding: u32, image: Rc<Image>) {
+    pub fn bind_image(&mut self, device: &ash::Device, binding: u32, image: Arc<Image>) {
         let image_info = [vk::DescriptorImageInfo::default()
             .image_layout(vk::ImageLayout::GENERAL)
             .image_view(image.view)];
@@ -84,8 +86,8 @@ impl DescriptorSet {
         &mut self,
         device: &ash::Device,
         binding: u32,
-        texture: Rc<Image>,
-        sampler: Rc<Sampler>,
+        texture: Arc<Image>,
+        sampler: Arc<Sampler>,
     ) {
         let image_info = [vk::DescriptorImageInfo::default()
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
@@ -109,7 +111,7 @@ impl DescriptorSet {
 }
 
 impl DescriptorSetLayout {
-    pub fn new(device: Rc<ash::Device>, binding: vk::DescriptorSetLayoutBinding) -> Self {
+    pub fn new(device: Arc<ash::Device>, binding: vk::DescriptorSetLayoutBinding) -> Self {
         let bindings = [binding];
 
         let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
@@ -139,12 +141,12 @@ impl Drop for DescriptorSetLayout {
 
 pub struct DescriptorPool {
     pub pool: vk::DescriptorPool,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
 
 const MAX_STORAGE_IMAGES: u32 = 1;
 impl DescriptorPool {
-    pub fn new(device: Rc<ash::Device>) -> Self {
+    pub fn new(device: Arc<ash::Device>) -> Self {
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::UNIFORM_BUFFER)

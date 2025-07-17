@@ -1,31 +1,36 @@
-use std::{cell::RefCell, future::Future, rc::Rc};
+use tracing_mutex::stdsync::Mutex;
+
+use std::{future::Future, sync::Arc};
 
 use genawaiter::{rc::r#gen, yield_};
 use rapier3d::prelude::{Collider, ColliderHandle, RigidBody, RigidBodyHandle};
 
-use crate::{mesh::Mesh, physics::Physics};
+use crate::{mesh::Mesh, physics::Physics, player::Player};
 
 use ultraviolet::Isometry3;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Object {
-    Mesh(Rc<Mesh>),
+    Mesh(Arc<Mesh>),
     Collider(ColliderHandle),
     RigidBody((ColliderHandle, RigidBodyHandle)),
+    Player(Player),
 }
 
 pub struct Node {
-    pub transform: Isometry3,
-    pub children: Vec<Rc<RefCell<Node>>>,
+    transform: Isometry3,
+    previous_transform: Isometry3,
+    pub children: Vec<Arc<Mutex<Node>>>,
     pub objects: Vec<Object>,
 }
 
+#[derive(Clone)]
 pub struct GameTree {
-    pub root_node: Rc<RefCell<Node>>,
+    pub root_node: Arc<Mutex<Node>>,
 }
 
 impl GameTree {
-    pub fn new<T: Into<Rc<RefCell<Node>>>>(root_node: T) -> Self {
+    pub fn new<T: Into<Arc<Mutex<Node>>>>(root_node: T) -> Self {
         Self {
             root_node: root_node.into(),
         }
@@ -33,21 +38,36 @@ impl GameTree {
 
     pub fn breadth_first(
         &self,
-    ) -> genawaiter::rc::Gen<(Isometry3, Rc<RefCell<Node>>), (), impl Future<Output = ()> + use<'_>>
-    {
+    ) -> genawaiter::rc::Gen<
+        (Isometry3, Isometry3, Arc<Mutex<Node>>),
+        (),
+        impl Future<Output = ()> + use<'_>,
+    > {
         r#gen!({
-            let mut stack: Vec<(Isometry3, Rc<RefCell<Node>>)> =
-                vec![(self.root_node.borrow().transform, self.root_node.clone())];
+            let root_node = self.root_node.lock().unwrap();
+
+            let mut stack: Vec<(Isometry3, Isometry3, Arc<Mutex<Node>>)> = vec![(
+                root_node.previous_transform,
+                root_node.transform,
+                self.root_node.clone(),
+            )];
+
+            drop(root_node);
 
             loop {
                 match stack.pop() {
-                    Some((transform, node)) => {
-                        for child in &node.borrow().children {
-                            let t = transform * child.borrow().transform;
+                    Some((previous_transform, transform, node)) => {
+                        for child in &node.lock().unwrap().children {
+                            let child_lock = child.lock().unwrap();
 
-                            stack.push((t, child.clone()));
+                            let previous_t = previous_transform * child_lock.previous_transform;
+                            let t = transform * child_lock.transform;
+
+                            drop(child_lock);
+
+                            stack.push((previous_t, t, child.clone()));
                         }
-                        yield_!((transform, node));
+                        yield_!((previous_transform, transform, node));
                     }
                     None => break,
                 }
@@ -56,9 +76,9 @@ impl GameTree {
     }
 }
 
-impl From<Node> for Rc<RefCell<Node>> {
+impl From<Node> for Arc<Mutex<Node>> {
     fn from(value: Node) -> Self {
-        Self::new(RefCell::new(value))
+        Self::new(Mutex::new(value))
     }
 }
 
@@ -66,31 +86,52 @@ impl Node {
     pub fn empty() -> Self {
         Self {
             transform: Isometry3::identity(),
+            previous_transform: Isometry3::identity(),
             children: vec![],
             objects: vec![],
         }
     }
 
+    pub fn set_transform(&mut self, transform: Isometry3) {
+        self.previous_transform = self.transform;
+        self.transform = transform;
+    }
+
+    pub fn transform(&self) -> Isometry3 {
+        self.transform
+    }
+
+    pub fn previous_transform(&self) -> Isometry3 {
+        self.previous_transform
+    }
+
     pub fn new(
         transform: Isometry3,
-        children: Vec<Rc<RefCell<Self>>>,
+        children: Vec<Arc<Mutex<Self>>>,
         objects: Vec<Object>,
     ) -> Self {
         Self {
             transform,
+            previous_transform: transform,
             children,
             objects,
         }
     }
 
-    pub fn child<T: Into<Rc<RefCell<Self>>>>(mut self, child: T) -> Self {
+    pub fn child<T: Into<Arc<Mutex<Self>>>>(mut self, child: T) -> Self {
         self.children.push(child.into());
 
         self
     }
 
-    pub fn mesh(mut self, mesh: Rc<Mesh>) -> Self {
+    pub fn mesh(mut self, mesh: Arc<Mesh>) -> Self {
         self.objects.push(Object::Mesh(mesh));
+
+        self
+    }
+
+    pub fn player(mut self, player: Player) -> Self {
+        self.objects.push(Object::Player(player));
 
         self
     }

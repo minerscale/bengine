@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::renderer::{
     descriptors::{DescriptorPool, DescriptorSet, DescriptorSetLayout},
@@ -30,8 +30,8 @@ pub struct Material {
 impl Material {
     pub fn new(
         device: &Device,
-        image: Rc<Image>,
-        sampler: Rc<Sampler>,
+        image: Arc<Image>,
+        sampler: Arc<Sampler>,
         properties: MaterialProperties,
         descriptor_pool: &DescriptorPool,
         descriptor_set_layout: &DescriptorSetLayout,

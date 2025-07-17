@@ -1,4 +1,5 @@
-use std::{io::BufRead, rc::Rc};
+use std::io::BufRead;
+use std::sync::Arc;
 
 use ash::vk;
 use obj::raw::RawObj;
@@ -33,19 +34,19 @@ impl Mesh {
 
 #[derive(Debug)]
 pub struct Primitive {
-    pub vertex_buffer: Rc<Buffer<Vertex>>,
-    pub index_buffer: Rc<Buffer<u32>>,
-    pub material: Rc<Material>,
+    pub vertex_buffer: Arc<Buffer<Vertex>>,
+    pub index_buffer: Arc<Buffer<u32>>,
+    pub material: Arc<Material>,
 }
 
 impl Primitive {
     pub fn new<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         vertex_buffer: &[Vertex],
         index_buffer: &[u32],
-        material: Rc<Material>,
+        material: Arc<Material>,
         cmd_buf: &mut C,
     ) -> Self {
         let vertex_buffer = Buffer::new_staged(
@@ -76,10 +77,10 @@ impl Primitive {
     pub fn from_obj<T: BufRead, C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         file: T,
         cmd_buf: &mut C,
-        material: Rc<Material>,
+        material: Arc<Material>,
         scale: Option<Vec3>,
     ) -> Self {
         let mut mesh: Obj<Vertex, u32> = load_obj(file).unwrap();

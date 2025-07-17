@@ -26,6 +26,7 @@ const STATIC_FRICTION_CUTOFF: f32 = 3.0;
 const MAX_STATIC_FRICTION: f32 = 4.0;
 const MAX_SLOPE: f32 = 0.2;
 
+#[derive(Debug)]
 pub struct Player {
     pub collider_handle: ColliderHandle,
     pub rigid_body_handle: RigidBodyHandle,

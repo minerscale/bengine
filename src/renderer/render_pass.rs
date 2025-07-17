@@ -1,4 +1,4 @@
-use std::{ops::Deref, rc::Rc};
+use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
 use log::debug;
@@ -8,7 +8,7 @@ use crate::renderer::{device::Device, pipeline::Pipeline, swapchain::find_depth_
 pub struct RenderPass {
     render_pass: vk::RenderPass,
     pub pipelines: Vec<Pipeline>,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
 
 impl RenderPass {

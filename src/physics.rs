@@ -7,6 +7,9 @@ use rapier3d::{
         RigidBodySet,
     },
 };
+use ultraviolet::{Isometry3, Rotor3, Vec3};
+
+use crate::node::{GameTree, Object};
 
 pub struct Physics {
     pub gravity: Vector<Real>,
@@ -51,7 +54,7 @@ impl Physics {
         }
     }
 
-    pub fn step(&mut self, dt: f32) {
+    pub fn step(&mut self, game_tree: GameTree, dt: f32) {
         self.integration_parameters.set_inv_dt(1.0 / dt);
 
         self.physics_pipeline.step(
@@ -69,5 +72,31 @@ impl Physics {
             &self.physics_hooks,
             &self.event_handler,
         );
+
+        for (_previous_transform, _transform, node) in game_tree.breadth_first() {
+            let mut node = node.lock().unwrap();
+
+            let transform = node.objects.iter().find_map(|o| match o {
+                Object::RigidBody((_, rigid_body_handle)) => Some(from_nalgebra(
+                    self.rigid_body_set[*rigid_body_handle].position(),
+                )),
+
+                Object::Player(player) => Some(from_nalgebra(
+                    self.rigid_body_set[player.rigid_body_handle].position(),
+                )),
+                _ => None,
+            });
+
+            if let Some(transform) = transform {
+                node.set_transform(transform);
+            }
+        }
     }
+}
+
+pub fn from_nalgebra(p: &rapier3d::na::Isometry3<f32>) -> Isometry3 {
+    Isometry3::new(
+        Vec3::from(p.translation.vector.as_slice().first_chunk().unwrap()),
+        Rotor3::from_quaternion_array(*p.rotation.coords.as_slice().first_chunk().unwrap()),
+    )
 }

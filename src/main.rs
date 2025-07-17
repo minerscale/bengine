@@ -20,18 +20,15 @@ mod shader_pipelines;
 mod skybox;
 mod vertex;
 
-use std::{
-    mem::offset_of,
-    ptr::addr_of,
-    sync::{Arc, Mutex},
-};
+use tracing_mutex::stdsync::Mutex;
+
+use std::{mem::offset_of, ptr::addr_of, sync::Arc};
 
 use audio::{Audio, AudioParameters};
-use clock::Clock;
+use clock::{Clock, FIXED_UPDATE_INTERVAL};
 use event_loop::EventLoop;
 use node::{GameTree, Object};
-use physics::Physics;
-use player::Player;
+use physics::{Physics, from_nalgebra};
 use renderer::{
     HEIGHT, Renderer, UniformBufferObject, WIDTH, buffer::MappedBuffer,
     command_buffer::ActiveMultipleSubmitCommandBuffer, device::Device, image::SwapchainImage,
@@ -43,7 +40,7 @@ use skybox::Skybox;
 
 use ash::vk;
 use log::info;
-use ultraviolet::{Isometry3, Rotor3, Vec2, Vec3};
+use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
 
 pub const FOV: f32 = 100.0;
 
@@ -53,11 +50,30 @@ fn main() {
     let mut gfx = Renderer::new(WIDTH, HEIGHT, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
     let skybox = Skybox::new(&gfx);
     let physics = Arc::new(Mutex::new(Physics::new()));
-    let root_node = create_scene(&gfx, &mut physics.lock().unwrap());
-    let player = Arc::new(Mutex::new(Player::new(&mut physics.lock().unwrap())));
+    let game_tree = create_scene(&gfx, &mut physics.lock().unwrap());
+
+    let player = game_tree
+        .root_node
+        .lock()
+        .unwrap()
+        .children
+        .iter()
+        .find(|node| {
+            node.lock()
+                .unwrap()
+                .objects
+                .iter()
+                .find(|object| matches!(object, Object::Player(_)))
+                .is_some()
+        })
+        .unwrap()
+        .clone();
+
     let clock = Arc::new(Mutex::new(Clock::new()));
     let update_clock = clock.clone();
     let audio = Audio::new();
+
+    let render_lock = Arc::new(Mutex::new(()));
 
     let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
 
@@ -65,60 +81,57 @@ fn main() {
 
     event_loop.run(
         |input| {
-            let player_transform = {
-                let physics = physics.lock().unwrap();
-
-                for (_transform, node) in root_node.breadth_first() {
-                    let transform = node.borrow().objects.iter().find_map(|o| {
-                        if let Object::RigidBody((_, rigid_body_handle)) = o {
-                            Some(from_nalgebra(
-                                physics.rigid_body_set[*rigid_body_handle].position(),
-                            ))
-                        } else {
-                            None
-                        }
-                    });
-
-                    if let Some(transform) = transform {
-                        node.borrow_mut().transform = transform;
-                    }
-                }
-
-                from_nalgebra(
-                    physics.rigid_body_set[player.lock().unwrap().rigid_body_handle].position(),
-                )
-            };
-
-            let minput = input.lock().unwrap();
-            let recreate_swapchain = minput.recreate_swapchain;
-            let camera_rotation = get_camera_rotor(minput.camera_rotation);
-            drop(minput);
-
-            let camera_transform = Isometry3::new(
-                player_transform.translation + Vec3::new(0.0, 0.8, 0.0),
-                camera_rotation.reversed(),
-            );
-
-            let fov = FOV.to_radians();
-            let ez = f32::tan(fov / 2.0).recip();
             let extent = gfx.swapchain.images[0].extent;
-            let ubo = UniformBufferObject {
-                view_transform: camera_transform,
-                time: clock.lock().unwrap().time,
-                fov: ez,
-                scale_y: (extent.width as f32) / (extent.height as f32),
-            };
+
+            let recreate_swapchain = input.lock().unwrap().recreate_swapchain;
 
             let recreate_swapchain = gfx.draw(
                 |device, render_pass, command_buffer, uniform_buffer, image| {
+                    let _render_lock = render_lock.lock().unwrap();
+
+                    let clock = clock.lock().unwrap().clone();
+                    let interpolation_factor =
+                        ((std::time::Instant::now() - clock.previous_time).as_secs_f64()
+                            / FIXED_UPDATE_INTERVAL) as f32;
+
+                    let player_transform = {
+                        let player = player.lock().unwrap();
+
+                        interpolate_isometry(
+                            player.previous_transform(),
+                            player.transform(),
+                            interpolation_factor,
+                        )
+                    };
+
+                    let minput = input.lock().unwrap();
+                    let camera_rotation = get_camera_rotor(minput.camera_rotation);
+                    drop(minput);
+
+                    let camera_transform = Isometry3::new(
+                        player_transform.translation + Vec3::new(0.0, 0.8, 0.0),
+                        camera_rotation.reversed(),
+                    );
+
+                    let fov = FOV.to_radians();
+                    let ez = f32::tan(fov / 2.0).recip();
+
+                    let ubo = UniformBufferObject {
+                        view_transform: camera_transform,
+                        time: clock.time,
+                        fov: ez,
+                        scale_y: (extent.width as f32) / (extent.height as f32),
+                    };
+
                     record_command_buffer(
                         device,
                         render_pass,
                         command_buffer,
                         uniform_buffer,
+                        interpolation_factor,
                         &skybox,
                         image,
-                        &root_node,
+                        &game_tree,
                         ubo,
                     )
                 },
@@ -128,26 +141,52 @@ fn main() {
             input.lock().unwrap().recreate_swapchain = recreate_swapchain;
         },
         |input| {
-            let mut physics = physics.lock().unwrap();
-            let mut player = player.lock().unwrap();
+            let _render_lock = render_lock.lock().unwrap();
+
             let mut clock = update_clock.lock().unwrap();
             clock.update();
-            physics.step(clock.dt);
+            let dt = clock.dt;
+            drop(clock);
+
+            let mut physics = physics.lock().unwrap();
+            let mut player = player.lock().unwrap();
+
+            macro_rules! get_player {
+                ($player:expr) => {
+                    $player
+                        .objects
+                        .iter_mut()
+                        .find_map(|obj| {
+                            if let Object::Player(player) = obj {
+                                Some(player)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap()
+                };
+            }
+
+            let player_object = get_player!(player);
+            let player_rigid_body_handle = player_object.rigid_body_handle;
 
             let input = input.lock().unwrap();
 
-            player.update(
+            player_object.update(
                 &mut physics,
                 &input,
                 get_camera_rotor(input.camera_rotation),
-                clock.dt,
+                dt,
             );
-            drop(input);
-            drop(clock);
 
             let player_transform =
-                from_nalgebra(physics.rigid_body_set[player.rigid_body_handle].position());
+                from_nalgebra(physics.rigid_body_set[player_rigid_body_handle].position());
+
+            drop(input);
             drop(player);
+
+            physics.step(game_tree.clone(), dt);
+
             drop(physics);
 
             let gems_and_jewel_location = Vec2::new(8.0, 8.0);
@@ -167,14 +206,22 @@ fn main() {
     gfx.wait_idle();
 }
 
+fn interpolate_isometry(a: Isometry3, b: Isometry3, t: f32) -> Isometry3 {
+    Isometry3::new(
+        a.translation.lerp(b.translation, t),
+        a.rotation.slerp(b.rotation, t).normalized(),
+    )
+}
+
 fn record_command_buffer(
     device: &Device,
     render_pass: &RenderPass,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
     uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
+    interpolation_factor: f32,
     skybox: &Skybox,
     image: &SwapchainImage,
-    root_node: &GameTree,
+    game_tree: &GameTree,
     ubo: UniformBufferObject,
 ) -> ActiveMultipleSubmitCommandBuffer {
     let clear_color = [
@@ -230,7 +277,10 @@ fn record_command_buffer(
             &[],
         );
 
-        for (transform, node) in root_node.breadth_first() {
+        for (previous_transform, transform, node) in game_tree.breadth_first() {
+            let transform =
+                interpolate_isometry(previous_transform, transform, interpolation_factor);
+
             let modelview_transform = Isometry3 {
                 translation: (transform.translation - ubo.view_transform.translation)
                     .rotated_by(ubo.view_transform.rotation),
@@ -250,7 +300,7 @@ fn record_command_buffer(
                 ),
             );
 
-            for object in &node.borrow().objects {
+            for object in &node.lock().unwrap().objects {
                 if let Object::Mesh(mesh) = object {
                     let mesh = mesh.as_ref();
 
@@ -311,11 +361,4 @@ fn record_command_buffer(
 
 fn get_camera_rotor(camera_rotation: Vec2) -> Rotor3 {
     Rotor3::from_rotation_xz(camera_rotation.x) * Rotor3::from_rotation_yz(camera_rotation.y)
-}
-
-fn from_nalgebra(p: &rapier3d::na::Isometry3<f32>) -> Isometry3 {
-    Isometry3::new(
-        Vec3::from(p.translation.vector.as_slice().first_chunk().unwrap()),
-        Rotor3::from_quaternion_array(*p.rotation.coords.as_slice().first_chunk().unwrap()),
-    )
 }

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::Deref, rc::Rc};
+use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use ash::vk;
 use log::debug;
@@ -8,25 +8,25 @@ use crate::renderer::{
     descriptors::{DescriptorPool, DescriptorSet, DescriptorSetLayout},
 };
 
-pub struct Buffer<T: Copy> {
+pub struct Buffer<T: Copy + Sync> {
     pub buffer: vk::Buffer,
     pub memory: vk::DeviceMemory,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
     size: vk::DeviceSize,
     phantom: PhantomData<T>,
 }
 
 #[allow(dead_code)]
-pub struct MappedBuffer<T: Copy + 'static> {
-    pub buffer: Rc<Buffer<T>>,
+pub struct MappedBuffer<T: Copy + Sync + 'static> {
+    pub buffer: Arc<Buffer<T>>,
     pub mapped_memory: &'static mut [T],
     pub descriptor_set: DescriptorSet,
 }
 
-impl<T: Copy + 'static> MappedBuffer<T> {
+impl<T: Copy + Sync + Send + 'static> MappedBuffer<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        device: &Rc<ash::Device>,
+        device: &Arc<ash::Device>,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         data: &[T],
@@ -52,7 +52,7 @@ impl<T: Copy + 'static> MappedBuffer<T> {
         };
         mapped_memory.copy_from_slice(data);
 
-        let buffer = Rc::new(Buffer {
+        let buffer = Arc::new(Buffer {
             buffer,
             memory,
             device: device.clone(),
@@ -72,7 +72,7 @@ impl<T: Copy + 'static> MappedBuffer<T> {
     }
 }
 
-impl<T: Copy> std::fmt::Debug for Buffer<T> {
+impl<T: Copy + Sync> std::fmt::Debug for Buffer<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Buffer")
             .field("buffer", &self.buffer)
@@ -103,14 +103,14 @@ pub fn find_memory_type(
     panic!("failed to find suitable memory type");
 }
 
-fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
-    buffer: Rc<Buffer<T>>,
+fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + 'static>(
+    buffer: Arc<Buffer<T>>,
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
     cmd_buf: &mut C,
     usage: vk::BufferUsageFlags,
     properties: vk::MemoryPropertyFlags,
-) -> Rc<Buffer<T>> {
+) -> Arc<Buffer<T>> {
     let device = &buffer.device;
 
     let (new_buffer, memory) = Buffer::<T>::create_buffer(
@@ -135,7 +135,7 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
 
     cmd_buf.add_dependency(buffer);
 
-    let new_buffer = Rc::new(Buffer {
+    let new_buffer = Arc::new(Buffer {
         buffer: new_buffer,
         memory,
         device,
@@ -148,16 +148,16 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + 'static>(
     new_buffer
 }
 
-impl<T: Copy + 'static> Buffer<T> {
+impl<T: Copy + Sync + 'static> Buffer<T> {
     pub fn new_staged<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         physical_device: vk::PhysicalDevice,
         cmd_buf: &mut C,
         usage: vk::BufferUsageFlags,
         data: &[T],
-    ) -> Rc<Self> {
-        let staging_buffer = Rc::new(Self::new(
+    ) -> Arc<Self> {
+        let staging_buffer = Arc::new(Self::new(
             device,
             instance,
             physical_device,
@@ -216,7 +216,7 @@ impl<T: Copy + 'static> Buffer<T> {
     }
 
     pub fn new(
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         data: &[T],
@@ -251,7 +251,7 @@ impl<T: Copy + 'static> Buffer<T> {
     }
 }
 
-impl<T: Copy> Deref for Buffer<T> {
+impl<T: Copy + Sync> Deref for Buffer<T> {
     type Target = vk::Buffer;
 
     fn deref(&self) -> &Self::Target {
@@ -259,7 +259,7 @@ impl<T: Copy> Deref for Buffer<T> {
     }
 }
 
-impl<T: Copy> Drop for Buffer<T> {
+impl<T: Copy + Sync> Drop for Buffer<T> {
     fn drop(&mut self) {
         debug!("dropped buffer");
         unsafe {

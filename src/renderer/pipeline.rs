@@ -1,4 +1,4 @@
-use std::{ops::Deref, rc::Rc};
+use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
 use log::debug;
@@ -8,12 +8,12 @@ use crate::renderer::shader_module::ShaderModule;
 pub struct Pipeline {
     pub pipeline: vk::Pipeline,
     pub pipeline_layout: vk::PipelineLayout,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
 
 #[derive(Default)]
 pub struct PipelineBuilder<'a> {
-    device: Option<Rc<ash::Device>>,
+    device: Option<Arc<ash::Device>>,
     descriptor_set_layouts: Option<&'a [vk::DescriptorSetLayout]>,
     render_pass: Option<vk::RenderPass>,
     multisampling: Option<&'a vk::PipelineMultisampleStateCreateInfo<'a>>,
@@ -31,7 +31,7 @@ pub struct PipelineBuilder<'a> {
 
 #[derive(Default)]
 pub struct ComputePipelineBuilder<'a> {
-    device: Option<Rc<ash::Device>>,
+    device: Option<Arc<ash::Device>>,
     shader: Option<&'a ShaderModule<'a>>,
     layouts: Option<&'a [vk::DescriptorSetLayout]>,
     push_constant_range: Option<&'a vk::PushConstantRange>,
@@ -42,7 +42,7 @@ impl<'a> ComputePipelineBuilder<'a> {
         Self::default()
     }
 
-    pub fn device(self, device: Rc<ash::Device>) -> Self {
+    pub fn device(self, device: Arc<ash::Device>) -> Self {
         Self {
             device: Some(device),
             ..self
@@ -118,7 +118,7 @@ impl<'a> PipelineBuilder<'a> {
         Self::default()
     }
 
-    pub fn device(self, device: Rc<ash::Device>) -> Self {
+    pub fn device(self, device: Arc<ash::Device>) -> Self {
         Self {
             device: Some(device),
             ..self

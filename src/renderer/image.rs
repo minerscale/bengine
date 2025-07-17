@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ash::vk;
 use image::{DynamicImage, GenericImageView};
@@ -16,12 +16,12 @@ pub struct SwapchainImage {
     pub view: vk::ImageView,
     pub framebuffer: vk::Framebuffer,
     pub extent: vk::Extent2D,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
 
 impl SwapchainImage {
     pub fn new(
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         image: vk::Image,
         format: vk::Format,
         extent: vk::Extent2D,
@@ -56,7 +56,7 @@ pub struct Image {
 
     pub mip_levels: u32,
 
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
 
 fn copy_buffer_to_image<C: ActiveCommandBuffer>(
@@ -64,7 +64,7 @@ fn copy_buffer_to_image<C: ActiveCommandBuffer>(
     image: vk::Image,
     extent: vk::Extent2D,
     cmd_buf: &mut C,
-    buffer: Rc<Buffer<u8>>,
+    buffer: Arc<Buffer<u8>>,
 ) {
     let regions = [vk::BufferImageCopy {
         buffer_offset: 0,
@@ -199,10 +199,10 @@ impl Image {
     pub fn from_image<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: &Rc<ash::Device>,
+        device: &Arc<ash::Device>,
         cmd_buf: &mut C,
         image: DynamicImage,
-    ) -> Rc<Self> {
+    ) -> Arc<Self> {
         let extent = image.dimensions();
         let img = image.into_rgba8().into_vec();
 
@@ -228,10 +228,10 @@ impl Image {
     pub fn from_bytes<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: &Rc<ash::Device>,
+        device: &Arc<ash::Device>,
         cmd_buf: &mut C,
         bytes: &[u8],
-    ) -> Rc<Self> {
+    ) -> Arc<Self> {
         let image = ::image::load_from_memory(bytes).unwrap();
 
         Self::from_image(instance, physical_device, device, cmd_buf, image)
@@ -241,7 +241,7 @@ impl Image {
     fn new_staged<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: &Rc<ash::Device>,
+        device: &Arc<ash::Device>,
         extent: vk::Extent2D,
         image_data: &[u8],
         cmd_buf: &mut C,
@@ -251,8 +251,8 @@ impl Image {
         properties: vk::MemoryPropertyFlags,
         aspect_flags: vk::ImageAspectFlags,
         mipmapping: bool,
-    ) -> Rc<Self> {
-        let image = Rc::new(Self::new(
+    ) -> Arc<Self> {
+        let image = Arc::new(Self::new(
             instance,
             physical_device,
             device.clone(),
@@ -271,7 +271,7 @@ impl Image {
             mipmapping,
         ));
 
-        let staging_buffer = Rc::new(Buffer::new(
+        let staging_buffer = Arc::new(Buffer::new(
             device.clone(),
             instance,
             physical_device,
@@ -381,7 +381,7 @@ impl Image {
     pub fn new_with_layout<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: &Rc<ash::Device>,
+        device: &Arc<ash::Device>,
         extent: vk::Extent2D,
         sample_count: vk::SampleCountFlags,
         format: vk::Format,
@@ -415,7 +415,7 @@ impl Image {
     pub fn new(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         extent: vk::Extent2D,
         sample_count: vk::SampleCountFlags,
         format: vk::Format,

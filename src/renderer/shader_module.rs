@@ -1,4 +1,4 @@
-use std::{ops::Deref, rc::Rc};
+use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
 use log::debug;
@@ -26,7 +26,7 @@ impl<'a> Deref for SpecializationInfo<'a> {
 }
 
 pub struct ShaderModule<'a> {
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
     shader: vk::ShaderModule,
     pub stage: vk::ShaderStageFlags,
     pub specialization_info: Option<SpecializationInfo<'a>>,
@@ -59,7 +59,7 @@ pub(crate) use spv;
 
 impl<'a> ShaderModule<'a> {
     pub fn new(
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         shader: vk::ShaderModule,
         stage: vk::ShaderStageFlags,
         specialization_info: Option<SpecializationInfo<'a>>,

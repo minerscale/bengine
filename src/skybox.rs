@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ash::vk;
 
@@ -23,7 +23,7 @@ use crate::{
 };
 
 pub struct Skybox {
-    image: Rc<Image>,
+    image: Arc<Image>,
     texture: Material,
     compute_pipeline: Pipeline,
     descriptor: DescriptorSet,
@@ -115,7 +115,7 @@ impl Skybox {
         let image = gfx
             .command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
-                Rc::new(Image::new_with_layout(
+                Arc::new(Image::new_with_layout(
                     &gfx.instance,
                     gfx.device.physical_device,
                     &gfx.device.device,
@@ -157,7 +157,7 @@ impl Skybox {
 
         descriptor.bind_image(&gfx.device.device, 0, image.clone());
 
-        let skybox_sampler = Rc::new(Sampler::new(
+        let skybox_sampler = Arc::new(Sampler::new(
             &gfx.instance,
             gfx.device.device.clone(),
             gfx.device.physical_device,

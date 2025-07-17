@@ -1,17 +1,17 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use ash::vk;
 use log::debug;
 
 pub struct Sampler {
     pub sampler: vk::Sampler,
-    device: Rc<ash::Device>,
+    device: Arc<ash::Device>,
 }
 
 impl Sampler {
     pub fn new(
         instance: &ash::Instance,
-        device: Rc<ash::Device>,
+        device: Arc<ash::Device>,
         physical_device: vk::PhysicalDevice,
         address_mode: vk::SamplerAddressMode,
         anisotropy_enable: bool,

@@ -1,11 +1,15 @@
+use tracing_mutex::stdsync::Mutex;
+
 use std::{
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use sdl3::{event::Event, keyboard::Keycode};
 use ultraviolet::Vec2;
+
+use crate::clock::FIXED_UPDATE_INTERVAL;
 
 pub struct EventLoop {
     pump: sdl3::EventPump,
@@ -158,19 +162,22 @@ impl EventLoop {
 
         std::thread::scope(|scope| {
             let update_thread = scope.spawn(|| {
+                let mut target_time = Instant::now();
                 let input = input.clone();
 
+                let fixed_update_interval = Duration::from_secs_f64(FIXED_UPDATE_INTERVAL);
+
                 'quit: loop {
-                    let start = Instant::now();
                     update(input.clone());
 
                     if input.lock().unwrap().quit {
                         break 'quit;
                     }
 
-                    if let Some(sleep_time) = Duration::from_secs_f64(1.0 / 120.0)
-                        .checked_sub(Instant::now().duration_since(start))
-                    {
+                    target_time += fixed_update_interval;
+
+                    let sleep_time = target_time.duration_since(Instant::now());
+                    if sleep_time > Duration::ZERO {
                         std::thread::sleep(sleep_time);
                     }
                 }

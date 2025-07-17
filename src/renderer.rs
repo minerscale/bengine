@@ -1,4 +1,4 @@
-use std::{iter::repeat_with, rc::Rc};
+use std::{iter::repeat_with, sync::Arc};
 
 use ash::vk;
 use pipeline::Pipeline;
@@ -55,7 +55,7 @@ pub type PipelineFunction = for<'a, 'b> fn(
     &'b [ash::vk::DescriptorSetLayout],
 ) -> Pipeline;
 
-pub type DescriptorSetLayoutFunction = fn(Rc<ash::Device>) -> DescriptorSetLayout;
+pub type DescriptorSetLayoutFunction = fn(Arc<ash::Device>) -> DescriptorSetLayout;
 
 pub struct Renderer {
     // WARNING: Cleanup order matters here
