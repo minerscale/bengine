@@ -10,6 +10,8 @@ use crate::renderer::{
 #[derive(Clone)]
 pub struct DescriptorSetLayout {
     pub layout: vk::DescriptorSetLayout,
+    pub descriptor_type: vk::DescriptorType,
+    pub binding: u32,
     device: Rc<ash::Device>,
 }
 
@@ -107,8 +109,10 @@ impl DescriptorSet {
 }
 
 impl DescriptorSetLayout {
-    pub fn new(device: Rc<ash::Device>, bindings: &[vk::DescriptorSetLayoutBinding]) -> Self {
-        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(bindings);
+    pub fn new(device: Rc<ash::Device>, binding: vk::DescriptorSetLayoutBinding) -> Self {
+        let bindings = [binding];
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
 
         let layout = unsafe {
             device
@@ -116,7 +120,12 @@ impl DescriptorSetLayout {
                 .unwrap()
         };
 
-        Self { layout, device }
+        Self {
+            layout,
+            descriptor_type: binding.descriptor_type,
+            binding: binding.binding,
+            device,
+        }
     }
 }
 

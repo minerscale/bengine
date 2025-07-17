@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufReader, Cursor},
     path::Path,
@@ -25,6 +26,7 @@ use crate::{
         material::{Material, MaterialProperties},
         sampler::Sampler,
     },
+    shader_pipelines::MATERIAL_LAYOUT,
     vertex::Vertex,
 };
 
@@ -38,6 +40,8 @@ fn load_gltf(
     let gltf = Gltf::open(filename).unwrap();
     let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
     let document = gltf.document;
+
+    let mut image_map = HashMap::new();
 
     let materials = document
         .materials()
@@ -54,26 +58,28 @@ fn load_gltf(
                     view: _,
                     mime_type: _,
                 } => todo!(),
-                gltf::image::Source::Uri { uri, mime_type: _ } => image::ImageReader::new(
-                    BufReader::new(File::open(root.join(Path::new(uri))).unwrap()),
-                )
-                .with_guessed_format()
-                .unwrap()
-                .decode()
-                .unwrap(),
+                gltf::image::Source::Uri { uri, mime_type: _ } => {
+                    image_map.entry(uri).or_insert_with(|| {
+                        Image::from_image(
+                            &gfx.instance,
+                            gfx.device.physical_device,
+                            &gfx.device.device,
+                            cmd_buf,
+                            image::ImageReader::new(BufReader::new(
+                                File::open(root.join(Path::new(uri))).unwrap(),
+                            ))
+                            .with_guessed_format()
+                            .unwrap()
+                            .decode()
+                            .unwrap(),
+                        )
+                    })
+                }
             };
 
             let properties = MaterialProperties {
                 alpha_cutoff: material.alpha_cutoff().unwrap_or(0.0),
             };
-
-            let image = Image::from_image(
-                &gfx.instance,
-                gfx.device.physical_device,
-                &gfx.device.device,
-                cmd_buf,
-                image,
-            );
 
             Rc::new(Material::new(
                 &gfx.device,
@@ -88,7 +94,7 @@ fn load_gltf(
                 )),
                 properties,
                 &gfx.descriptor_pool,
-                &gfx.material_layout,
+                &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],
             ))
         })
         .collect::<Vec<_>>();
@@ -178,7 +184,7 @@ fn scene(
                 $sampler.clone(),
                 MaterialProperties::default(),
                 &gfx.descriptor_pool,
-                &gfx.material_layout,
+                &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],
             ))
         };
     }
@@ -189,14 +195,16 @@ fn scene(
         };
     }
 
-    let sampler = |mip_levels: u32| Rc::new(Sampler::new(
-        &gfx.instance,
-        gfx.device.device.clone(),
-        gfx.device.physical_device,
-        vk::SamplerAddressMode::REPEAT,
-        true,
-        mip_levels,
-    ));
+    let sampler = |mip_levels: u32| {
+        Rc::new(Sampler::new(
+            &gfx.instance,
+            gfx.device.device.clone(),
+            gfx.device.physical_device,
+            vk::SamplerAddressMode::REPEAT,
+            true,
+            mip_levels,
+        ))
+    };
 
     let grid_image = image!("../test-objects/grid.png");
     let grid = texture!(sampler(grid_image.mip_levels), grid_image);
@@ -251,7 +259,12 @@ fn scene(
                     ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),
                 ),
         )
-        .child(load_gltf(gfx, cmd_buf, "glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf", 0.025));
+        .child(load_gltf(
+            gfx,
+            cmd_buf,
+            "glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
+            0.025,
+        ));
 
     GameTree::new(root_node)
 }

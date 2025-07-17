@@ -7,16 +7,19 @@ const SKYBOX_RESOLUTION: vk::Extent2D = vk::Extent2D {
     height: HEIGHT / 2,
 };
 
-use crate::renderer::{
-    HEIGHT, Renderer, WIDTH,
-    command_buffer::ActiveMultipleSubmitCommandBuffer,
-    descriptors::{DescriptorSet, DescriptorSetLayout},
-    device::Device,
-    image::Image,
-    material::{Material, MaterialProperties},
-    pipeline::{ComputePipelineBuilder, Pipeline, PipelineBuilder},
-    sampler::Sampler,
-    shader_module::spv,
+use crate::{
+    renderer::{
+        HEIGHT, Renderer, WIDTH,
+        command_buffer::ActiveMultipleSubmitCommandBuffer,
+        descriptors::{DescriptorSet, DescriptorSetLayout},
+        device::Device,
+        image::Image,
+        material::{Material, MaterialProperties},
+        pipeline::{ComputePipelineBuilder, Pipeline, PipelineBuilder},
+        sampler::Sampler,
+        shader_module::spv,
+    },
+    shader_pipelines::{MATERIAL_LAYOUT, UNIFORM_BUFFER_LAYOUT},
 };
 
 pub struct Skybox {
@@ -129,16 +132,19 @@ impl Skybox {
             });
 
         let texture_layout = {
-            let texture_bindings = [vk::DescriptorSetLayoutBinding::default()
+            let texture_bindings = vk::DescriptorSetLayoutBinding::default()
                 .binding(0)
                 .descriptor_count(1)
                 .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-                .stage_flags(vk::ShaderStageFlags::COMPUTE)];
+                .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
-            DescriptorSetLayout::new(gfx.device.device.clone(), &texture_bindings)
+            DescriptorSetLayout::new(gfx.device.device.clone(), texture_bindings)
         };
 
-        let descriptor_set_layouts = [gfx.uniform_buffer_layout.layout, texture_layout.layout];
+        let descriptor_set_layouts = [
+            gfx.descriptor_set_layouts[UNIFORM_BUFFER_LAYOUT].layout,
+            texture_layout.layout,
+        ];
 
         let shader = spv!(
             gfx.device.device.clone(),
@@ -166,7 +172,7 @@ impl Skybox {
             skybox_sampler,
             MaterialProperties::default(),
             &gfx.descriptor_pool,
-            &gfx.material_layout,
+            &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],
         );
 
         let compute_pipeline = ComputePipelineBuilder::new()

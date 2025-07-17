@@ -1,3 +1,5 @@
+use std::{iter::repeat_with, rc::Rc};
+
 use ash::vk;
 use pipeline::Pipeline;
 use render_pass::RenderPass;
@@ -46,21 +48,27 @@ pub struct UniformBufferObject {
     pub scale_y: f32,
 }
 
-type PipelineFunction =
-    fn(&Device, vk::Extent2D, vk::RenderPass, &[vk::DescriptorSetLayout]) -> Pipeline;
+pub type PipelineFunction = for<'a, 'b> fn(
+    &'a device::Device,
+    vk::Extent2D,
+    ash::vk::RenderPass,
+    &'b [ash::vk::DescriptorSetLayout],
+) -> Pipeline;
+
+pub type DescriptorSetLayoutFunction = fn(Rc<ash::Device>) -> DescriptorSetLayout;
 
 pub struct Renderer {
     // WARNING: Cleanup order matters here
-    image_avaliable_semaphores: Vec<Semaphore>,
-    render_finished_semaphores: Vec<Semaphore>,
-    in_flight_fences: Vec<Fence>,
+    image_avaliable_semaphores: Box<[Semaphore]>,
+    render_finished_semaphores: Box<[Semaphore]>,
+    in_flight_fences: Box<[Fence]>,
 
-    pub uniform_buffer_layout: DescriptorSetLayout,
-    pub material_layout: DescriptorSetLayout,
+    pub descriptor_set_layouts: Box<[DescriptorSetLayout]>,
+
     pub descriptor_pool: DescriptorPool,
-    uniform_buffers: Vec<MappedBuffer<UniformBufferObject>>,
+    uniform_buffers: Box<[Box<[MappedBuffer<UniformBufferObject>]>]>,
 
-    command_buffers: Vec<MultipleSubmitCommandBuffer>,
+    command_buffers: Box<[MultipleSubmitCommandBuffer]>,
     pub command_pool: CommandPool,
 
     pipelines: &'static [PipelineFunction],
@@ -85,6 +93,10 @@ pub struct Renderer {
     current_frame: usize,
 }
 
+fn get_descriptor_set_layouts(layouts: &[DescriptorSetLayout]) -> Box<[vk::DescriptorSetLayout]> {
+    layouts.iter().map(|layout| layout.layout).collect()
+}
+
 impl Renderer {
     pub fn wait_idle(&self) {
         unsafe { self.device.device_wait_idle().unwrap() };
@@ -95,7 +107,7 @@ impl Renderer {
             &Device,
             &RenderPass,
             ActiveMultipleSubmitCommandBuffer,
-            &mut MappedBuffer<UniformBufferObject>,
+            &mut [MappedBuffer<UniformBufferObject>],
             &SwapchainImage,
         ) -> ActiveMultipleSubmitCommandBuffer,
     >(
@@ -201,18 +213,13 @@ impl Renderer {
 
         self.wait_idle();
 
-        let descriptor_set_layouts = [
-            self.uniform_buffer_layout.layout,
-            self.material_layout.layout,
-        ];
-
         let swapchain = Swapchain::new(
             &self.instance,
             &self.device,
             &self.surface.loader,
             *self.surface,
             extent,
-            &descriptor_set_layouts,
+            &get_descriptor_set_layouts(&self.descriptor_set_layouts),
             self.pipelines.iter(),
             Some(&self.swapchain),
         );
@@ -222,7 +229,12 @@ impl Renderer {
         self.swapchain = swapchain;
     }
 
-    pub fn new(width: u32, height: u32, pipelines: &'static [PipelineFunction]) -> Self {
+    pub fn new(
+        width: u32,
+        height: u32,
+        descriptor_set_layouts: &[DescriptorSetLayoutFunction],
+        pipelines: &'static [PipelineFunction],
+    ) -> Self {
         let entry = ash::Entry::linked();
 
         let sdl_context = sdl3::init().unwrap();
@@ -253,31 +265,40 @@ impl Renderer {
 
         let device = Device::new(&instance, &surface);
 
-        let uniform_buffer_layout = {
-            let uniform_buffer_bindings = [vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .stage_flags(
-                    vk::ShaderStageFlags::VERTEX
-                        | vk::ShaderStageFlags::FRAGMENT
-                        | vk::ShaderStageFlags::COMPUTE,
-                )];
+        let descriptor_set_layouts = descriptor_set_layouts
+            .iter()
+            .map(|f| f(device.device.clone()))
+            .collect::<Box<[_]>>();
 
-            DescriptorSetLayout::new(device.device.clone(), &uniform_buffer_bindings)
-        };
+        let descriptor_pool = DescriptorPool::new(device.device.clone());
 
-        let material_layout = {
-            let material_bindings = [vk::DescriptorSetLayoutBinding::default()
-                .binding(0)
-                .descriptor_count(1)
-                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                .stage_flags(vk::ShaderStageFlags::FRAGMENT)];
-
-            DescriptorSetLayout::new(device.device.clone(), &material_bindings)
-        };
-
-        let descriptor_set_layouts = [uniform_buffer_layout.layout, material_layout.layout];
+        let uniform_buffers = with_n(
+            || {
+                descriptor_set_layouts
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, layout)| {
+                        matches!(layout.descriptor_type, vk::DescriptorType::UNIFORM_BUFFER)
+                            .then_some((idx, layout.binding))
+                    })
+                    .map(|(idx, binding)| {
+                        MappedBuffer::new(
+                            &device.device,
+                            &instance,
+                            device.physical_device,
+                            &[UniformBufferObject::default()],
+                            vk::BufferUsageFlags::UNIFORM_BUFFER,
+                            vk::MemoryPropertyFlags::HOST_VISIBLE
+                                | vk::MemoryPropertyFlags::HOST_COHERENT,
+                            &descriptor_pool,
+                            &descriptor_set_layouts[idx],
+                            binding,
+                        )
+                    })
+                    .collect::<Box<[_]>>()
+            },
+            MAX_FRAMES_IN_FLIGHT,
+        );
 
         let swapchain = Swapchain::new(
             &instance,
@@ -285,50 +306,37 @@ impl Renderer {
             &surface.loader,
             *surface,
             vk::Extent2D { width, height },
-            &descriptor_set_layouts,
+            &get_descriptor_set_layouts(&descriptor_set_layouts),
             pipelines.iter(),
             None,
         );
 
         let command_pool = CommandPool::new(&device);
 
-        let mut image_avaliable_semaphores = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
-        let render_finished_semaphores = (0..swapchain.images.len())
-            .map(|_| Semaphore::new(device.device.clone()))
-            .collect::<Vec<Semaphore>>();
-        let mut in_flight_fences = Vec::with_capacity(MAX_FRAMES_IN_FLIGHT);
-
-        let mut command_buffers = Vec::new();
-        let mut uniform_buffers = Vec::new();
-
-        let descriptor_pool = DescriptorPool::new(device.device.clone());
-
-        for _ in 0..MAX_FRAMES_IN_FLIGHT {
-            command_buffers.push(command_pool.create_command_buffer());
-
-            image_avaliable_semaphores.push(Semaphore::new(device.device.clone()));
-            in_flight_fences.push(Fence::new(device.device.clone()));
-
-            uniform_buffers.push(MappedBuffer::new(
-                &device.device,
-                &instance,
-                device.physical_device,
-                &[UniformBufferObject::default()],
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                &descriptor_pool,
-                &uniform_buffer_layout,
-                0,
-            ));
+        fn with_n<T, F: Fn() -> T>(f: F, n: usize) -> Box<[T]> {
+            repeat_with(f).take(n).collect()
         }
+
+        let image_avaliable_semaphores = with_n(
+            || Semaphore::new(device.device.clone()),
+            MAX_FRAMES_IN_FLIGHT,
+        );
+        let in_flight_fences = with_n(|| Fence::new(device.device.clone()), MAX_FRAMES_IN_FLIGHT);
+        let command_buffers = with_n(
+            || command_pool.create_command_buffer(),
+            MAX_FRAMES_IN_FLIGHT,
+        );
+        let render_finished_semaphores = with_n(
+            || Semaphore::new(device.device.clone()),
+            swapchain.images.len(),
+        );
 
         Self {
             image_avaliable_semaphores,
             render_finished_semaphores,
             in_flight_fences,
             descriptor_pool,
-            uniform_buffer_layout,
-            material_layout,
+            descriptor_set_layouts,
             uniform_buffers,
             command_buffers,
             command_pool,

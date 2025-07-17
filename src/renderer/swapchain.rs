@@ -247,11 +247,7 @@ pub fn find_depth_format(
     find_supported_format(
         instance,
         physical_device,
-        &[
-            vk::Format::D32_SFLOAT,
-            vk::Format::D32_SFLOAT_S8_UINT,
-            /*vk::Format::D24_UNORM_S8_UINT,*/
-        ],
+        &[vk::Format::D32_SFLOAT, vk::Format::D32_SFLOAT_S8_UINT],
         vk::ImageTiling::OPTIMAL,
         vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
     )

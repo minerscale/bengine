@@ -1,4 +1,4 @@
-use std::mem::offset_of;
+use std::{mem::offset_of, rc::Rc};
 
 use ash::vk;
 use ultraviolet::{Isometry3, Vec2};
@@ -11,7 +11,9 @@ pub struct PushConstants {
 
 use crate::{
     renderer::{
-        device::{self, Device},
+        DescriptorSetLayoutFunction, PipelineFunction,
+        descriptors::DescriptorSetLayout,
+        device::Device,
         material::MaterialProperties,
         pipeline::{Pipeline, PipelineBuilder},
         shader_module::{SpecializationInfo, spv},
@@ -118,9 +120,34 @@ fn make_main_pipeline(
         .build()
 }
 
-pub const PIPELINES: [for<'a, 'b> fn(
-    &'a device::Device,
-    vk::Extent2D,
-    ash::vk::RenderPass,
-    &'b [ash::vk::DescriptorSetLayout],
-) -> Pipeline; 2] = [make_main_pipeline, skybox::make_skybox_pipeline];
+pub const UNIFORM_BUFFER_LAYOUT: usize = 0;
+pub const MATERIAL_LAYOUT: usize = 1;
+
+pub const DESCRIPTOR_SET_LAYOUTS: [DescriptorSetLayoutFunction; 2] = [
+    |device: Rc<ash::Device>| {
+        DescriptorSetLayout::new(
+            device,
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(
+                    vk::ShaderStageFlags::VERTEX
+                        | vk::ShaderStageFlags::FRAGMENT
+                        | vk::ShaderStageFlags::COMPUTE,
+                ),
+        )
+    },
+    |device: Rc<ash::Device>| {
+        DescriptorSetLayout::new(
+            device,
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(0)
+                .descriptor_count(1)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .stage_flags(vk::ShaderStageFlags::FRAGMENT),
+        )
+    },
+];
+
+pub const PIPELINES: [PipelineFunction; 2] = [make_main_pipeline, skybox::make_skybox_pipeline];

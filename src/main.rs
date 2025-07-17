@@ -46,7 +46,12 @@ pub const FOV: f32 = 90.0;
 fn main() {
     env_logger::init();
 
-    let mut gfx = Renderer::new(WIDTH, HEIGHT, &shader_pipelines::PIPELINES);
+    let mut gfx = Renderer::new(
+        WIDTH,
+        HEIGHT,
+        &shader_pipelines::DESCRIPTOR_SET_LAYOUTS,
+        &shader_pipelines::PIPELINES,
+    );
     let skybox = Skybox::new(&gfx);
     let mut physics = Physics::new();
     let root_node = create_scene(&gfx, &mut physics);
@@ -149,7 +154,7 @@ fn record_command_buffer(
     device: &Device,
     render_pass: &RenderPass,
     command_buffer: ActiveMultipleSubmitCommandBuffer,
-    uniform_buffer: &mut MappedBuffer<UniformBufferObject>,
+    uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
     skybox: &Skybox,
     image: &SwapchainImage,
     root_node: &GameTree,
@@ -176,6 +181,8 @@ fn record_command_buffer(
             extent: image.extent,
         })
         .clear_values(&clear_color);
+
+    let uniform_buffer = &mut uniform_buffers[0];
 
     let uniform_buffer_descriptor_set = [*uniform_buffer.descriptor_set];
     let ubo_mapped = uniform_buffer.mapped_memory.first_mut().unwrap();

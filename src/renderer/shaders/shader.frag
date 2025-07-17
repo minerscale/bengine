@@ -132,7 +132,7 @@ void main() {
 
     //vec3 sun = normalize(-vec3(1.0, 1.0, 1.0));
 
-    vec4 tex = texture(tex_sampler, vec2(frag_tex_coord.x, -frag_tex_coord.y));
+    vec4 tex = texture(tex_sampler, vec2(frag_tex_coord.x, frag_tex_coord.y));
 
     if (tex.w < push_constants.material_properties.alpha_cutoff) discard;
 
