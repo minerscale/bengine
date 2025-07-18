@@ -105,7 +105,12 @@ fn main() {
                     };
 
                     let minput = input.lock().unwrap();
-                    let camera_rotation = get_camera_rotor(minput.camera_rotation);
+                    let camera_rotation = get_camera_rotor(
+                        minput
+                            .previous
+                            .camera_rotation
+                            .lerp(minput.camera_rotation, interpolation_factor),
+                    );
                     drop(minput);
 
                     let camera_transform = Isometry3::new(

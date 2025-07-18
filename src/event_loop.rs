@@ -99,7 +99,6 @@ impl Inputs {
 
 fn process_event(event: Event, input: &mut Input) {
     match event {
-        Event::Quit { timestamp: _ } => input.quit = true,
         Event::KeyDown {
             keycode: Some(key),
             repeat: false,
@@ -132,13 +131,7 @@ fn process_event(event: Event, input: &mut Input) {
                 rotation
             };
         }
-        Event::Window {
-            timestamp: _,
-            window_id: _,
-            win_event: sdl3::event::WindowEvent::PixelSizeChanged(_, _),
-        } => {
-            input.recreate_swapchain = true;
-        }
+
         _ => (),
     }
 }
@@ -161,7 +154,11 @@ impl EventLoop {
         ))));
 
         std::thread::scope(|scope| {
+            let (event_tx, event_rx) = std::sync::mpsc::channel();
+
             let update_thread = scope.spawn(|| {
+                let event_rx = event_rx;
+
                 let mut target_time = Instant::now();
                 let input = input.clone();
 
@@ -170,9 +167,18 @@ impl EventLoop {
                 'quit: loop {
                     update(input.clone());
 
-                    if input.lock().unwrap().quit {
+                    let mut input = input.lock().unwrap();
+
+                    if input.quit {
                         break 'quit;
                     }
+
+                    input.update();
+                    while let Ok(event) = event_rx.try_recv() {
+                        process_event(event, &mut input);
+                    }
+
+                    drop(input);
 
                     target_time += fixed_update_interval;
 
@@ -187,10 +193,18 @@ impl EventLoop {
                 render(input.clone());
 
                 let mut input = input.lock().unwrap();
-                input.update();
-
                 while let Some(event) = self.pump.poll_event() {
-                    process_event(event, &mut input);
+                    match event {
+                        Event::Quit { timestamp: _ } => input.quit = true,
+                        Event::Window {
+                            timestamp: _,
+                            window_id: _,
+                            win_event: sdl3::event::WindowEvent::PixelSizeChanged(_, _),
+                        } => {
+                            input.recreate_swapchain = true;
+                        }
+                        _ => event_tx.send(event).unwrap(),
+                    }
                 }
 
                 if input.quit {
