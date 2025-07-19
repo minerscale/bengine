@@ -3,37 +3,34 @@ name = "bengine"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+colemak = []
+
 [profile.release]
 lto = true
 #debug = true
 #strip = false
 
-[features]
-colemak = []
-
-[dependencies]
-colored = "3.0.0"
-log = "0.4.22"
-num-traits = "0.2.19"
-genawaiter = "0.99.1"
-replace_with = "0.1.7"
-itertools = "0.14.0"
-rapier3d = "0.26.0"
-nalgebra = "0.33.2"
-cpal = "0.16.0"
-gltf = "1.4.1"
-tracing-mutex = "0.3.1"
-rayon = "1.10.0"
-
 [profile.dev.package.zune-jpeg]
 opt-level = 3
 
-[dependencies.ultraviolet]
-version = "0.10.0"
+[dependencies]
+colored = "3.0.0"
+cpal = "0.16.0"
+gltf = "1.4.1"
+log = "0.4.22"
+nalgebra = "0.33.2"
+num-traits = "0.2.19"
+rapier3d = "0.26.0"
+rayon = "1.10.0"
+replace_with = "0.1.7"
+tracing-mutex = "0.3.1"
+ultraviolet = "0.10.0"
 
-[dependencies.obj-rs]
-version = "0.7.4"
+[dependencies.ash]
+version = "0.38.0"
 default-features = false
+features = ["linked", "debug", "std"]
 
 [dependencies.env_logger]
 version = "0.11.5"
@@ -45,10 +42,9 @@ version = "0.25.2"
 default-features = false
 features = ["png", "jpeg"]
 
-[dependencies.ash]
-version = "0.38.0"
+[dependencies.obj-rs]
+version = "0.7.4"
 default-features = false
-features = ["linked", "debug", "std"]
 
 [dependencies.sdl3]
 version = "0.14.27"

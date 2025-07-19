@@ -9,7 +9,10 @@ use rapier3d::{
 };
 use ultraviolet::{Isometry3, Rotor3, Vec3};
 
-use crate::{node::{Node, Object}, player::Player};
+use crate::{
+    node::{Node, Object},
+    player::Player,
+};
 
 pub struct Physics {
     pub gravity: Vector<Real>,
@@ -88,7 +91,8 @@ impl Physics {
         }
 
         player.previous_position = player.position;
-        player.position = from_nalgebra(self.rigid_body_set[player.rigid_body_handle].position()).translation;
+        player.position =
+            from_nalgebra(self.rigid_body_set[player.rigid_body_handle].position()).translation;
     }
 }
 

@@ -8,7 +8,10 @@ use rapier3d::{
 };
 use ultraviolet::{Rotor3, Vec3};
 
-use crate::{event_loop::Input, physics::{from_nalgebra, Physics}};
+use crate::{
+    event_loop::Input,
+    physics::{Physics, from_nalgebra},
+};
 
 const HALF_HEIGHT: f32 = 0.9;
 const RADIUS: f32 = 0.2;
@@ -58,7 +61,8 @@ impl Player {
             &mut physics.rigid_body_set,
         );
 
-        let position = from_nalgebra(physics.rigid_body_set[rigid_body_handle].position()).translation;
+        let position =
+            from_nalgebra(physics.rigid_body_set[rigid_body_handle].position()).translation;
 
         Self {
             position,

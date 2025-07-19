@@ -111,7 +111,9 @@ fn main() {
                             / FIXED_UPDATE_INTERVAL) as f32;
 
                     let player = player.lock().unwrap();
-                    let player_transform = player.previous_position.lerp(player.position, interpolation_factor);
+                    let player_transform = player
+                        .previous_position
+                        .lerp(player.position, interpolation_factor);
                     drop(player);
 
                     let minput = input.lock().unwrap();
@@ -276,30 +278,33 @@ fn record_command_buffer(
         );
 
         for node in scene {
-            let transform =
-                interpolate_isometry(node.previous_transform, node.transform, interpolation_factor);
-
-            let modelview_transform = Isometry3 {
-                translation: (transform.translation - ubo.view_transform.translation)
-                    .rotated_by(ubo.view_transform.rotation),
-                rotation: ubo.view_transform.rotation * transform.rotation,
-            };
-
-            device.cmd_push_constants(
-                cmd_buf,
-                pipeline.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
-                offset_of!(PushConstants, model_transform)
-                    .try_into()
-                    .unwrap(),
-                std::slice::from_raw_parts(
-                    addr_of!(modelview_transform).cast::<u8>(),
-                    std::mem::size_of::<Isometry3>(),
-                ),
-            );
-
             for object in &node.objects {
                 if let Object::Mesh(mesh) = object {
+                    let transform = interpolate_isometry(
+                        node.previous_transform,
+                        node.transform,
+                        interpolation_factor,
+                    );
+
+                    let modelview_transform = Isometry3 {
+                        translation: (transform.translation - ubo.view_transform.translation)
+                            .rotated_by(ubo.view_transform.rotation),
+                        rotation: ubo.view_transform.rotation * transform.rotation,
+                    };
+
+                    device.cmd_push_constants(
+                        cmd_buf,
+                        pipeline.pipeline_layout,
+                        vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                        offset_of!(PushConstants, model_transform)
+                            .try_into()
+                            .unwrap(),
+                        std::slice::from_raw_parts(
+                            addr_of!(modelview_transform).cast::<u8>(),
+                            std::mem::size_of::<Isometry3>(),
+                        ),
+                    );
+
                     let mesh = mesh.as_ref();
 
                     for primitive in mesh {
