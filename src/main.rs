@@ -101,7 +101,7 @@ fn main() {
 
             let mut minput = input.lock().unwrap();
 
-            let framebuffer_resized  = if let Some(framebuffer_size) = minput.framebuffer_resized {
+            let framebuffer_resized = if let Some(framebuffer_size) = minput.framebuffer_resized {
                 gfx.window_size = framebuffer_size;
                 true
             } else {

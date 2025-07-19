@@ -13,6 +13,7 @@ use rapier3d::{
     na::vector,
     prelude::{ColliderBuilder, RigidBodyBuilder},
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use ultraviolet::Vec3;
 
 use crate::{
@@ -44,7 +45,44 @@ fn load_gltf(
     let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
     let document = gltf.document;
 
-    let mut image_map = HashMap::new();
+    let images: HashMap<&str, Arc<Image>> = document
+        .images()
+        .map(|image| match image.source() {
+            gltf::image::Source::View {
+                view: _,
+                mime_type: _,
+            } => todo!(),
+            gltf::image::Source::Uri { uri, mime_type: _ } => uri,
+        })
+        .collect::<Vec<_>>()
+        .par_iter()
+        .map(|&uri| {
+            (
+                uri,
+                image::ImageReader::new(BufReader::new(
+                    File::open(root.join(Path::new(uri))).unwrap(),
+                ))
+                .with_guessed_format()
+                .unwrap()
+                .decode()
+                .unwrap(),
+            )
+        })
+        .collect::<Box<_>>()
+        .into_iter()
+        .map(|(uri, image)| {
+            (
+                uri,
+                Image::from_image(
+                    &gfx.instance,
+                    gfx.device.physical_device,
+                    &gfx.device.device,
+                    cmd_buf,
+                    image,
+                ),
+            )
+        })
+        .collect();
 
     let materials = document
         .materials()
@@ -61,23 +99,7 @@ fn load_gltf(
                     view: _,
                     mime_type: _,
                 } => todo!(),
-                gltf::image::Source::Uri { uri, mime_type: _ } => {
-                    image_map.entry(uri).or_insert_with(|| {
-                        Image::from_image(
-                            &gfx.instance,
-                            gfx.device.physical_device,
-                            &gfx.device.device,
-                            cmd_buf,
-                            image::ImageReader::new(BufReader::new(
-                                File::open(root.join(Path::new(uri))).unwrap(),
-                            ))
-                            .with_guessed_format()
-                            .unwrap()
-                            .decode()
-                            .unwrap(),
-                        )
-                    })
-                }
+                gltf::image::Source::Uri { uri, mime_type: _ } => &images[uri],
             };
 
             let properties = MaterialProperties {

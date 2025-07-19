@@ -103,7 +103,7 @@ pub fn find_memory_type(
     panic!("failed to find suitable memory type");
 }
 
-fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + 'static>(
+fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + Send + 'static>(
     buffer: Arc<Buffer<T>>,
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
@@ -148,7 +148,7 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + 'static>(
     new_buffer
 }
 
-impl<T: Copy + Sync + 'static> Buffer<T> {
+impl<T: Copy + Sync + Send + 'static> Buffer<T> {
     pub fn new_staged<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         device: Arc<ash::Device>,

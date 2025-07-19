@@ -15,7 +15,7 @@ pub struct DescriptorSetLayout {
     device: Arc<ash::Device>,
 }
 
-type Any = dyn std::any::Any + Sync + Send;
+pub type Any = dyn std::any::Any + Sync + Send;
 
 #[derive(Debug)]
 pub struct DescriptorSet {

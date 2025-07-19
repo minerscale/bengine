@@ -6,17 +6,17 @@ use log::debug;
 use crate::renderer::device::Device;
 
 pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {
-    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + 'static>);
+    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + Sync + Send + 'static>);
 }
 
 pub struct OneTimeSubmitCommandBuffer {
     device: Arc<ash::Device>,
     command_buffer: vk::CommandBuffer,
-    dependencies: Vec<Arc<dyn std::any::Any>>,
+    dependencies: Vec<Arc<dyn std::any::Any + Sync + Send>>,
 }
 
 impl ActiveCommandBuffer for OneTimeSubmitCommandBuffer {
-    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any>) {
+    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + Sync + Send>) {
         self.dependencies.push(dependency);
     }
 }
@@ -111,7 +111,7 @@ pub struct ActiveMultipleSubmitCommandBuffer {
 }
 
 impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {
-    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any>) {
+    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + Sync + Send>) {
         self.dependencies.push(dependency);
     }
 }

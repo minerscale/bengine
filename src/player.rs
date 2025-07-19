@@ -99,8 +99,7 @@ impl Player {
                     &physics.rigid_body_set,
                     &physics.collider_set,
                     &Ray::new(
-                        previous_floor_contact.point
-                            + rigid_body.position().translation.vector
+                        previous_floor_contact.point + rigid_body.position().translation.vector
                             - projection_distance * previous_floor_contact.normal,
                         previous_floor_contact.normal,
                     ),
