@@ -38,7 +38,7 @@ impl Clock {
     pub fn update(&mut self) {
         let new_time = std::time::Instant::now();
 
-        self.dt = (new_time - self.previous_time).as_secs_f32();
+        self.dt = FIXED_UPDATE_INTERVAL as f32;
         self.time = (new_time - self.start_time).as_secs_f32();
 
         self.previous_time = new_time;

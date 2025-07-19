@@ -101,15 +101,15 @@ impl Player {
                     &Ray::new(
                         previous_floor_contact.point
                             + rigid_body.position().translation.vector
-                            + projection_distance * previous_floor_contact.normal,
-                        -previous_floor_contact.normal,
+                            - projection_distance * previous_floor_contact.normal,
+                        previous_floor_contact.normal,
                     ),
                     2.0 * projection_distance,
                     true,
                     QueryFilter::new().exclude_rigid_body(self.rigid_body_handle),
                 )
                 .and_then(|floor_raycast| {
-                    let normal = &floor_raycast.1.normal;
+                    let normal = &-floor_raycast.1.normal;
 
                     ((previous_floor_contact.normal.dot(normal) >= 0.75) && (is_floor(normal)))
                         .then(|| {
