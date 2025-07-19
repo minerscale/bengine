@@ -1,4 +1,6 @@
 use std::io::BufRead;
+use std::mem::offset_of;
+use std::ptr::addr_of;
 use std::sync::Arc;
 
 use ash::vk;
@@ -6,10 +8,13 @@ use obj::raw::RawObj;
 use obj::{Obj, load_obj};
 use rapier3d::na;
 use rapier3d::prelude::ColliderShape;
-use ultraviolet::Vec3;
+use ultraviolet::{Isometry3, Vec3};
 
+use crate::renderer::material::MaterialProperties;
+use crate::renderer::pipeline::Pipeline;
 use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer, material::Material};
 
+use crate::shader_pipelines::PushConstants;
 use crate::vertex::Vertex;
 
 #[derive(Debug)]
@@ -29,6 +34,75 @@ impl<'a> IntoIterator for &'a Mesh {
 impl Mesh {
     pub fn new(primitives: Vec<Primitive>) -> Self {
         Self { primitives }
+    }
+
+    pub fn draw(
+        &self,
+        device: &ash::Device,
+        cmd_buf: vk::CommandBuffer,
+        pipeline: &Pipeline,
+        modelview: Isometry3,
+    ) {
+        unsafe {
+            device.cmd_push_constants(
+                cmd_buf,
+                pipeline.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                offset_of!(PushConstants, model_transform)
+                    .try_into()
+                    .unwrap(),
+                std::slice::from_raw_parts(
+                    addr_of!(modelview).cast::<u8>(),
+                    std::mem::size_of::<Isometry3>(),
+                ),
+            );
+
+            for primitive in self {
+                let descriptor_sets = [*primitive.material.descriptor_set];
+
+                device.cmd_push_constants(
+                    cmd_buf,
+                    pipeline.pipeline_layout,
+                    vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                    offset_of!(PushConstants, material_properties)
+                        .try_into()
+                        .unwrap(),
+                    std::slice::from_raw_parts(
+                        addr_of!(primitive.material.properties).cast::<u8>(),
+                        std::mem::size_of::<MaterialProperties>(),
+                    ),
+                );
+
+                device.cmd_bind_descriptor_sets(
+                    cmd_buf,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline.pipeline_layout,
+                    1,
+                    &descriptor_sets,
+                    &[],
+                );
+
+                let vertex_buffers = [primitive.vertex_buffer.buffer];
+                let offsets = [vk::DeviceSize::from(0u64)];
+
+                device.cmd_bind_vertex_buffers(cmd_buf, 0, &vertex_buffers, &offsets);
+                device.cmd_bind_index_buffer(
+                    cmd_buf,
+                    primitive.index_buffer.buffer,
+                    0,
+                    vk::IndexType::UINT32,
+                );
+
+                device.cmd_draw_indexed(
+                    cmd_buf,
+                    primitive.index_buffer.len().try_into().unwrap(),
+                    1,
+                    0,
+                    0,
+                    0,
+                );
+            }
+        }
     }
 }
 
