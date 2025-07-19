@@ -26,7 +26,7 @@ pub struct Inputs {
     pub up: bool,
     pub down: bool,
     pub quit: bool,
-    pub recreate_swapchain: bool,
+    pub framebuffer_resized: bool,
 }
 
 #[derive(Debug)]
@@ -156,8 +156,11 @@ impl EventLoop {
         std::thread::scope(|scope| {
             let (event_tx, event_rx) = std::sync::mpsc::channel();
 
+            let (quit_tx, quit_rx) = std::sync::mpsc::channel::<()>();
+
             let update_thread = scope.spawn(|| {
                 let event_rx = event_rx;
+                let quit_rx = quit_rx;
 
                 let mut target_time = Instant::now();
                 let input = input.clone();
@@ -165,20 +168,23 @@ impl EventLoop {
                 let fixed_update_interval = Duration::from_secs_f64(FIXED_UPDATE_INTERVAL);
 
                 'quit: loop {
-                    update(input.clone());
+                    let mut minput = input.lock().unwrap();
 
-                    let mut input = input.lock().unwrap();
+                    minput.update();
+                    while let Ok(event) = event_rx.try_recv() {
+                        process_event(event, &mut minput);
+                    }
 
-                    if input.quit {
+                    let quit = minput.quit;
+
+                    drop(minput);
+
+                    if quit {
+                        quit_rx.recv().unwrap();
                         break 'quit;
                     }
 
-                    input.update();
-                    while let Ok(event) = event_rx.try_recv() {
-                        process_event(event, &mut input);
-                    }
-
-                    drop(input);
+                    update(input.clone());
 
                     target_time += fixed_update_interval;
 
@@ -201,18 +207,21 @@ impl EventLoop {
                             window_id: _,
                             win_event: sdl3::event::WindowEvent::PixelSizeChanged(_, _),
                         } => {
-                            input.recreate_swapchain = true;
+                            input.framebuffer_resized = true;
                         }
                         _ => event_tx.send(event).unwrap(),
                     }
                 }
 
-                if input.quit {
+                let quit = input.quit;
+                drop(input);
+
+                if quit {
+                    quit_tx.send(()).unwrap();
+                    update_thread.join().unwrap();
                     break 'quit;
                 }
             }
-
-            update_thread.join().unwrap();
         });
     }
 }

@@ -47,7 +47,23 @@ pub const FOV: f32 = 100.0;
 fn main() {
     env_logger::init();
 
-    let mut gfx = Renderer::new(WIDTH, HEIGHT, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
+    let sdl_context = sdl3::init().unwrap();
+
+    let window = {
+        sdl_context
+            .video()
+            .unwrap()
+            .window("bengine", WIDTH, HEIGHT)
+            .vulkan()
+            .position_centered()
+            .resizable()
+            .build()
+            .unwrap()
+    };
+
+    sdl_context.mouse().set_relative_mouse_mode(&window, true);
+
+    let mut gfx = Renderer::new(WIDTH, HEIGHT, &window, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
     let skybox = Skybox::new(&gfx);
     let physics = Arc::new(Mutex::new(Physics::new()));
     let game_tree = create_scene(&gfx, &mut physics.lock().unwrap());
@@ -75,7 +91,7 @@ fn main() {
 
     let render_lock = Arc::new(Mutex::new(()));
 
-    let mut event_loop = EventLoop::new(gfx.sdl_context.event_pump().unwrap());
+    let mut event_loop = EventLoop::new(sdl_context.event_pump().unwrap());
 
     info!("finished loading");
 
@@ -83,9 +99,18 @@ fn main() {
         |input| {
             let extent = gfx.swapchain.images[0].extent;
 
-            let recreate_swapchain = input.lock().unwrap().recreate_swapchain;
+            let mut minput = input.lock().unwrap();
 
-            let recreate_swapchain = gfx.draw(
+            let framebuffer_resized = minput.framebuffer_resized;
+            minput.framebuffer_resized = false;
+
+            drop(minput);
+
+            gfx.update_window_size(&window);
+
+            gfx.acquire_next_image(framebuffer_resized);
+
+            gfx.draw(
                 |device, render_pass, command_buffer, uniform_buffer, image| {
                     let _render_lock = render_lock.lock().unwrap();
 
@@ -140,10 +165,9 @@ fn main() {
                         ubo,
                     )
                 },
-                recreate_swapchain,
             );
 
-            input.lock().unwrap().recreate_swapchain = recreate_swapchain;
+            gfx.present();
         },
         |input| {
             let _render_lock = render_lock.lock().unwrap();

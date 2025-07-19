@@ -20,6 +20,27 @@ pub struct Device {
     pub present_queue: vk::Queue,
 }
 
+macro_rules! feature_subset {
+    ($requested_features:expr, $capabilities:expr, $t:ty, $first:ident, $last:ident) => {{
+        // safety: vk::PhysicalDeviceFeatures and co are a repr(C) struct containing only VkBool32s,
+        //         effectively making it an array and we can cast it accordingly.
+        let features_to_slice = |features: &$t| {
+            slice_from_raw_parts(
+                &raw const features.$first,
+                ((offset_of!($t, $last) - offset_of!($t, $first)) / size_of::<vk::Bool32>()) + 1,
+            )
+            .as_ref()
+            .unwrap()
+        };
+
+        !zip(
+            features_to_slice($requested_features),
+            features_to_slice($capabilities),
+        )
+        .any(|(&requested, &capability)| requested != 0 && capability == 0)
+    }};
+}
+
 #[allow(clippy::too_many_arguments)]
 fn pick_physical_device(
     instance: &ash::Instance,
@@ -30,108 +51,6 @@ fn pick_physical_device(
     requested_features12: &vk::PhysicalDeviceVulkan12Features,
     requested_features13: &vk::PhysicalDeviceVulkan13Features,
 ) -> Option<(vk::PhysicalDevice, (u32, u32), vk::SampleCountFlags)> {
-    fn feature_subset(
-        requested_features: &vk::PhysicalDeviceFeatures,
-        capabilities: &vk::PhysicalDeviceFeatures,
-    ) -> bool {
-        let features_len = size_of::<vk::PhysicalDeviceFeatures>() / size_of::<vk::Bool32>();
-
-        // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
-        //         effectively making it an array and we can cast it accordingly.
-        let features_to_slice = |features: &vk::PhysicalDeviceFeatures| unsafe {
-            slice_from_raw_parts(&raw const features.robust_buffer_access, features_len)
-                .as_ref()
-                .unwrap()
-        };
-
-        !zip(
-            features_to_slice(requested_features),
-            features_to_slice(capabilities),
-        )
-        .any(|(&requested, &capability)| requested != 0 && capability == 0)
-    }
-
-    fn feature_subset11(
-        requested_features: &vk::PhysicalDeviceVulkan11Features,
-        capabilities: &vk::PhysicalDeviceVulkan11Features,
-    ) -> bool {
-        let features_len = (size_of::<vk::PhysicalDeviceVulkan11Features>()
-            - offset_of!(
-                vk::PhysicalDeviceVulkan11Features,
-                storage_buffer16_bit_access
-            ))
-            / size_of::<vk::Bool32>();
-
-        // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
-        //         effectively making it an array and we can cast it accordingly.
-        let features_to_slice = |features: &vk::PhysicalDeviceVulkan11Features| unsafe {
-            slice_from_raw_parts(
-                &raw const features.storage_buffer16_bit_access,
-                features_len,
-            )
-            .as_ref()
-            .unwrap()
-        };
-
-        !zip(
-            features_to_slice(requested_features),
-            features_to_slice(capabilities),
-        )
-        .any(|(&requested, &capability)| requested != 0 && capability == 0)
-    }
-
-    fn feature_subset12(
-        requested_features: &vk::PhysicalDeviceVulkan12Features,
-        capabilities: &vk::PhysicalDeviceVulkan12Features,
-    ) -> bool {
-        let features_len = (size_of::<vk::PhysicalDeviceVulkan12Features>()
-            - offset_of!(
-                vk::PhysicalDeviceVulkan12Features,
-                sampler_mirror_clamp_to_edge
-            ))
-            / size_of::<vk::Bool32>();
-
-        // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
-        //         effectively making it an array and we can cast it accordingly.
-        let features_to_slice = |features: &vk::PhysicalDeviceVulkan12Features| unsafe {
-            slice_from_raw_parts(
-                &raw const features.sampler_mirror_clamp_to_edge,
-                features_len,
-            )
-            .as_ref()
-            .unwrap()
-        };
-
-        !zip(
-            features_to_slice(requested_features),
-            features_to_slice(capabilities),
-        )
-        .any(|(&requested, &capability)| requested != 0 && capability == 0)
-    }
-
-    fn feature_subset13(
-        requested_features: &vk::PhysicalDeviceVulkan13Features,
-        capabilities: &vk::PhysicalDeviceVulkan13Features,
-    ) -> bool {
-        let features_len = (size_of::<vk::PhysicalDeviceVulkan13Features>()
-            - offset_of!(vk::PhysicalDeviceVulkan13Features, robust_image_access))
-            / size_of::<vk::Bool32>();
-
-        // safety: vk::PhysicalDeviceFeatures is a repr(C) struct containing only VkBool32s,
-        //         effectively making it an array and we can cast it accordingly.
-        let features_to_slice = |features: &vk::PhysicalDeviceVulkan13Features| unsafe {
-            slice_from_raw_parts(&raw const features.robust_image_access, features_len)
-                .as_ref()
-                .unwrap()
-        };
-
-        !zip(
-            features_to_slice(requested_features),
-            features_to_slice(capabilities),
-        )
-        .any(|(&requested, &capability)| requested != 0 && capability == 0)
-    }
-
     physical_devices.iter().find_map(|physical_device| unsafe {
         let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
@@ -157,13 +76,36 @@ fn pick_physical_device(
 
         instance.get_physical_device_features2(*physical_device, &mut features);
 
-        if !feature_subset(requested_features, &features.features)
-            || ((TARGET_API_VERSION >= vk::API_VERSION_1_1)
-                && !feature_subset11(requested_features11, &features11))
+        if !feature_subset!(
+            requested_features,
+            &features.features,
+            vk::PhysicalDeviceFeatures,
+            robust_buffer_access,
+            inherited_queries
+        ) || ((TARGET_API_VERSION >= vk::API_VERSION_1_1)
+            && !feature_subset!(
+                requested_features11,
+                &features11,
+                vk::PhysicalDeviceVulkan11Features,
+                storage_buffer16_bit_access,
+                shader_draw_parameters
+            ))
             || ((TARGET_API_VERSION >= vk::API_VERSION_1_2)
-                && !feature_subset12(requested_features12, &features12))
+                && !feature_subset!(
+                    requested_features12,
+                    &features12,
+                    vk::PhysicalDeviceVulkan12Features,
+                    sampler_mirror_clamp_to_edge,
+                    subgroup_broadcast_dynamic_id
+                ))
             || ((TARGET_API_VERSION >= vk::API_VERSION_1_3)
-                && !feature_subset13(requested_features13, &features13))
+                && !feature_subset!(
+                    requested_features13,
+                    &features13,
+                    vk::PhysicalDeviceVulkan13Features,
+                    robust_image_access,
+                    maintenance4
+                ))
         {
             return None;
         }

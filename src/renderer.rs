@@ -57,11 +57,21 @@ pub type PipelineFunction = for<'a, 'b> fn(
 
 pub type DescriptorSetLayoutFunction = fn(Arc<ash::Device>) -> DescriptorSetLayout;
 
+enum ImageIndex {
+    Acquiring,
+    Recording(u32),
+    Presenting(u32),
+}
+
 pub struct Renderer {
     // WARNING: Cleanup order matters here
     image_avaliable_semaphores: Box<[Semaphore]>,
     render_finished_semaphores: Box<[Semaphore]>,
     in_flight_fences: Box<[Fence]>,
+
+    image_index: ImageIndex,
+    recreate_swapchain: bool,
+    window_size: (u32, u32),
 
     pub descriptor_set_layouts: Box<[DescriptorSetLayout]>,
 
@@ -87,9 +97,6 @@ pub struct Renderer {
     #[allow(dead_code)]
     entry: ash::Entry,
 
-    pub window: sdl3::video::Window,
-    pub sdl_context: sdl3::Sdl,
-
     current_frame: usize,
 }
 
@@ -100,6 +107,87 @@ fn get_descriptor_set_layouts(layouts: &[DescriptorSetLayout]) -> Box<[vk::Descr
 impl Renderer {
     pub fn wait_idle(&self) {
         unsafe { self.device.device_wait_idle().unwrap() };
+    }
+
+    pub fn update_window_size(&mut self, window: &sdl3::video::Window) {
+        match window.size_in_pixels() {
+            (x, y) if x > 1 && y > 1 => self.window_size = window.size_in_pixels(),
+            _ => (),
+        }
+    }
+
+    pub fn acquire_next_image(&mut self, mut framebuffer_resized: bool) {
+        assert!(matches!(self.image_index, ImageIndex::Acquiring));
+
+        let fences = &[*self.in_flight_fences[self.current_frame]];
+
+        (self.image_index, self.recreate_swapchain) = loop {
+            unsafe {
+                self.device.wait_for_fences(fences, true, u64::MAX).unwrap();
+            }
+            match (
+                unsafe {
+                    self.swapchain.loader.acquire_next_image(
+                        *self.swapchain,
+                        u64::MAX,
+                        *self.image_avaliable_semaphores[self.current_frame],
+                        vk::Fence::null(),
+                    )
+                },
+                framebuffer_resized,
+            ) {
+                (Ok((image_index, true)), _) | (Ok((image_index, false)), true) => {
+                    break (ImageIndex::Recording(image_index), true);
+                }
+                (Ok((image_index, false)), false) => {
+                    break (ImageIndex::Recording(image_index), false);
+                }
+                (Err(vk::Result::ERROR_OUT_OF_DATE_KHR), _) => {
+                    self.recreate_swapchain();
+                    framebuffer_resized = false;
+                }
+                (Err(_), _) => {
+                    panic!("failed to acquire swapchain image")
+                }
+            };
+        };
+
+        unsafe {
+            self.device.reset_fences(fences).unwrap();
+        }
+    }
+
+    pub fn present(&mut self) {
+        let image_index;
+        (image_index, self.image_index) = match self.image_index {
+            ImageIndex::Presenting(idx) => (idx, ImageIndex::Acquiring),
+            _ => panic!("must draw image before presentation"),
+        };
+
+        let swapchains = [*self.swapchain];
+        let indices: [u32; 1] = [image_index];
+
+        let wait_semaphore = [*self.render_finished_semaphores[image_index as usize]];
+        let present_info = vk::PresentInfoKHR::default()
+            .wait_semaphores(&wait_semaphore)
+            .swapchains(&swapchains)
+            .image_indices(&indices);
+
+        match unsafe {
+            self.swapchain
+                .loader
+                .queue_present(self.device.present_queue, &present_info)
+        } {
+            Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                self.recreate_swapchain = true;
+            }
+            Err(e) => panic!("{}", e),
+            _ => (),
+        }
+
+        if self.recreate_swapchain {
+            self.recreate_swapchain();
+        }
     }
 
     pub fn draw<
@@ -113,98 +201,43 @@ impl Renderer {
     >(
         &mut self,
         mut record_command_buffer: F,
-        framebuffer_resized: bool,
-    ) -> bool {
-        unsafe {
-            let fences = &[*self.in_flight_fences[self.current_frame]];
-            self.device.wait_for_fences(fences, true, u64::MAX).unwrap();
+    ) {
+        let image_index;
+        (image_index, self.image_index) = match self.image_index {
+            ImageIndex::Recording(idx) => (idx, ImageIndex::Presenting(idx)),
+            _ => panic!("must acquire image before draw"),
+        };
 
-            let (image_index, mut recreate_swapchain) = match (
-                self.swapchain.loader.acquire_next_image(
-                    *self.swapchain,
-                    u64::MAX,
-                    *self.image_avaliable_semaphores[self.current_frame],
-                    vk::Fence::null(),
-                ),
-                framebuffer_resized,
-            ) {
-                (Ok((image_index, true)), _) | (Ok((image_index, false)), true) => {
-                    (image_index, true)
-                }
-                (Ok((image_index, false)), false) => (image_index, false),
-                (Err(vk::Result::ERROR_OUT_OF_DATE_KHR), _) => {
-                    self.recreate_swapchain();
-                    return false;
-                }
-                (Err(_), _) => {
-                    panic!("failed to acquire swapchain image")
-                }
-            };
-
-            self.device.reset_fences(fences).unwrap();
-
-            replace_with::replace_with_or_abort(
-                self.command_buffers.get_mut(self.current_frame).unwrap(),
-                |command_buffer| {
-                    command_buffer
-                        .begin()
-                        .record(|command_buffer| {
-                            record_command_buffer(
-                                &self.device,
-                                &self.swapchain.render_pass,
-                                command_buffer,
-                                &mut self.uniform_buffers[self.current_frame],
-                                &self.swapchain.images[image_index as usize],
-                            )
-                        })
-                        .end()
-                        .submit(
-                            self.device.graphics_queue,
-                            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                            *self.image_avaliable_semaphores[self.current_frame],
-                            *self.render_finished_semaphores[image_index as usize],
-                            *self.in_flight_fences[self.current_frame],
+        replace_with::replace_with_or_abort(
+            self.command_buffers.get_mut(self.current_frame).unwrap(),
+            |command_buffer| {
+                command_buffer
+                    .begin()
+                    .record(|command_buffer| {
+                        record_command_buffer(
+                            &self.device,
+                            &self.swapchain.render_pass,
+                            command_buffer,
+                            &mut self.uniform_buffers[self.current_frame],
+                            &self.swapchain.images[image_index as usize],
                         )
-                },
-            );
-
-            let swapchains = [*self.swapchain];
-            let indices: [u32; 1] = [image_index];
-
-            let wait_semaphore = [*self.render_finished_semaphores[image_index as usize]];
-            let present_info = vk::PresentInfoKHR::default()
-                .wait_semaphores(&wait_semaphore)
-                .swapchains(&swapchains)
-                .image_indices(&indices);
-
-            match self
-                .swapchain
-                .loader
-                .queue_present(self.device.present_queue, &present_info)
-            {
-                Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    recreate_swapchain = true;
-                }
-                Err(e) => panic!("{}", e),
-                _ => (),
-            }
-
-            if recreate_swapchain {
-                self.recreate_swapchain();
-            }
-        }
+                    })
+                    .end()
+                    .submit(
+                        self.device.graphics_queue,
+                        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                        *self.image_avaliable_semaphores[self.current_frame],
+                        *self.render_finished_semaphores[image_index as usize],
+                        *self.in_flight_fences[self.current_frame],
+                    )
+            },
+        );
 
         self.current_frame = (self.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-
-        false
     }
 
     pub fn recreate_swapchain(&mut self) {
-        let extent = if cfg!(target_os = "macos") {
-            (WIDTH, HEIGHT)
-        } else {
-            self.window.size_in_pixels()
-        };
+        let extent = self.window_size;
 
         let extent = vk::Extent2D {
             width: extent.0,
@@ -232,26 +265,11 @@ impl Renderer {
     pub fn new(
         width: u32,
         height: u32,
+        window: &sdl3::video::Window,
         descriptor_set_layouts: &[DescriptorSetLayoutFunction],
         pipelines: &'static [PipelineFunction],
     ) -> Self {
         let entry = ash::Entry::linked();
-
-        let sdl_context = sdl3::init().unwrap();
-
-        let window = {
-            sdl_context
-                .video()
-                .unwrap()
-                .window("bengine", width, height)
-                .vulkan()
-                .position_centered()
-                .resizable()
-                .build()
-                .unwrap()
-        };
-
-        sdl_context.mouse().set_relative_mouse_mode(&window, true);
 
         let instance = Instance::new(&entry, &window);
 
@@ -331,10 +349,18 @@ impl Renderer {
             swapchain.images.len(),
         );
 
+        let image_index = ImageIndex::Acquiring;
+        let recreate_swapchain = false;
+
+        let window_size = (width, height);
+
         Self {
             image_avaliable_semaphores,
             render_finished_semaphores,
             in_flight_fences,
+            image_index,
+            recreate_swapchain,
+            window_size,
             descriptor_pool,
             descriptor_set_layouts,
             uniform_buffers,
@@ -346,8 +372,6 @@ impl Renderer {
             surface,
             debug_callback,
             instance,
-            sdl_context,
-            window,
             entry,
             current_frame: 0,
         }
