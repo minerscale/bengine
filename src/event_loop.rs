@@ -26,7 +26,7 @@ pub struct Inputs {
     pub up: bool,
     pub down: bool,
     pub quit: bool,
-    pub framebuffer_resized: bool,
+    pub framebuffer_resized: Option<(u32, u32)>,
 }
 
 #[derive(Debug)]
@@ -131,6 +131,14 @@ fn process_event(event: Event, input: &mut Input) {
                 rotation
             };
         }
+        Event::Quit { timestamp: _ } => input.quit = true,
+        Event::Window {
+            timestamp: _,
+            window_id: _,
+            win_event: sdl3::event::WindowEvent::PixelSizeChanged(x, y),
+        } => {
+            input.framebuffer_resized = Some((x.try_into().unwrap(), y.try_into().unwrap()));
+        }
 
         _ => (),
     }
@@ -141,7 +149,7 @@ impl EventLoop {
         Self { pump }
     }
 
-    pub fn run<F: FnMut(Arc<Mutex<Input>>), G: FnMut(Arc<Mutex<Input>>) + Send>(
+    pub fn run<F: FnMut(Arc<Mutex<Input>>) + Send, G: FnMut(Arc<Mutex<Input>>)>(
         &mut self,
         mut render: F,
         mut update: G,
@@ -154,72 +162,48 @@ impl EventLoop {
         ))));
 
         std::thread::scope(|scope| {
-            let (event_tx, event_rx) = std::sync::mpsc::channel();
-
             let (quit_tx, quit_rx) = std::sync::mpsc::channel::<()>();
 
             let update_thread = scope.spawn(|| {
-                let event_rx = event_rx;
                 let quit_rx = quit_rx;
 
-                let mut target_time = Instant::now();
                 let input = input.clone();
 
-                let fixed_update_interval = Duration::from_secs_f64(FIXED_UPDATE_INTERVAL);
-
                 'quit: loop {
-                    let mut minput = input.lock().unwrap();
+                    render(input.clone());
 
-                    minput.update();
-                    while let Ok(event) = event_rx.try_recv() {
-                        process_event(event, &mut minput);
-                    }
-
-                    let quit = minput.quit;
-
-                    drop(minput);
-
+                    let quit = input.lock().unwrap().quit;
                     if quit {
                         quit_rx.recv().unwrap();
                         break 'quit;
                     }
-
-                    update(input.clone());
-
-                    target_time += fixed_update_interval;
-
-                    let sleep_time = target_time.duration_since(Instant::now());
-                    if sleep_time > Duration::ZERO {
-                        std::thread::sleep(sleep_time);
-                    }
                 }
             });
 
+            let mut target_time = Instant::now();
+            let fixed_update_interval = Duration::from_secs_f64(FIXED_UPDATE_INTERVAL);
             'quit: loop {
-                render(input.clone());
+                let mut minput = input.lock().unwrap();
 
-                let mut input = input.lock().unwrap();
+                minput.update();
                 while let Some(event) = self.pump.poll_event() {
-                    match event {
-                        Event::Quit { timestamp: _ } => input.quit = true,
-                        Event::Window {
-                            timestamp: _,
-                            window_id: _,
-                            win_event: sdl3::event::WindowEvent::PixelSizeChanged(_, _),
-                        } => {
-                            input.framebuffer_resized = true;
-                        }
-                        _ => event_tx.send(event).unwrap(),
-                    }
+                    process_event(event, &mut minput);
                 }
+                let quit = minput.quit;
+                drop(minput);
 
-                let quit = input.quit;
-                drop(input);
+                update(input.clone());
 
                 if quit {
                     quit_tx.send(()).unwrap();
                     update_thread.join().unwrap();
                     break 'quit;
+                }
+
+                target_time += fixed_update_interval;
+                let sleep_time = target_time.duration_since(Instant::now());
+                if sleep_time > Duration::ZERO {
+                    std::thread::sleep(sleep_time);
                 }
             }
         });

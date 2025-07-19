@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-pub const FIXED_UPDATE_INTERVAL: f64 = 1.0 / 20.0;
+pub const FIXED_UPDATE_INTERVAL: f64 = 1.0 / 120.0;
 
 #[derive(Debug, Clone)]
 pub struct Clock {

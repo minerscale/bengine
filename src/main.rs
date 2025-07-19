@@ -101,12 +101,16 @@ fn main() {
 
             let mut minput = input.lock().unwrap();
 
-            let framebuffer_resized = minput.framebuffer_resized;
-            minput.framebuffer_resized = false;
+            let framebuffer_resized  = if let Some(framebuffer_size) = minput.framebuffer_resized {
+                gfx.window_size = framebuffer_size;
+                true
+            } else {
+                false
+            };
+
+            minput.framebuffer_resized = None;
 
             drop(minput);
-
-            gfx.update_window_size(&window);
 
             gfx.acquire_next_image(framebuffer_resized);
 

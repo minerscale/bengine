@@ -71,7 +71,7 @@ pub struct Renderer {
 
     image_index: ImageIndex,
     recreate_swapchain: bool,
-    window_size: (u32, u32),
+    pub window_size: (u32, u32),
 
     pub descriptor_set_layouts: Box<[DescriptorSetLayout]>,
 
@@ -107,13 +107,6 @@ fn get_descriptor_set_layouts(layouts: &[DescriptorSetLayout]) -> Box<[vk::Descr
 impl Renderer {
     pub fn wait_idle(&self) {
         unsafe { self.device.device_wait_idle().unwrap() };
-    }
-
-    pub fn update_window_size(&mut self, window: &sdl3::video::Window) {
-        match window.size_in_pixels() {
-            (x, y) if x > 1 && y > 1 => self.window_size = window.size_in_pixels(),
-            _ => (),
-        }
     }
 
     pub fn acquire_next_image(&mut self, mut framebuffer_resized: bool) {
