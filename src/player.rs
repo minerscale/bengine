@@ -8,7 +8,7 @@ use rapier3d::{
 };
 use ultraviolet::{Rotor3, Vec3};
 
-use crate::{event_loop::Input, physics::Physics};
+use crate::{event_loop::Input, physics::{from_nalgebra, Physics}};
 
 const HALF_HEIGHT: f32 = 0.9;
 const RADIUS: f32 = 0.2;
@@ -28,6 +28,8 @@ const MAX_SLOPE: f32 = 0.2;
 
 #[derive(Debug)]
 pub struct Player {
+    pub position: Vec3,
+    pub previous_position: Vec3,
     pub collider_handle: ColliderHandle,
     pub rigid_body_handle: RigidBodyHandle,
     previous_floor_contact: Option<FloorContact>,
@@ -56,7 +58,11 @@ impl Player {
             &mut physics.rigid_body_set,
         );
 
+        let position = from_nalgebra(physics.rigid_body_set[rigid_body_handle].position()).translation;
+
         Self {
+            position,
+            previous_position: position,
             collider_handle,
             rigid_body_handle,
             previous_floor_contact: None,

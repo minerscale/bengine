@@ -18,9 +18,8 @@ use ultraviolet::Vec3;
 
 use crate::{
     mesh::{Mesh, Primitive, collider_from_obj},
-    node::{GameTree, Node},
+    node::Node,
     physics::Physics,
-    player::Player,
     renderer::{
         Renderer,
         command_buffer::OneTimeSubmitCommandBuffer,
@@ -174,7 +173,7 @@ fn scene(
     gfx: &Renderer,
     cmd_buf: &mut OneTimeSubmitCommandBuffer,
     physics: &mut Physics,
-) -> GameTree {
+) -> Vec<Node> {
     macro_rules! image {
         ($filename:literal) => {
             Image::from_bytes(
@@ -239,63 +238,57 @@ fn scene(
 
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
 
-    let root_node = Node::empty()
-        .child(Node::empty().player(Player::new(physics)))
-        .child(
-            Node::empty()
-                .mesh(mesh!(
-                    "../test-objects/icosehedron.obj",
-                    middle_grey.clone(),
-                    None
-                ))
-                .rigid_body(
-                    physics,
-                    ColliderBuilder::new(collider_from_obj(
-                        raw_obj!("../test-objects/icosehedron.obj"),
-                        None,
-                        None,
-                    )),
-                    RigidBodyBuilder::dynamic()
-                        .translation(vector![3.0, 10.0, 0.0])
-                        .rotation(AngVector::new(0.5, 1.2, 3.1)),
-                ),
-        )
-        .child(
-            Node::empty()
-                .mesh(mesh!(
-                    "../test-objects/cube.obj",
-                    middle_grey,
-                    Some(cube_2_scale)
-                ))
-                .rigid_body(
-                    physics,
-                    ColliderBuilder::new(collider_from_obj(
-                        raw_obj!("../test-objects/cube.obj"),
-                        Some(cube_2_scale),
-                        None,
-                    )),
-                    RigidBodyBuilder::dynamic().translation(vector![0.0, 5.0, 0.0]),
-                ),
-        )
-        .child(
-            Node::empty()
-                .mesh(mesh!("../test-objects/ground-plane.obj", grid, None))
-                .collider(
-                    physics,
-                    ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),
-                ),
-        )
-        .child(load_gltf(
+    let scene = vec![
+        Node::empty()
+            .mesh(mesh!(
+                "../test-objects/icosehedron.obj",
+                middle_grey.clone(),
+                None
+            ))
+            .rigid_body(
+                physics,
+                ColliderBuilder::new(collider_from_obj(
+                    raw_obj!("../test-objects/icosehedron.obj"),
+                    None,
+                    None,
+                )),
+                RigidBodyBuilder::dynamic()
+                    .translation(vector![3.0, 10.0, 0.0])
+                    .rotation(AngVector::new(0.5, 1.2, 3.1)),
+            ),
+        Node::empty()
+            .mesh(mesh!(
+                "../test-objects/cube.obj",
+                middle_grey,
+                Some(cube_2_scale)
+            ))
+            .rigid_body(
+                physics,
+                ColliderBuilder::new(collider_from_obj(
+                    raw_obj!("../test-objects/cube.obj"),
+                    Some(cube_2_scale),
+                    None,
+                )),
+                RigidBodyBuilder::dynamic().translation(vector![0.0, 5.0, 0.0]),
+            ),
+        Node::empty()
+            .mesh(mesh!("../test-objects/ground-plane.obj", grid, None))
+            .collider(
+                physics,
+                ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),
+            ),
+        load_gltf(
             gfx,
             cmd_buf,
             "glTF-Sample-Assets/Models/Sponza/glTF/Sponza.gltf",
             0.025,
-        ));
+        ),
+    ];
 
-    GameTree::new(root_node)
+    scene
 }
 
-pub fn create_scene(gfx: &Renderer, physics: &mut Physics) -> GameTree {
+pub fn create_scene(gfx: &Renderer, physics: &mut Physics) -> Vec<Node> {
     gfx.command_pool
         .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
             scene(gfx, cmd_buf, physics)

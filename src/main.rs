@@ -20,6 +20,7 @@ mod shader_pipelines;
 mod skybox;
 mod vertex;
 
+use player::Player;
 use tracing_mutex::stdsync::Mutex;
 
 use std::{mem::offset_of, ptr::addr_of, sync::Arc};
@@ -27,7 +28,7 @@ use std::{mem::offset_of, ptr::addr_of, sync::Arc};
 use audio::{Audio, AudioParameters};
 use clock::{Clock, FIXED_UPDATE_INTERVAL};
 use event_loop::EventLoop;
-use node::{GameTree, Object};
+use node::{Node, Object};
 use physics::{Physics, from_nalgebra};
 use renderer::{
     HEIGHT, Renderer, UniformBufferObject, WIDTH, buffer::MappedBuffer,
@@ -65,25 +66,11 @@ fn main() {
 
     let mut gfx = Renderer::new(WIDTH, HEIGHT, &window, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
     let skybox = Skybox::new(&gfx);
-    let physics = Arc::new(Mutex::new(Physics::new()));
-    let game_tree = create_scene(&gfx, &mut physics.lock().unwrap());
+    let mut physics = Physics::new();
+    let player = Arc::new(Mutex::new(Player::new(&mut physics)));
+    let physics = Arc::new(Mutex::new(physics));
 
-    let player = game_tree
-        .root_node
-        .lock()
-        .unwrap()
-        .children
-        .iter()
-        .find(|node| {
-            node.lock()
-                .unwrap()
-                .objects
-                .iter()
-                .find(|object| matches!(object, Object::Player(_)))
-                .is_some()
-        })
-        .unwrap()
-        .clone();
+    let scene = Arc::new(Mutex::new(create_scene(&gfx, &mut physics.lock().unwrap())));
 
     let clock = Arc::new(Mutex::new(Clock::new()));
     let update_clock = clock.clone();
@@ -123,15 +110,9 @@ fn main() {
                         ((std::time::Instant::now() - clock.previous_time).as_secs_f64()
                             / FIXED_UPDATE_INTERVAL) as f32;
 
-                    let player_transform = {
-                        let player = player.lock().unwrap();
-
-                        interpolate_isometry(
-                            player.previous_transform(),
-                            player.transform(),
-                            interpolation_factor,
-                        )
-                    };
+                    let player = player.lock().unwrap();
+                    let player_transform = player.previous_position.lerp(player.position, interpolation_factor);
+                    drop(player);
 
                     let minput = input.lock().unwrap();
                     let camera_rotation = get_camera_rotor(
@@ -143,7 +124,7 @@ fn main() {
                     drop(minput);
 
                     let camera_transform = Isometry3::new(
-                        player_transform.translation + Vec3::new(0.0, 0.8, 0.0),
+                        player_transform + Vec3::new(0.0, 0.8, 0.0),
                         camera_rotation.reversed(),
                     );
 
@@ -165,7 +146,7 @@ fn main() {
                         interpolation_factor,
                         &skybox,
                         image,
-                        &game_tree,
+                        &scene.lock().unwrap(),
                         ubo,
                     )
                 },
@@ -182,30 +163,14 @@ fn main() {
             drop(clock);
 
             let mut physics = physics.lock().unwrap();
+            //let mut player = player.lock().unwrap();
+
             let mut player = player.lock().unwrap();
-
-            macro_rules! get_player {
-                ($player:expr) => {
-                    $player
-                        .objects
-                        .iter_mut()
-                        .find_map(|obj| {
-                            if let Object::Player(player) = obj {
-                                Some(player)
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap()
-                };
-            }
-
-            let player_object = get_player!(player);
-            let player_rigid_body_handle = player_object.rigid_body_handle;
+            let player_rigid_body_handle = player.rigid_body_handle;
 
             let input = input.lock().unwrap();
 
-            player_object.update(
+            player.update(
                 &mut physics,
                 &input,
                 get_camera_rotor(input.camera_rotation),
@@ -216,10 +181,10 @@ fn main() {
                 from_nalgebra(physics.rigid_body_set[player_rigid_body_handle].position());
 
             drop(input);
+
+            physics.step(&mut scene.lock().unwrap(), &mut player, dt);
+
             drop(player);
-
-            physics.step(game_tree.clone(), dt);
-
             drop(physics);
 
             let gems_and_jewel_location = Vec2::new(8.0, 8.0);
@@ -254,7 +219,7 @@ fn record_command_buffer(
     interpolation_factor: f32,
     skybox: &Skybox,
     image: &SwapchainImage,
-    game_tree: &GameTree,
+    scene: &[Node],
     ubo: UniformBufferObject,
 ) -> ActiveMultipleSubmitCommandBuffer {
     let clear_color = [
@@ -310,9 +275,9 @@ fn record_command_buffer(
             &[],
         );
 
-        for (previous_transform, transform, node) in game_tree.breadth_first() {
+        for node in scene {
             let transform =
-                interpolate_isometry(previous_transform, transform, interpolation_factor);
+                interpolate_isometry(node.previous_transform, node.transform, interpolation_factor);
 
             let modelview_transform = Isometry3 {
                 translation: (transform.translation - ubo.view_transform.translation)
@@ -333,7 +298,7 @@ fn record_command_buffer(
                 ),
             );
 
-            for object in &node.lock().unwrap().objects {
+            for object in &node.objects {
                 if let Object::Mesh(mesh) = object {
                     let mesh = mesh.as_ref();
 

@@ -9,7 +9,7 @@ use rapier3d::{
 };
 use ultraviolet::{Isometry3, Rotor3, Vec3};
 
-use crate::node::{GameTree, Object};
+use crate::{node::{Node, Object}, player::Player};
 
 pub struct Physics {
     pub gravity: Vector<Real>,
@@ -54,7 +54,7 @@ impl Physics {
         }
     }
 
-    pub fn step(&mut self, game_tree: GameTree, dt: f32) {
+    pub fn step(&mut self, scene: &mut [Node], player: &mut Player, dt: f32) {
         self.integration_parameters.set_inv_dt(1.0 / dt);
 
         self.physics_pipeline.step(
@@ -73,17 +73,12 @@ impl Physics {
             &self.event_handler,
         );
 
-        for (_previous_transform, _transform, node) in game_tree.breadth_first() {
-            let mut node = node.lock().unwrap();
-
+        for node in scene.iter_mut() {
             let transform = node.objects.iter().find_map(|o| match o {
                 Object::RigidBody((_, rigid_body_handle)) => Some(from_nalgebra(
                     self.rigid_body_set[*rigid_body_handle].position(),
                 )),
 
-                Object::Player(player) => Some(from_nalgebra(
-                    self.rigid_body_set[player.rigid_body_handle].position(),
-                )),
                 _ => None,
             });
 
@@ -91,6 +86,9 @@ impl Physics {
                 node.set_transform(transform);
             }
         }
+
+        player.previous_position = player.position;
+        player.position = from_nalgebra(self.rigid_body_set[player.rigid_body_handle].position()).translation;
     }
 }
 
