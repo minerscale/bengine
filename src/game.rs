@@ -39,9 +39,9 @@ impl Game {
         let mut physics = Physics::new();
         let player = Player::new(&mut physics);
         let audio = Audio::new();
-        let scene = create_scene(&gfx, &mut physics);
+        let scene = create_scene(gfx, &mut physics);
         let clock = Clock::new();
-        let skybox = Skybox::new(&gfx);
+        let skybox = Skybox::new(gfx);
 
         Self {
             player,

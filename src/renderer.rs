@@ -264,7 +264,7 @@ impl Renderer {
     ) -> Self {
         let entry = ash::Entry::linked();
 
-        let instance = Instance::new(&entry, &window);
+        let instance = Instance::new(&entry, window);
 
         let debug_callback = if ENABLE_VALIDATION_LAYERS {
             Some(DebugMessenger::new(&entry, &instance))
@@ -272,7 +272,7 @@ impl Renderer {
             None
         };
 
-        let surface = Surface::new(&entry, &window, &instance);
+        let surface = Surface::new(&entry, window, &instance);
 
         let device = Device::new(&instance, &surface);
 

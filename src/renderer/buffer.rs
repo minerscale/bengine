@@ -8,9 +8,59 @@ use crate::renderer::{
     descriptors::{DescriptorPool, DescriptorSet, DescriptorSetLayout},
 };
 
+pub struct DeviceMemory {
+    memory: vk::DeviceMemory,
+    device: Arc<ash::Device>,
+}
+
+impl std::fmt::Debug for DeviceMemory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceMemory")
+            .field("memory", &self.memory)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for DeviceMemory {
+    fn drop(&mut self) {
+        unsafe { self.device.free_memory(self.memory, None) };
+    }
+}
+
+impl Deref for DeviceMemory {
+    type Target = vk::DeviceMemory;
+
+    fn deref(&self) -> &Self::Target {
+        &self.memory
+    }
+}
+
+impl DeviceMemory {
+    pub fn new(
+        instance: &ash::Instance,
+        device: Arc<ash::Device>,
+        physical_device: vk::PhysicalDevice,
+        properties: vk::MemoryPropertyFlags,
+        memory_requirements: vk::MemoryRequirements,
+    ) -> Self {
+        let alloc_info = vk::MemoryAllocateInfo::default()
+            .allocation_size(memory_requirements.size)
+            .memory_type_index(find_memory_type(
+                instance,
+                physical_device,
+                memory_requirements.memory_type_bits,
+                properties,
+            ));
+
+        let memory = unsafe { device.allocate_memory(&alloc_info, None).unwrap() };
+
+        Self { memory, device }
+    }
+}
+
 pub struct Buffer<T: Copy + Sync> {
     pub buffer: vk::Buffer,
-    pub memory: vk::DeviceMemory,
+    pub memory: (Arc<DeviceMemory>, vk::DeviceSize),
     device: Arc<ash::Device>,
     size: vk::DeviceSize,
     phantom: PhantomData<T>,
@@ -44,7 +94,7 @@ impl<T: Copy + Sync + Send + 'static> MappedBuffer<T> {
         let mapped_memory = unsafe {
             std::slice::from_raw_parts_mut(
                 device
-                    .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
+                    .map_memory(*memory, 0, size, vk::MemoryMapFlags::empty())
                     .unwrap()
                     .cast::<T>(),
                 data.len(),
@@ -54,7 +104,7 @@ impl<T: Copy + Sync + Send + 'static> MappedBuffer<T> {
 
         let buffer = Arc::new(Buffer {
             buffer,
-            memory,
+            memory: (Arc::new(memory), 0),
             device: device.clone(),
             size,
             phantom: PhantomData,
@@ -137,7 +187,7 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + Send + 'static>(
 
     let new_buffer = Arc::new(Buffer {
         buffer: new_buffer,
-        memory,
+        memory: (Arc::new(memory), 0),
         device,
         size,
         phantom: PhantomData,
@@ -149,19 +199,51 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + Send + 'static>(
 }
 
 impl<T: Copy + Sync + Send + 'static> Buffer<T> {
-    pub fn new_staged<C: ActiveCommandBuffer>(
+    pub fn new_with_memory(
+        usage: vk::BufferUsageFlags,
+        memory: (Arc<DeviceMemory>, vk::DeviceSize),
+        device: Arc<ash::Device>,
+        num_elements: usize,
+    ) -> Self {
+        let size = (num_elements * size_of::<T>()).try_into().unwrap();
+
+        let vertex_buffer_info = vk::BufferCreateInfo::default()
+            .size(size)
+            .usage(usage)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let buffer = unsafe {
+            let buffer = device.create_buffer(&vertex_buffer_info, None).unwrap();
+            device
+                .bind_buffer_memory(buffer, **memory.0, memory.1)
+                .unwrap();
+            buffer
+        };
+
+        Buffer {
+            buffer,
+            memory,
+            device,
+            size,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn new_staged_with<C: ActiveCommandBuffer, F: Fn(&mut [T])>(
         instance: &ash::Instance,
         device: Arc<ash::Device>,
         physical_device: vk::PhysicalDevice,
         cmd_buf: &mut C,
         usage: vk::BufferUsageFlags,
-        data: &[T],
+        data: F,
+        num_elements: usize,
     ) -> Arc<Self> {
-        let staging_buffer = Arc::new(Self::new(
+        let staging_buffer = Arc::new(Self::new_with(
             device,
             instance,
             physical_device,
             data,
+            num_elements,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
         ));
@@ -176,33 +258,51 @@ impl<T: Copy + Sync + Send + 'static> Buffer<T> {
         )
     }
 
+    pub fn new_staged<C: ActiveCommandBuffer>(
+        instance: &ash::Instance,
+        device: Arc<ash::Device>,
+        physical_device: vk::PhysicalDevice,
+        cmd_buf: &mut C,
+        usage: vk::BufferUsageFlags,
+        data: &[T],
+    ) -> Arc<Self> {
+        Self::new_staged_with(
+            instance,
+            device,
+            physical_device,
+            cmd_buf,
+            usage,
+            |mapped_memory| mapped_memory.copy_from_slice(data),
+            data.len(),
+        )
+    }
+
     fn create_buffer(
-        device: &ash::Device,
+        device: &Arc<ash::Device>,
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
         properties: vk::MemoryPropertyFlags,
-    ) -> (vk::Buffer, vk::DeviceMemory) {
+    ) -> (vk::Buffer, DeviceMemory) {
         let buffer_info = vk::BufferCreateInfo::default()
             .size(size)
             .usage(usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let buffer = unsafe { device.create_buffer(&buffer_info, None).unwrap() };
+
         let memory_requirements = unsafe { device.get_buffer_memory_requirements(buffer) };
 
-        let alloc_info = vk::MemoryAllocateInfo::default()
-            .allocation_size(memory_requirements.size)
-            .memory_type_index(find_memory_type(
-                instance,
-                physical_device,
-                memory_requirements.memory_type_bits,
-                properties,
-            ));
+        let memory = DeviceMemory::new(
+            instance,
+            device.clone(),
+            physical_device,
+            properties,
+            memory_requirements,
+        );
 
-        let memory = unsafe { device.allocate_memory(&alloc_info, None).unwrap() };
-        unsafe { device.bind_buffer_memory(buffer, memory, 0).unwrap() }
+        unsafe { device.bind_buffer_memory(buffer, *memory, 0).unwrap() }
 
         (buffer, memory)
     }
@@ -215,6 +315,43 @@ impl<T: Copy + Sync + Send + 'static> Buffer<T> {
         self.size == 0
     }
 
+    pub fn new_with<F: Fn(&mut [T])>(
+        device: Arc<ash::Device>,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        data: F,
+        num_elements: usize,
+        usage: vk::BufferUsageFlags,
+        properties: vk::MemoryPropertyFlags,
+    ) -> Self {
+        let size = (num_elements * size_of::<T>()).try_into().unwrap();
+
+        let (buffer, memory) =
+            Self::create_buffer(&device, instance, physical_device, size, usage, properties);
+        {
+            let mapped_memory = unsafe {
+                std::slice::from_raw_parts_mut(
+                    device
+                        .map_memory(*memory, 0, size, vk::MemoryMapFlags::empty())
+                        .unwrap()
+                        .cast::<T>(),
+                    num_elements,
+                )
+            };
+            data(mapped_memory);
+
+            unsafe { device.unmap_memory(*memory) };
+        }
+
+        Self {
+            buffer,
+            memory: (Arc::new(memory), 0),
+            device,
+            size,
+            phantom: PhantomData,
+        }
+    }
+
     pub fn new(
         device: Arc<ash::Device>,
         instance: &ash::Instance,
@@ -223,31 +360,15 @@ impl<T: Copy + Sync + Send + 'static> Buffer<T> {
         usage: vk::BufferUsageFlags,
         properties: vk::MemoryPropertyFlags,
     ) -> Self {
-        let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
-
-        let (buffer, memory) =
-            Self::create_buffer(&device, instance, physical_device, size, usage, properties);
-        {
-            let mapped_memory = unsafe {
-                std::slice::from_raw_parts_mut(
-                    device
-                        .map_memory(memory, 0, size, vk::MemoryMapFlags::empty())
-                        .unwrap()
-                        .cast::<T>(),
-                    data.len(),
-                )
-            };
-            mapped_memory.copy_from_slice(data);
-            unsafe { device.unmap_memory(memory) };
-        }
-
-        Self {
-            buffer,
-            memory,
+        Self::new_with(
             device,
-            size,
-            phantom: PhantomData,
-        }
+            instance,
+            physical_device,
+            |mapped_memory| mapped_memory.copy_from_slice(data),
+            data.len(),
+            usage,
+            properties,
+        )
     }
 }
 
@@ -264,7 +385,6 @@ impl<T: Copy + Sync> Drop for Buffer<T> {
         debug!("dropped buffer");
         unsafe {
             self.device.destroy_buffer(self.buffer, None);
-            self.device.free_memory(self.memory, None);
         };
     }
 }

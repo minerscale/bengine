@@ -105,64 +105,36 @@ impl Image {
         old_layout: vk::ImageLayout,
         new_layout: vk::ImageLayout,
     ) {
-        let (src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask) =
-            match (old_layout, new_layout) {
-                (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+        fn get_access_and_stage_masks(
+            layout: vk::ImageLayout,
+        ) -> (vk::AccessFlags, vk::PipelineStageFlags) {
+            match layout {
+                vk::ImageLayout::UNDEFINED => (
                     vk::AccessFlags::empty(),
-                    vk::AccessFlags::TRANSFER_WRITE,
                     vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::TRANSFER,
                 ),
-                (
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                ) => (
-                    vk::AccessFlags::TRANSFER_WRITE,
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                ),
-                (
-                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                ) => (
-                    vk::AccessFlags::TRANSFER_READ,
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                ),
-                (vk::ImageLayout::UNDEFINED, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
-                    vk::AccessFlags::empty(),
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::TOP_OF_PIPE,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                ),
-                (vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::GENERAL) => (
-                    vk::AccessFlags::SHADER_READ,
-                    vk::AccessFlags::SHADER_WRITE,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                    vk::PipelineStageFlags::COMPUTE_SHADER,
-                ),
-                (vk::ImageLayout::GENERAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
-                    vk::AccessFlags::SHADER_WRITE,
-                    vk::AccessFlags::SHADER_READ,
-                    vk::PipelineStageFlags::COMPUTE_SHADER,
-                    vk::PipelineStageFlags::FRAGMENT_SHADER,
-                ),
-                (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL) => (
-                    vk::AccessFlags::TRANSFER_WRITE,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL => (
                     vk::AccessFlags::TRANSFER_READ,
                     vk::PipelineStageFlags::TRANSFER,
+                ),
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL => (
+                    vk::AccessFlags::TRANSFER_WRITE,
                     vk::PipelineStageFlags::TRANSFER,
                 ),
-                _ => {
-                    unimplemented!(
-                        "unsupported layout transition {:?} => {:?}",
-                        old_layout,
-                        new_layout
-                    )
-                }
-            };
+                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL => (
+                    vk::AccessFlags::SHADER_READ,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                ),
+                vk::ImageLayout::GENERAL => (
+                    vk::AccessFlags::SHADER_WRITE,
+                    vk::PipelineStageFlags::COMPUTE_SHADER,
+                ),
+                _ => unimplemented!("unsupported layout {layout:?}"),
+            }
+        }
+
+        let (src_access_mask, src_stage_mask) = get_access_and_stage_masks(old_layout);
+        let (dst_access_mask, dst_stage_mask) = get_access_and_stage_masks(new_layout);
 
         let barrier = [vk::ImageMemoryBarrier::default()
             .old_layout(old_layout)

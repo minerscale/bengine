@@ -22,6 +22,7 @@ use crate::{
     physics::Physics,
     renderer::{
         Renderer,
+        buffer::Buffer,
         command_buffer::OneTimeSubmitCommandBuffer,
         image::Image,
         material::{Material, MaterialProperties},
@@ -123,50 +124,104 @@ fn load_gltf(
         })
         .collect::<Vec<_>>();
 
-    let meshes = document
-        .meshes()
-        .map(|mesh| {
-            Arc::new(Mesh::new(
-                mesh.primitives()
-                    .map(|primitive| {
-                        let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+    let mut vertex_buffers: Vec<Vertex> = Vec::new();
+    let mut index_buffers: Vec<u32> = Vec::new();
 
-                        let vertex_buffer = reader
-                            .read_positions()
-                            .unwrap()
-                            .zip(reader.read_normals().unwrap())
-                            .zip(reader.read_tex_coords(0).unwrap().into_f32())
-                            .map(|((position, normal), tex_coord)| {
-                                Vertex::new(
-                                    Vec3::from(position) * scale,
-                                    normal.into(),
-                                    tex_coord.into(),
-                                )
-                            })
-                            .collect::<Box<[Vertex]>>();
+    let mut mesh_info: Vec<((usize, usize), (usize, usize), Arc<Material>)> = Vec::new();
 
-                        let index_buffer = reader
-                            .read_indices()
-                            .unwrap()
-                            .into_u32()
-                            .collect::<Box<[u32]>>();
+    for primitive in document.meshes().next().unwrap().primitives() {
+        let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
-                        Primitive::new(
-                            &gfx.instance,
-                            gfx.device.physical_device,
-                            gfx.device.device.clone(),
-                            &vertex_buffer,
-                            &index_buffer,
-                            materials[primitive.material().index().unwrap()].clone(),
-                            cmd_buf,
+        let vertex_idx = vertex_buffers.len();
+
+        let vertexes = reader
+            .read_positions()
+            .unwrap()
+            .zip(reader.read_normals().unwrap())
+            .zip(reader.read_tex_coords(0).unwrap().into_f32())
+            .map(|((position, normal), tex_coord)| {
+                Vertex::new(
+                    Vec3::from(position) * scale,
+                    normal.into(),
+                    tex_coord.into(),
+                )
+            });
+
+        let vertex_size = vertexes.len();
+        vertex_buffers.extend(vertexes);
+
+        let index_idx = index_buffers.len();
+        let indices = reader.read_indices().unwrap().into_u32();
+        let index_size = indices.len();
+        index_buffers.extend(indices);
+
+        mesh_info.push((
+            (vertex_idx, vertex_size),
+            (index_idx, index_size),
+            materials[primitive.material().index().unwrap()].clone(),
+        ));
+    }
+
+    let vertex_byte_length = vertex_buffers.len() * size_of::<Vertex>();
+    let index_byte_length = index_buffers.len() * size_of::<u32>();
+
+    let buffer = Buffer::new_staged_with(
+        &gfx.instance,
+        gfx.device.device.clone(),
+        gfx.device.physical_device,
+        cmd_buf,
+        vk::BufferUsageFlags::VERTEX_BUFFER
+            | vk::BufferUsageFlags::INDEX_BUFFER
+            | vk::BufferUsageFlags::empty(),
+        |mapped_memory: &mut [u8]| {
+            mapped_memory[0..vertex_byte_length].copy_from_slice(unsafe {
+                std::slice::from_raw_parts(vertex_buffers.as_ptr() as *const u8, vertex_byte_length)
+            });
+
+            mapped_memory[vertex_byte_length..].copy_from_slice(unsafe {
+                std::slice::from_raw_parts(index_buffers.as_ptr() as *const u8, index_byte_length)
+            });
+        },
+        vertex_byte_length + index_byte_length,
+    );
+
+    Node::empty().mesh(
+        Mesh::new(
+            mesh_info
+                .iter()
+                .map(
+                    |((vertex_idx, vertex_size), (index_idx, index_size), material)| {
+                        Primitive::new_raw(
+                            Buffer::new_with_memory(
+                                vk::BufferUsageFlags::VERTEX_BUFFER,
+                                (
+                                    buffer.memory.0.clone(),
+                                    (vertex_idx * size_of::<Vertex>()).try_into().unwrap(),
+                                ),
+                                gfx.device.device.clone(),
+                                *vertex_size,
+                            )
+                            .into(),
+                            Buffer::new_with_memory(
+                                vk::BufferUsageFlags::INDEX_BUFFER,
+                                (
+                                    buffer.memory.0.clone(),
+                                    (index_idx * size_of::<u32>() + vertex_byte_length)
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                                gfx.device.device.clone(),
+                                *index_size,
+                            )
+                            .into(),
+                            material.clone(),
                         )
-                    })
-                    .collect::<Vec<_>>(),
-            ))
-        })
-        .collect::<Vec<_>>();
-
-    Node::empty().mesh(meshes[0].clone())
+                    },
+                )
+                .collect(),
+        )
+        .into(),
+    )
 }
 
 fn scene(
@@ -188,7 +243,7 @@ fn scene(
 
     macro_rules! mesh {
         ($filename:literal, $material:expr, $scale:expr) => {
-            Arc::new(Mesh::new(vec![Primitive::from_obj(
+            Arc::new(Mesh::new(Box::new([Primitive::from_obj(
                 &gfx.instance,
                 gfx.device.physical_device,
                 gfx.device.device.clone(),
@@ -196,7 +251,7 @@ fn scene(
                 cmd_buf,
                 $material,
                 $scale,
-            )]))
+            )])))
         };
     }
 

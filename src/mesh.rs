@@ -19,7 +19,7 @@ use crate::vertex::Vertex;
 
 #[derive(Debug)]
 pub struct Mesh {
-    pub primitives: Vec<Primitive>,
+    pub primitives: Box<[Primitive]>,
 }
 
 impl<'a> IntoIterator for &'a Mesh {
@@ -32,7 +32,7 @@ impl<'a> IntoIterator for &'a Mesh {
 }
 
 impl Mesh {
-    pub fn new(primitives: Vec<Primitive>) -> Self {
+    pub fn new(primitives: Box<[Primitive]>) -> Self {
         Self { primitives }
     }
 
@@ -114,6 +114,18 @@ pub struct Primitive {
 }
 
 impl Primitive {
+    pub fn new_raw(
+        vertex_buffer: Arc<Buffer<Vertex>>,
+        index_buffer: Arc<Buffer<u32>>,
+        material: Arc<Material>,
+    ) -> Self {
+        Self {
+            vertex_buffer,
+            index_buffer,
+            material,
+        }
+    }
+
     pub fn new<C: ActiveCommandBuffer>(
         instance: &ash::Instance,
         physical_device: vk::PhysicalDevice,
