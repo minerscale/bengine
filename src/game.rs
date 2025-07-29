@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use ash::vk;
 use tracing_mutex::stdsync::Mutex;
 use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
@@ -55,7 +53,7 @@ impl Game {
 
     pub fn draw(
         &mut self,
-        input: Arc<Mutex<Input>>,
+        input: &Mutex<Input>,
         device: &Device,
         render_pass: &RenderPass,
         command_buffer: ActiveMultipleSubmitCommandBuffer,
@@ -184,7 +182,7 @@ impl Game {
         }
     }
 
-    pub fn update(&mut self, input: Arc<Mutex<Input>>) {
+    pub fn update(&mut self, input: &Mutex<Input>) {
         self.clock.update();
         let dt = self.clock.dt;
 

@@ -17,6 +17,7 @@ pub mod sampler;
 pub mod shader_module;
 
 mod debug_messenger;
+mod dtor_entry;
 mod instance;
 mod surface;
 mod swapchain;

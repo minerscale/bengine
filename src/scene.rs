@@ -185,43 +185,41 @@ fn load_gltf(
         vertex_byte_length + index_byte_length,
     );
 
-    Node::empty().mesh(
-        Mesh::new(
-            mesh_info
-                .iter()
-                .map(
-                    |((vertex_idx, vertex_size), (index_idx, index_size), material)| {
-                        Primitive::new_raw(
-                            Buffer::new_with_memory(
-                                vk::BufferUsageFlags::VERTEX_BUFFER,
-                                (
-                                    buffer.memory.0.clone(),
-                                    (vertex_idx * size_of::<Vertex>()).try_into().unwrap(),
-                                ),
-                                gfx.device.device.clone(),
-                                *vertex_size,
-                            )
-                            .into(),
-                            Buffer::new_with_memory(
-                                vk::BufferUsageFlags::INDEX_BUFFER,
-                                (
-                                    buffer.memory.0.clone(),
-                                    (index_idx * size_of::<u32>() + vertex_byte_length)
-                                        .try_into()
-                                        .unwrap(),
-                                ),
-                                gfx.device.device.clone(),
-                                *index_size,
-                            )
-                            .into(),
-                            material.clone(),
-                        )
-                    },
-                )
-                .collect(),
+    let make_primitive = |((vertex_idx, vertex_size), (index_idx, index_size), material): (
+        (usize, usize),
+        (usize, usize),
+        Arc<Material>,
+    )| {
+        Primitive::new_raw(
+            Buffer::new_with_memory(
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                (
+                    buffer.memory.0.clone(),
+                    (vertex_idx * size_of::<Vertex>()).try_into().unwrap(),
+                ),
+                gfx.device.device.clone(),
+                vertex_size,
+            )
+            .into(),
+            Buffer::new_with_memory(
+                vk::BufferUsageFlags::INDEX_BUFFER,
+                (
+                    buffer.memory.0.clone(),
+                    (index_idx * size_of::<u32>() + vertex_byte_length)
+                        .try_into()
+                        .unwrap(),
+                ),
+                gfx.device.device.clone(),
+                index_size,
+            )
+            .into(),
+            material,
         )
-        .into(),
-    )
+    };
+
+    let mesh = mesh_info.into_iter().map(make_primitive).collect();
+
+    Node::empty().mesh(Mesh::new(mesh).into())
 }
 
 fn scene(

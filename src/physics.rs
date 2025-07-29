@@ -58,7 +58,7 @@ impl Physics {
     }
 
     pub fn step(&mut self, scene: &mut [Node], player: &mut Player, dt: f32) {
-        self.integration_parameters.set_inv_dt(1.0 / dt);
+        self.integration_parameters.dt = dt;
 
         self.physics_pipeline.step(
             &self.gravity,

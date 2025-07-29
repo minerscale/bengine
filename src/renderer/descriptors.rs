@@ -7,6 +7,8 @@ use crate::renderer::{
     MAX_FRAMES_IN_FLIGHT, buffer::Buffer, image::Image, material::MAX_TEXTURES, sampler::Sampler,
 };
 
+use super::dtor_entry::DtorEntry;
+
 #[derive(Clone)]
 pub struct DescriptorSetLayout {
     pub layout: vk::DescriptorSetLayout,
@@ -15,17 +17,15 @@ pub struct DescriptorSetLayout {
     device: Arc<ash::Device>,
 }
 
-pub type Any = dyn std::any::Any + Sync + Send;
-
 #[derive(Debug)]
 pub struct DescriptorSet {
     pub descriptor_set: vk::DescriptorSet,
-    dependencies: Vec<Arc<Any>>,
+    dependencies: Vec<DtorEntry>,
 }
 
 impl DescriptorSet {
-    pub fn add_dependency(&mut self, dependency: Arc<Any>) {
-        self.dependencies.push(dependency);
+    pub fn add_dependency<T: Into<DtorEntry>>(&mut self, dependency: T) {
+        self.dependencies.push(dependency.into());
     }
 }
 
@@ -59,7 +59,7 @@ impl DescriptorSet {
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
-            self.dependencies.push(buffer);
+            self.add_dependency(buffer);
         };
     }
 
@@ -78,7 +78,7 @@ impl DescriptorSet {
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
-            self.dependencies.push(image);
+            self.add_dependency(image);
         };
     }
 
@@ -104,8 +104,8 @@ impl DescriptorSet {
 
         unsafe {
             device.update_descriptor_sets(&descriptor_writes, &[]);
-            self.dependencies.push(texture);
-            self.dependencies.push(sampler);
+            self.add_dependency(texture);
+            self.add_dependency(sampler);
         };
     }
 }

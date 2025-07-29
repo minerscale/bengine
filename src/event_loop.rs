@@ -2,7 +2,6 @@ use tracing_mutex::stdsync::Mutex;
 
 use std::{
     ops::{Deref, DerefMut},
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -149,16 +148,14 @@ impl EventLoop {
         Self { pump }
     }
 
-    pub fn run<F: FnMut(Arc<Mutex<Input>>) + Send, G: FnMut(Arc<Mutex<Input>>)>(
+    pub fn run<F: FnMut(&Mutex<Input>) + Send, G: FnMut(&Mutex<Input>)>(
         &mut self,
         mut render: F,
         mut update: G,
     ) {
-        let input = Arc::new(Mutex::new(Input::new(Inputs::default().camera_rotation(
-            Vec2::new(
-                3.0 * std::f32::consts::FRAC_PI_4,
-                std::f32::consts::FRAC_PI_8,
-            ),
+        let input = Mutex::new(Input::new(Inputs::default().camera_rotation(Vec2::new(
+            3.0 * std::f32::consts::FRAC_PI_4,
+            std::f32::consts::FRAC_PI_8,
         ))));
 
         std::thread::scope(|scope| {
@@ -167,10 +164,8 @@ impl EventLoop {
             let update_thread = scope.spawn(|| {
                 let quit_rx = quit_rx;
 
-                let input = input.clone();
-
                 'quit: loop {
-                    render(input.clone());
+                    render(&input);
 
                     let quit = input.lock().unwrap().quit;
                     if quit {
@@ -192,7 +187,7 @@ impl EventLoop {
                 let quit = minput.quit;
                 drop(minput);
 
-                update(input.clone());
+                update(&input);
 
                 if quit {
                     quit_tx.send(()).unwrap();

@@ -5,19 +5,21 @@ use log::debug;
 
 use crate::renderer::device::Device;
 
+use super::dtor_entry::DtorEntry;
+
 pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {
-    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + Sync + Send + 'static>);
+    fn add_dependency<T: Into<DtorEntry>>(&mut self, dependency: T);
 }
 
 pub struct OneTimeSubmitCommandBuffer {
     device: Arc<ash::Device>,
     command_buffer: vk::CommandBuffer,
-    dependencies: Vec<Arc<dyn std::any::Any + Sync + Send>>,
+    dependencies: Vec<DtorEntry>,
 }
 
 impl ActiveCommandBuffer for OneTimeSubmitCommandBuffer {
-    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + Sync + Send>) {
-        self.dependencies.push(dependency);
+    fn add_dependency<T: Into<DtorEntry>>(&mut self, dependency: T) {
+        self.dependencies.push(dependency.into());
     }
 }
 
@@ -107,12 +109,12 @@ impl MultipleSubmitCommandBuffer {
 
 pub struct ActiveMultipleSubmitCommandBuffer {
     command_buffer: MultipleSubmitCommandBuffer,
-    dependencies: Vec<Arc<dyn std::any::Any>>,
+    dependencies: Vec<DtorEntry>,
 }
 
 impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {
-    fn add_dependency(&mut self, dependency: Arc<dyn std::any::Any + Sync + Send>) {
-        self.dependencies.push(dependency);
+    fn add_dependency<T: Into<DtorEntry>>(&mut self, dependency: T) {
+        self.dependencies.push(dependency.into());
     }
 }
 

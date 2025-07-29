@@ -21,8 +21,6 @@ mod shader_pipelines;
 mod skybox;
 mod vertex;
 
-use std::sync::Arc;
-
 use event_loop::EventLoop;
 use game::Game;
 use renderer::{HEIGHT, Renderer, WIDTH};
@@ -52,7 +50,7 @@ fn main() {
 
     let mut gfx = Renderer::new(WIDTH, HEIGHT, &window, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
 
-    let game = Arc::new(Mutex::new(Game::new(&gfx)));
+    let game = Mutex::new(Game::new(&gfx));
 
     let mut event_loop = EventLoop::new(sdl_context.event_pump().unwrap());
 
@@ -79,7 +77,7 @@ fn main() {
             gfx.draw(
                 |device, render_pass, command_buffer, uniform_buffers, image| {
                     game.lock().unwrap().draw(
-                        input.clone(),
+                        input,
                         device,
                         render_pass,
                         command_buffer,
