@@ -8,6 +8,7 @@ use crate::{
     renderer::{
         Renderer,
         buffer::Buffer,
+        command_buffer::ActiveCommandBuffer,
         descriptors::DescriptorSet,
         device::Device,
         image::Image,
@@ -31,6 +32,77 @@ pub struct EguiBackend {
     vertex_index_buffer: Option<Arc<Buffer<u8>>>,
 
     textures: HashMap<egui::TextureId, DescriptorSet>,
+}
+
+fn create_texture<C: ActiveCommandBuffer>(
+    gfx: &Renderer,
+    image_delta: &egui::epaint::ImageDelta,
+    command_buffer: &mut C,
+) -> DescriptorSet {
+    let texture_filter = |texture_filter: egui::TextureFilter| match texture_filter {
+        egui::TextureFilter::Nearest => vk::Filter::NEAREST,
+        egui::TextureFilter::Linear => vk::Filter::LINEAR,
+    };
+
+    let width = image_delta.image.width();
+    let height = image_delta.image.height();
+
+    let mip_levels = width.max(height).ilog2() + 1;
+
+    let sampler = Sampler::new(
+        &gfx.instance,
+        gfx.device.device.clone(),
+        gfx.device.physical_device,
+        match image_delta.options.wrap_mode {
+            egui::TextureWrapMode::ClampToEdge => SamplerAddressMode::CLAMP_TO_EDGE,
+            egui::TextureWrapMode::Repeat => SamplerAddressMode::REPEAT,
+            egui::TextureWrapMode::MirroredRepeat => SamplerAddressMode::MIRRORED_REPEAT,
+        },
+        texture_filter(image_delta.options.magnification),
+        texture_filter(image_delta.options.minification),
+        false,
+        image_delta.options.mipmap_mode.map(|filter| {
+            (
+                match filter {
+                    egui::TextureFilter::Nearest => vk::SamplerMipmapMode::NEAREST,
+                    egui::TextureFilter::Linear => vk::SamplerMipmapMode::LINEAR,
+                },
+                mip_levels,
+            )
+        }),
+    );
+
+    let image = match &image_delta.image {
+        egui::ImageData::Color(color_image) => {
+            image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(
+                width as u32,
+                height as u32,
+                color_image
+                    .pixels
+                    .iter()
+                    .flat_map(|c| c.to_array())
+                    .collect::<Vec<_>>(),
+            )
+        }
+    }
+    .unwrap();
+
+    let image = Image::from_image(
+        &gfx.instance,
+        gfx.device.physical_device,
+        &gfx.device.device,
+        command_buffer,
+        image.into(),
+        false,
+    );
+
+    let mut descriptor_set = gfx
+        .descriptor_pool
+        .create_descriptor_set(&gfx.descriptor_set_layouts[MATERIAL_LAYOUT]);
+
+    descriptor_set.bind_texture(&gfx.device.device, 0, image, sampler.into());
+
+    descriptor_set
 }
 
 impl EguiBackend {
@@ -142,82 +214,8 @@ impl EguiBackend {
                         None => match image_delta.pos {
                             Some(_pos) => todo!(),
                             None => {
-                                let texture_filter =
-                                    |texture_filter: egui::TextureFilter| match texture_filter {
-                                        egui::TextureFilter::Nearest => vk::Filter::NEAREST,
-                                        egui::TextureFilter::Linear => vk::Filter::LINEAR,
-                                    };
-
-                                let width = image_delta.image.width();
-                                let height = image_delta.image.height();
-
-                                let mip_levels = width.max(height).ilog2() + 1;
-
-                                let sampler = Sampler::new(
-                                    &gfx.instance,
-                                    gfx.device.device.clone(),
-                                    gfx.device.physical_device,
-                                    match image_delta.options.wrap_mode {
-                                        egui::TextureWrapMode::ClampToEdge => {
-                                            SamplerAddressMode::CLAMP_TO_EDGE
-                                        }
-                                        egui::TextureWrapMode::Repeat => SamplerAddressMode::REPEAT,
-                                        egui::TextureWrapMode::MirroredRepeat => {
-                                            SamplerAddressMode::MIRRORED_REPEAT
-                                        }
-                                    },
-                                    texture_filter(image_delta.options.magnification),
-                                    texture_filter(image_delta.options.minification),
-                                    false,
-                                    image_delta.options.mipmap_mode.map(|filter| {
-                                        (
-                                            match filter {
-                                                egui::TextureFilter::Nearest => {
-                                                    vk::SamplerMipmapMode::NEAREST
-                                                }
-                                                egui::TextureFilter::Linear => {
-                                                    vk::SamplerMipmapMode::LINEAR
-                                                }
-                                            },
-                                            mip_levels,
-                                        )
-                                    }),
-                                );
-
-                                let image = match &image_delta.image {
-                                    egui::ImageData::Color(color_image) => {
-                                        image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(
-                                            width as u32,
-                                            height as u32,
-                                            color_image
-                                                .pixels
-                                                .iter()
-                                                .flat_map(|c| c.to_array())
-                                                .collect::<Vec<_>>(),
-                                        )
-                                    }
-                                }
-                                .unwrap();
-
-                                let image = Image::from_image(
-                                    &gfx.instance,
-                                    gfx.device.physical_device,
-                                    &gfx.device.device,
-                                    command_buffer,
-                                    image.into(),
-                                    false,
-                                );
-
-                                let mut descriptor_set = gfx.descriptor_pool.create_descriptor_set(
-                                    &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],
-                                );
-
-                                descriptor_set.bind_texture(
-                                    &gfx.device.device,
-                                    0,
-                                    image,
-                                    sampler.into(),
-                                );
+                                let descriptor_set =
+                                    create_texture(gfx, image_delta, command_buffer);
 
                                 self.textures.insert(*tex_id, descriptor_set);
                             }
@@ -332,63 +330,64 @@ impl EguiBackend {
             )
         };
 
+        let mut draw_primitive =
+            |mesh: &egui::epaint::Mesh, primitive: &egui::epaint::ClippedPrimitive| {
+                let clip_rect = primitive.clip_rect;
+
+                let clip_x = (clip_rect.min.x * pixels_per_point).round() as i32;
+                let clip_y = (clip_rect.min.y * pixels_per_point).round() as i32;
+                let clip_w = (clip_rect.max.x * pixels_per_point).round() as i32;
+                let clip_h = (clip_rect.max.y * pixels_per_point).round() as i32;
+
+                unsafe {
+                    device.cmd_set_scissor(
+                        cmd_buf,
+                        0,
+                        &[vk::Rect2D {
+                            offset: vk::Offset2D {
+                                x: clip_x.clamp(0, extent.width as i32),
+                                y: clip_y.clamp(0, extent.height as i32),
+                            },
+                            extent: vk::Extent2D {
+                                width: (clip_w.clamp(clip_x, extent.width as i32) - clip_x) as _,
+                                height: (clip_h.clamp(clip_y, extent.height as i32) - clip_y) as _,
+                            },
+                        }],
+                    );
+
+                    if let Some(current_texture_id) = current_texture_id
+                        && current_texture_id == mesh.texture_id
+                    {
+                    } else {
+                        device.cmd_bind_descriptor_sets(
+                            cmd_buf,
+                            vk::PipelineBindPoint::GRAPHICS,
+                            pipeline.pipeline_layout,
+                            1,
+                            &[*self.textures[&mesh.texture_id]],
+                            &[],
+                        )
+                    }
+
+                    device.cmd_draw_indexed(
+                        cmd_buf,
+                        mesh.indices.len().try_into().unwrap(),
+                        1,
+                        index_offest.try_into().unwrap(),
+                        vertex_offset.try_into().unwrap(),
+                        0,
+                    );
+
+                    vertex_offset += mesh.vertices.len();
+                    index_offest += mesh.indices.len();
+                };
+
+                current_texture_id = Some(mesh.texture_id);
+            };
+
         for primitive in &self.clipped_primitives {
             match &primitive.primitive {
-                egui::epaint::Primitive::Mesh(mesh) => {
-                    let clip_rect = primitive.clip_rect;
-
-                    let clip_x = (clip_rect.min.x * pixels_per_point).round() as i32;
-                    let clip_y = (clip_rect.min.y * pixels_per_point).round() as i32;
-                    let clip_w = (clip_rect.max.x * pixels_per_point).round() as i32;
-                    let clip_h = (clip_rect.max.y * pixels_per_point).round() as i32;
-
-                    unsafe {
-                        device.cmd_set_scissor(
-                            cmd_buf,
-                            0,
-                            &[vk::Rect2D {
-                                offset: vk::Offset2D {
-                                    x: clip_x.clamp(0, extent.width as i32),
-                                    y: clip_y.clamp(0, extent.height as i32),
-                                },
-                                extent: vk::Extent2D {
-                                    width: (clip_w.clamp(clip_x, extent.width as i32) - clip_x)
-                                        as _,
-                                    height: (clip_h.clamp(clip_y, extent.height as i32) - clip_y)
-                                        as _,
-                                },
-                            }],
-                        );
-
-                        if let Some(current_texture_id) = current_texture_id
-                            && current_texture_id == mesh.texture_id
-                        {
-                        } else {
-                            device.cmd_bind_descriptor_sets(
-                                cmd_buf,
-                                vk::PipelineBindPoint::GRAPHICS,
-                                pipeline.pipeline_layout,
-                                1,
-                                &[*self.textures[&mesh.texture_id]],
-                                &[],
-                            )
-                        }
-
-                        device.cmd_draw_indexed(
-                            cmd_buf,
-                            mesh.indices.len().try_into().unwrap(),
-                            1,
-                            index_offest.try_into().unwrap(),
-                            vertex_offset.try_into().unwrap(),
-                            0,
-                        );
-
-                        vertex_offset += mesh.vertices.len();
-                        index_offest += mesh.indices.len();
-                    };
-
-                    current_texture_id = Some(mesh.texture_id);
-                }
+                egui::epaint::Primitive::Mesh(mesh) => draw_primitive(mesh, primitive),
                 egui::epaint::Primitive::Callback(_paint_callback) => {
                     todo!("callback primitives not supported")
                 }
