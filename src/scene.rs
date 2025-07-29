@@ -79,6 +79,7 @@ fn load_gltf(
                     &gfx.device.device,
                     cmd_buf,
                     image,
+                    true,
                 ),
             )
         })
@@ -172,9 +173,7 @@ fn load_gltf(
         gfx.device.device.clone(),
         gfx.device.physical_device,
         cmd_buf,
-        vk::BufferUsageFlags::VERTEX_BUFFER
-            | vk::BufferUsageFlags::INDEX_BUFFER
-            | vk::BufferUsageFlags::empty(),
+        vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::INDEX_BUFFER,
         |mapped_memory: &mut [u8]| {
             mapped_memory[0..vertex_byte_length].copy_from_slice(unsafe {
                 std::slice::from_raw_parts(vertex_buffers.as_ptr() as *const u8, vertex_byte_length)

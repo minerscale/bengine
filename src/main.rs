@@ -75,12 +75,18 @@ fn main() {
 
             drop(minput);
 
+            let mut mgame = game.lock().unwrap();
+            mgame.gui.free_textures();
+            mgame.gui.run();
+            mgame.gui.update_textures(&gfx);
+            mgame.gui.upload_clipped_primitives(&gfx);
+            drop(mgame);
+
             gfx.acquire_next_image(framebuffer_resized);
             gfx.draw(
-                |instance, device, render_pass, command_buffer, uniform_buffers, image| {
+                |device, render_pass, command_buffer, uniform_buffers, image| {
                     game.lock().unwrap().draw(
                         input,
-                        instance,
                         device,
                         render_pass,
                         command_buffer,

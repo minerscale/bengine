@@ -174,6 +174,7 @@ impl Image {
         device: &Arc<ash::Device>,
         cmd_buf: &mut C,
         image: DynamicImage,
+        gamma_correction: bool,
     ) -> Arc<Self> {
         let extent = image.dimensions();
         let img = image.into_rgba8().into_vec();
@@ -189,7 +190,11 @@ impl Image {
             &img,
             cmd_buf,
             vk::SampleCountFlags::TYPE_1,
-            vk::Format::R8G8B8A8_SRGB,
+            if gamma_correction {
+                vk::Format::R8G8B8A8_SRGB
+            } else {
+                vk::Format::R8G8B8A8_UNORM
+            },
             vk::ImageTiling::OPTIMAL,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
             vk::ImageAspectFlags::COLOR,
@@ -206,7 +211,7 @@ impl Image {
     ) -> Arc<Self> {
         let image = ::image::load_from_memory(bytes).unwrap();
 
-        Self::from_image(instance, physical_device, device, cmd_buf, image)
+        Self::from_image(instance, physical_device, device, cmd_buf, image, true)
     }
 
     #[allow(clippy::too_many_arguments)]

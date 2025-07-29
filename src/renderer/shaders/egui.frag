@@ -31,10 +31,8 @@ vec3 dither_interleaved(vec3 rgb, float levels) {
 }
 
 void main() {
-    vec4 texture_in_gamma = texture(tex_sampler, v_tc);
-
     // We multiply the colors in gamma space, because that's the only way to get text to look right.
-    vec4 frag_color_gamma = v_rgba_in_gamma * texture_in_gamma;
+    vec4 frag_color_gamma = v_rgba_in_gamma * texture(tex_sampler, v_tc);
 
     // Dither the float color down to eight bits to reduce banding.
     // This step is optional for egui backends.

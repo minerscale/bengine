@@ -1,4 +1,4 @@
-use ash::{Instance, vk};
+use ash::vk;
 use tracing_mutex::stdsync::Mutex;
 use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
 
@@ -17,18 +17,18 @@ use crate::{
         render_pass::RenderPass,
     },
     scene::create_scene,
-    shader_pipelines::{MAIN_PIPELINE, SKYBOX_PIPELINE},
+    shader_pipelines::{EGUI_PIPELINE, MAIN_PIPELINE, SKYBOX_PIPELINE},
     skybox::Skybox,
 };
 
 pub struct Game {
-    player: Player,
-    physics: Physics,
-    audio: Audio,
-    scene: Vec<Node>,
-    clock: Clock,
-    skybox: Skybox,
-    gui: EguiBackend,
+    pub player: Player,
+    pub physics: Physics,
+    pub audio: Audio,
+    pub scene: Vec<Node>,
+    pub clock: Clock,
+    pub skybox: Skybox,
+    pub gui: EguiBackend,
 }
 
 impl Game {
@@ -59,7 +59,6 @@ impl Game {
     pub fn draw(
         &mut self,
         input: &Mutex<Input>,
-        instance: &Instance,
         device: &Device,
         render_pass: &RenderPass,
         command_buffer: ActiveMultipleSubmitCommandBuffer,
@@ -136,7 +135,7 @@ impl Game {
             self.skybox
                 .render(device, command_buffer, &uniform_buffer.descriptor_set);
 
-        let command_buffer = unsafe {
+        unsafe {
             device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
 
             let command_buffer = self.skybox.blit(
@@ -184,17 +183,13 @@ impl Game {
                 }
             }
 
+            let pipeline = &render_pass.pipelines[EGUI_PIPELINE];
+            self.gui.draw(device, extent, cmd_buf, pipeline);
+
             device.cmd_end_render_pass(cmd_buf);
 
             command_buffer
-        };
-
-        self.gui.draw(
-            instance,
-            &device.device,
-            device.physical_device,
-            command_buffer,
-        )
+        }
     }
 
     pub fn update(
