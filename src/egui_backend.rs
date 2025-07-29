@@ -53,7 +53,7 @@ impl EguiBackend {
 
         let ctx = egui::Context::default();
 
-        ctx.set_pixels_per_point(2.0);
+        ctx.set_zoom_factor(2.0);
 
         Self {
             ctx,

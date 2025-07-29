@@ -3,8 +3,7 @@ use rapier3d::{
     na::vector,
     prelude::{
         CCDSolver, ColliderSet, DefaultBroadPhase, ImpulseJointSet, IntegrationParameters,
-        IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline, QueryPipeline, Real,
-        RigidBodySet,
+        IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline, Real, RigidBodySet,
     },
 };
 use ultraviolet::{Isometry3, Rotor3, Vec3};
@@ -26,7 +25,6 @@ pub struct Physics {
     pub impulse_joint_set: ImpulseJointSet,
     pub multibody_joint_set: MultibodyJointSet,
     pub ccd_solver: CCDSolver,
-    pub query_pipeline: QueryPipeline,
     pub physics_hooks: (),
     pub event_handler: (),
 }
@@ -51,7 +49,6 @@ impl Physics {
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            query_pipeline: QueryPipeline::new(),
             physics_hooks: (),
             event_handler: (),
         }
@@ -71,7 +68,6 @@ impl Physics {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            Some(&mut self.query_pipeline),
             &self.physics_hooks,
             &self.event_handler,
         );

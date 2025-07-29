@@ -1,6 +1,7 @@
 use rapier3d::{
     math::{Point, Vector},
     na::vector,
+    parry::query::DefaultQueryDispatcher,
     prelude::{
         ColliderBuilder, ColliderHandle, ContactPair, NarrowPhase, QueryFilter, Ray, Real,
         RigidBodyBuilder, RigidBodyHandle,
@@ -104,10 +105,14 @@ impl Player {
             let projection_distance = 0.05;
 
             physics
-                .query_pipeline
-                .cast_ray_and_get_normal(
+                .broad_phase
+                .as_query_pipeline(
+                    &DefaultQueryDispatcher {},
                     &physics.rigid_body_set,
                     &physics.collider_set,
+                    QueryFilter::new().exclude_rigid_body(self.rigid_body_handle),
+                )
+                .cast_ray_and_get_normal(
                     &Ray::new(
                         previous_floor_contact.point + rigid_body.position().translation.vector
                             - projection_distance * previous_floor_contact.normal,
@@ -115,7 +120,6 @@ impl Player {
                     ),
                     2.0 * projection_distance,
                     true,
-                    QueryFilter::new().exclude_rigid_body(self.rigid_body_handle),
                 )
                 .and_then(|floor_raycast| {
                     let normal = &-floor_raycast.1.normal;
@@ -125,9 +129,9 @@ impl Player {
                             let linvel = rigid_body.linvel();
                             let velocity = -(linvel.dot(normal) * normal);
 
-                            let normalised = ((velocity + linvel)
-                                * (linvel.magnitude() / (velocity + linvel).magnitude()))
-                                - linvel;
+                            let summed = velocity + linvel;
+                            let normalised =
+                                (summed * (linvel.magnitude() / summed.magnitude())) - linvel;
 
                             (normalised * 1.0 * rigid_body.mass(), *normal)
                         })
