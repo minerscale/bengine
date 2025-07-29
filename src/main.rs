@@ -9,6 +9,8 @@
 
 mod audio;
 mod clock;
+mod egui_backend;
+mod egui_sdl3_event;
 mod event_loop;
 mod game;
 mod mesh;
@@ -52,7 +54,7 @@ fn main() {
 
     let game = Mutex::new(Game::new(&gfx));
 
-    let mut event_loop = EventLoop::new(sdl_context.event_pump().unwrap());
+    let mut event_loop = EventLoop::new(sdl_context);
 
     info!("finished loading");
 
@@ -75,9 +77,10 @@ fn main() {
 
             gfx.acquire_next_image(framebuffer_resized);
             gfx.draw(
-                |device, render_pass, command_buffer, uniform_buffers, image| {
+                |instance, device, render_pass, command_buffer, uniform_buffers, image| {
                     game.lock().unwrap().draw(
                         input,
+                        instance,
                         device,
                         render_pass,
                         command_buffer,
@@ -89,8 +92,8 @@ fn main() {
             );
             gfx.present();
         },
-        |input| {
-            game.lock().unwrap().update(input);
+        |input, events, modifiers| {
+            game.lock().unwrap().update(input, events, modifiers);
         },
     );
 

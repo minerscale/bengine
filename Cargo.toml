@@ -18,8 +18,10 @@ opt-level = 3
 opt-level = 3
 
 [dependencies]
+bytemuck = "1.23.1"
 colored = "3.0.0"
 cpal = "0.16.0"
+egui = "0.32.0"
 gltf = "1.4.1"
 log = "0.4.22"
 nalgebra = "0.33.2"

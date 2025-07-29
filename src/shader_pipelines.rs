@@ -10,6 +10,7 @@ pub struct PushConstants {
 }
 
 use crate::{
+    egui_backend,
     renderer::{
         DescriptorSetLayoutFunction, PipelineFunction,
         descriptors::DescriptorSetLayout,
@@ -54,13 +55,13 @@ fn make_main_pipeline(
     let shader_stages = [
         spv!(
             device.device.clone(),
-            "shader.vert",
+            "main.vert",
             vk::ShaderStageFlags::VERTEX,
             Some(vertex_specialization)
         ),
         spv!(
             device.device.clone(),
-            "shader.frag",
+            "main.frag",
             vk::ShaderStageFlags::FRAGMENT,
             None
         ),
@@ -150,4 +151,11 @@ pub const DESCRIPTOR_SET_LAYOUTS: [DescriptorSetLayoutFunction; 2] = [
     },
 ];
 
-pub const PIPELINES: [PipelineFunction; 2] = [make_main_pipeline, skybox::make_skybox_pipeline];
+pub const MAIN_PIPELINE: usize = 0;
+pub const SKYBOX_PIPELINE: usize = 1;
+pub const EGUI_PIPELINE: usize = 2;
+pub const PIPELINES: [PipelineFunction; 3] = [
+    make_main_pipeline,
+    skybox::make_skybox_pipeline,
+    egui_backend::make_egui_pipeline,
+];

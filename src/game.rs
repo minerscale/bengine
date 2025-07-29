@@ -1,4 +1,4 @@
-use ash::vk;
+use ash::{Instance, vk};
 use tracing_mutex::stdsync::Mutex;
 use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
 
@@ -6,6 +6,7 @@ use crate::{
     FOV,
     audio::{Audio, AudioParameters},
     clock::{Clock, FIXED_UPDATE_INTERVAL},
+    egui_backend::EguiBackend,
     event_loop::Input,
     node::{Node, Object},
     physics::{Physics, from_nalgebra},
@@ -16,6 +17,7 @@ use crate::{
         render_pass::RenderPass,
     },
     scene::create_scene,
+    shader_pipelines::{MAIN_PIPELINE, SKYBOX_PIPELINE},
     skybox::Skybox,
 };
 
@@ -26,6 +28,7 @@ pub struct Game {
     scene: Vec<Node>,
     clock: Clock,
     skybox: Skybox,
+    gui: EguiBackend,
 }
 
 impl Game {
@@ -40,6 +43,7 @@ impl Game {
         let scene = create_scene(gfx, &mut physics);
         let clock = Clock::new();
         let skybox = Skybox::new(gfx);
+        let gui = EguiBackend::new(gfx);
 
         Self {
             player,
@@ -48,12 +52,14 @@ impl Game {
             scene,
             clock,
             skybox,
+            gui,
         }
     }
 
     pub fn draw(
         &mut self,
         input: &Mutex<Input>,
+        instance: &Instance,
         device: &Device,
         render_pass: &RenderPass,
         command_buffer: ActiveMultipleSubmitCommandBuffer,
@@ -61,6 +67,8 @@ impl Game {
         image: &SwapchainImage,
         extent: &vk::Extent2D,
     ) -> ActiveMultipleSubmitCommandBuffer {
+        self.gui.window_size = egui::Vec2::new(extent.width as f32, extent.height as f32);
+
         let interpolation_factor = ((std::time::Instant::now() - self.clock.previous_time)
             .as_secs_f64()
             / FIXED_UPDATE_INTERVAL) as f32;
@@ -89,7 +97,7 @@ impl Game {
 
         let ubo = UniformBufferObject {
             view_transform: camera_transform,
-            time: self.clock.time,
+            time: self.clock.time as f32,
             fov: ez,
             scale_y: (extent.width as f32) / (extent.height as f32),
         };
@@ -128,17 +136,17 @@ impl Game {
             self.skybox
                 .render(device, command_buffer, &uniform_buffer.descriptor_set);
 
-        unsafe {
+        let command_buffer = unsafe {
             device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
 
             let command_buffer = self.skybox.blit(
                 device,
                 command_buffer,
-                &render_pass.pipelines[1],
+                &render_pass.pipelines[SKYBOX_PIPELINE],
                 &uniform_buffer.descriptor_set,
             );
 
-            let pipeline = &render_pass.pipelines[0];
+            let pipeline = &render_pass.pipelines[MAIN_PIPELINE];
             device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, **pipeline);
             device.cmd_bind_descriptor_sets(
                 cmd_buf,
@@ -179,12 +187,25 @@ impl Game {
             device.cmd_end_render_pass(cmd_buf);
 
             command_buffer
-        }
+        };
+
+        self.gui.draw(
+            instance,
+            &device.device,
+            device.physical_device,
+            command_buffer,
+        )
     }
 
-    pub fn update(&mut self, input: &Mutex<Input>) {
+    pub fn update(
+        &mut self,
+        input: &Mutex<Input>,
+        events: Vec<egui::Event>,
+        modifiers: egui::Modifiers,
+    ) {
         self.clock.update();
-        let dt = self.clock.dt;
+
+        self.gui.update_input(&self.clock, events, modifiers);
 
         let player_rigid_body_handle = self.player.rigid_body_handle;
 
@@ -197,7 +218,7 @@ impl Game {
             physics,
             &input,
             Self::get_camera_rotor(input.camera_rotation),
-            dt,
+            self.clock.dt,
         );
 
         let player_transform =
@@ -205,7 +226,7 @@ impl Game {
 
         drop(input);
 
-        physics.step(&mut self.scene, &mut self.player, dt);
+        physics.step(&mut self.scene, &mut self.player, self.clock.dt);
 
         let gems_and_jewel_location = Vec2::new(8.0, 8.0);
         let distance = (Vec2::new(

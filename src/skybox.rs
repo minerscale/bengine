@@ -162,8 +162,10 @@ impl Skybox {
             gfx.device.device.clone(),
             gfx.device.physical_device,
             vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            vk::Filter::LINEAR,
+            vk::Filter::LINEAR,
             false,
-            0,
+            None,
         ));
 
         let texture = Material::new(

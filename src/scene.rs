@@ -114,8 +114,10 @@ fn load_gltf(
                     gfx.device.device.clone(),
                     gfx.device.physical_device,
                     vk::SamplerAddressMode::REPEAT,
+                    vk::Filter::LINEAR,
+                    vk::Filter::LINEAR,
                     true,
-                    image.mip_levels,
+                    Some((vk::SamplerMipmapMode::LINEAR, image.mip_levels)),
                 )),
                 properties,
                 &gfx.descriptor_pool,
@@ -278,8 +280,10 @@ fn scene(
             gfx.device.device.clone(),
             gfx.device.physical_device,
             vk::SamplerAddressMode::REPEAT,
+            vk::Filter::LINEAR,
+            vk::Filter::LINEAR,
             true,
-            mip_levels,
+            Some((vk::SamplerMipmapMode::LINEAR, mip_levels)),
         ))
     };
 

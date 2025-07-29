@@ -186,6 +186,7 @@ impl Renderer {
 
     pub fn draw<
         F: FnMut(
+            &Instance,
             &Device,
             &RenderPass,
             ActiveMultipleSubmitCommandBuffer,
@@ -209,6 +210,7 @@ impl Renderer {
                     .begin()
                     .record(|command_buffer| {
                         record_command_buffer(
+                            &self.instance,
                             &self.device,
                             &self.swapchain.render_pass,
                             command_buffer,

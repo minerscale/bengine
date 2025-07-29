@@ -8,9 +8,13 @@ use std::{
 use sdl3::{event::Event, keyboard::Keycode};
 use ultraviolet::Vec2;
 
-use crate::clock::FIXED_UPDATE_INTERVAL;
+use crate::{
+    clock::FIXED_UPDATE_INTERVAL,
+    egui_sdl3_event::{sdl3_to_egui_event, sdl3_to_egui_modifiers},
+};
 
 pub struct EventLoop {
+    sdl_context: sdl3::Sdl,
     pump: sdl3::EventPump,
 }
 
@@ -96,7 +100,11 @@ impl Inputs {
     }
 }
 
-fn process_event(event: Event, input: &mut Input) {
+fn process_event(
+    event: Event,
+    input: &mut Input,
+    modifiers: &egui::Modifiers,
+) -> Option<egui::Event> {
     match event {
         Event::KeyDown {
             keycode: Some(key),
@@ -141,14 +149,20 @@ fn process_event(event: Event, input: &mut Input) {
 
         _ => (),
     }
+
+    sdl3_to_egui_event(event, &modifiers)
 }
 
 impl EventLoop {
-    pub fn new(pump: sdl3::EventPump) -> Self {
-        Self { pump }
+    pub fn new(sdl_context: sdl3::Sdl) -> Self {
+        let pump = sdl_context.event_pump().unwrap();
+        Self { sdl_context, pump }
     }
 
-    pub fn run<F: FnMut(&Mutex<Input>) + Send, G: FnMut(&Mutex<Input>)>(
+    pub fn run<
+        F: FnMut(&Mutex<Input>) + Send,
+        G: FnMut(&Mutex<Input>, Vec<egui::Event>, egui::Modifiers),
+    >(
         &mut self,
         mut render: F,
         mut update: G,
@@ -181,13 +195,18 @@ impl EventLoop {
                 let mut minput = input.lock().unwrap();
 
                 minput.update();
+
+                let modifiers = sdl3_to_egui_modifiers(self.sdl_context.keyboard().mod_state());
+                let mut egui_events = Vec::new();
                 while let Some(event) = self.pump.poll_event() {
-                    process_event(event, &mut minput);
+                    if let Some(event) = process_event(event, &mut minput, &modifiers) {
+                        egui_events.push(event);
+                    };
                 }
                 let quit = minput.quit;
                 drop(minput);
 
-                update(&input);
+                update(&input, egui_events, modifiers);
 
                 if quit {
                     quit_tx.send(()).unwrap();

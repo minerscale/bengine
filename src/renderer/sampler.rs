@@ -14,12 +14,14 @@ impl Sampler {
         device: Arc<ash::Device>,
         physical_device: vk::PhysicalDevice,
         address_mode: vk::SamplerAddressMode,
+        mag_filter: vk::Filter,
+        min_filter: vk::Filter,
         anisotropy_enable: bool,
-        mip_levels: u32,
+        mipmap_info: Option<(vk::SamplerMipmapMode, u32)>,
     ) -> Self {
-        let sampler_info = vk::SamplerCreateInfo::default()
-            .mag_filter(vk::Filter::LINEAR)
-            .min_filter(vk::Filter::LINEAR)
+        let mut sampler_info = vk::SamplerCreateInfo::default()
+            .mag_filter(mag_filter)
+            .min_filter(min_filter)
             .address_mode_u(address_mode)
             .address_mode_v(address_mode)
             .address_mode_w(address_mode)
@@ -34,10 +36,13 @@ impl Sampler {
             .unnormalized_coordinates(false)
             .compare_enable(false)
             .compare_op(vk::CompareOp::ALWAYS)
-            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
             .mip_lod_bias(0.0)
-            .min_lod(0.0)
-            .max_lod(mip_levels as f32);
+            .min_lod(0.0);
+
+        if let Some((mipmap_mode, mip_levels)) = mipmap_info {
+            sampler_info.mipmap_mode = mipmap_mode;
+            sampler_info.max_lod = mip_levels as f32;
+        }
 
         let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };
 
