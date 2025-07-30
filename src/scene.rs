@@ -41,31 +41,46 @@ fn load_gltf(
     let root = Path::new(filename)
         .parent()
         .unwrap_or_else(|| Path::new("."));
-    let gltf = Gltf::open(filename).unwrap();
+    let gltf = Gltf::from_slice(include_bytes!("../test-objects/Sponza.glb")).unwrap();
+    
+    //let gltf = gltf::Glb::from_reader(BufReader::new(File::open("test-objects/Sponza.gltf").unwrap())).unwrap();
+
     let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
     let document = gltf.document;
 
-    let images: HashMap<&str, Arc<Image>> = document
+    fn get_uri(view: gltf::buffer::View) -> String {
+        view.index().to_string() + &view.offset().to_string()
+    }
+
+    let images: HashMap<String, Arc<Image>> = document
         .images()
-        .map(|image| match image.source() {
-            gltf::image::Source::View {
-                view: _,
-                mime_type: _,
-            } => todo!(),
-            gltf::image::Source::Uri { uri, mime_type: _ } => uri,
-        })
         .collect::<Vec<_>>()
         .par_iter()
-        .map(|&uri| {
-            (
-                uri,
-                image::ImageReader::new(BufReader::new(
-                    File::open(root.join(Path::new(uri))).unwrap(),
-                ))
+        .map(|image| {
+            let (uri, image) = match image.source() {
+                gltf::image::Source::View { view, mime_type: _ } => {
+                    let start = view.offset();
+                    let end = view.offset() + view.length();
+                    let buffer = &buffers[view.buffer().index()][start..end];
+
+                    (get_uri(view), image::ImageReader::new(Cursor::new(buffer))
+                        .with_guessed_format()
+                        .unwrap()
+                        .decode()
+                        .unwrap())
+                }
+                gltf::image::Source::Uri { uri, mime_type: _ } => (uri.to_owned(), image::ImageReader::new(
+                    BufReader::new(File::open(root.join(Path::new(uri))).unwrap()),
+                )
                 .with_guessed_format()
                 .unwrap()
                 .decode()
-                .unwrap(),
+                .unwrap()),
+            };
+
+            (
+                uri,
+                image,
             )
         })
         .collect::<Box<_>>()
@@ -97,9 +112,11 @@ fn load_gltf(
                 .source()
             {
                 gltf::image::Source::View {
-                    view: _,
+                    view,
                     mime_type: _,
-                } => todo!(),
+                } => {
+                    &images[&get_uri(view)]
+                },
                 gltf::image::Source::Uri { uri, mime_type: _ } => &images[uri],
             };
 

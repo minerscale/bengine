@@ -125,7 +125,8 @@ impl EguiBackend {
 
         let ctx = egui::Context::default();
 
-        ctx.set_zoom_factor(2.0);
+        ctx.set_zoom_factor(1.5);
+        ctx.set_visuals(egui::Visuals::dark());
 
         Self {
             ctx,
@@ -153,28 +154,37 @@ impl EguiBackend {
         }
 
         let full_output = self.ctx.run(self.input.clone(), |ctx| {
-            egui::SidePanel::left("my_left_panel").show(ctx, |ui| {
-                ui.label("This is a label");
-                ui.hyperlink("https://github.com/emilk/egui");
-                ui.text_edit_singleline(&mut my_string);
-                if ui.button("Click me").clicked() {}
-                ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
-                ui.add(egui::DragValue::new(&mut my_f32));
+            egui::SidePanel::left("my_left_panel")
+                .frame(egui::Frame {
+                    inner_margin: egui::Margin::symmetric(4, 4),
+                    fill: egui::Color32::from_black_alpha(200),
+                    stroke: egui::Stroke::NONE,
+                    corner_radius: egui::CornerRadius::ZERO,
+                    outer_margin: egui::Margin::ZERO,
+                    shadow: egui::Shadow::NONE,
+                })
+                .show(ctx, |ui| {
+                    ui.label("This is a label");
+                    ui.hyperlink("https://github.com/emilk/egui");
+                    ui.text_edit_singleline(&mut my_string);
+                    if ui.button("Click me").clicked() {}
+                    ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
+                    ui.add(egui::DragValue::new(&mut my_f32));
 
-                ui.checkbox(&mut my_boolean, "Checkbox");
+                    ui.checkbox(&mut my_boolean, "Checkbox");
 
-                ui.horizontal(|ui| {
-                    ui.radio_value(&mut my_enum, Enum::First, "First");
-                    ui.radio_value(&mut my_enum, Enum::Second, "Second");
-                    ui.radio_value(&mut my_enum, Enum::Third, "Third");
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut my_enum, Enum::First, "First");
+                        ui.radio_value(&mut my_enum, Enum::Second, "Second");
+                        ui.radio_value(&mut my_enum, Enum::Third, "Third");
+                    });
+
+                    ui.separator();
+
+                    ui.collapsing("Click to see what is hidden!", |ui| {
+                        ui.label("Not much, as it turns out");
+                    });
                 });
-
-                ui.separator();
-
-                ui.collapsing("Click to see what is hidden!", |ui| {
-                    ui.label("Not much, as it turns out");
-                });
-            });
 
             //egui::CentralPanel::default().show(&ctx, |ui| {});
         });
@@ -508,7 +518,7 @@ pub fn make_egui_pipeline(
         vk::VertexInputAttributeDescription {
             location: 2,
             binding: 0,
-            format: vk::Format::R8G8B8A8_UINT,
+            format: vk::Format::R8G8B8A8_UNORM,
             offset: offset_of!(egui::epaint::Vertex, color) as u32,
         },
     ];
@@ -524,7 +534,7 @@ pub fn make_egui_pipeline(
         src_color_blend_factor: vk::BlendFactor::ONE,
         dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
         color_blend_op: vk::BlendOp::ADD,
-        src_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+        src_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_DST_ALPHA,
         dst_alpha_blend_factor: vk::BlendFactor::ONE,
         alpha_blend_op: vk::BlendOp::ADD,
         color_write_mask: vk::ColorComponentFlags::RGBA,
