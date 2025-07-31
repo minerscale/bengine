@@ -22,6 +22,7 @@ mod scene;
 mod shader_pipelines;
 mod skybox;
 mod vertex;
+mod gltf;
 
 use event_loop::EventLoop;
 use game::Game;
