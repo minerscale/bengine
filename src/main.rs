@@ -1,3 +1,4 @@
+#![feature(macro_metavar_expr_concat)]
 #![windows_subsystem = "windows"]
 #![warn(clippy::pedantic, clippy::cargo)]
 #![allow(clippy::multiple_crate_versions)]
@@ -43,40 +44,40 @@ fn main() {
         .resizable()
         .build()
         .unwrap();
-    sdl_context.mouse().set_relative_mouse_mode(&window, true);
+
     sdl_context.video().unwrap().text_input().start(&window);
 
     let mut gfx = Renderer::new(WIDTH, HEIGHT, &window, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
 
     let game = Mutex::new(Game::new(&gfx));
 
-    let mut event_loop = EventLoop::new(sdl_context);
+    let mut event_loop = EventLoop::new(sdl_context, window);
 
     info!("finished loading");
 
     event_loop.run(
-        |input| {
-            let mut minput = input.lock().unwrap();
+        |shared_state| {
+            let mut mgame = game.lock().unwrap();
+            let mut state = shared_state.lock().unwrap();
 
-            let framebuffer_resized = if let Some(framebuffer_size) = minput.framebuffer_resized {
+            let framebuffer_resized = if let Some(framebuffer_size) = state.framebuffer_resized {
                 gfx.window_size = framebuffer_size;
                 true
             } else {
                 false
             };
 
-            minput.framebuffer_resized = None;
+            state.framebuffer_resized = None;
 
-            let gui_scale = minput.gui_scale;
-            drop(minput);
-
-            game.lock().unwrap().gui.update(&gfx, gui_scale);
+            mgame.gui.update(&gfx, &mut state);
+            drop(state);
+            drop(mgame);
 
             gfx.acquire_next_image(framebuffer_resized);
             gfx.draw(
                 |device, render_pass, command_buffer, uniform_buffers, image| {
                     game.lock().unwrap().draw(
-                        input,
+                        &mut shared_state.lock().unwrap(),
                         device,
                         render_pass,
                         command_buffer,
@@ -87,8 +88,10 @@ fn main() {
             );
             gfx.present();
         },
-        |input, events, modifiers| {
-            game.lock().unwrap().update(input, events, modifiers);
+        |shared_state, events, modifiers| {
+            game.lock()
+                .unwrap()
+                .update(&mut shared_state.lock().unwrap(), events, modifiers);
         },
     );
 

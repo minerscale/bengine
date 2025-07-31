@@ -6,6 +6,7 @@ use egui::{ClippedPrimitive, Vec2, ahash::HashMap};
 
 use crate::{
     clock::Clock,
+    event_loop::SharedState,
     renderer::{
         Renderer,
         buffer::Buffer,
@@ -20,7 +21,7 @@ use crate::{
     shader_pipelines::MATERIAL_LAYOUT,
 };
 
-pub type GuiFn = dyn FnMut(&egui::Context) + Send + Sync;
+pub type GuiFn = dyn FnMut(&egui::Context, &mut SharedState) + Send + Sync;
 
 pub struct EguiBackend {
     pub ctx: egui::Context,
@@ -255,16 +256,18 @@ impl EguiBackend {
         }
     }
 
-    pub fn update(&mut self, gfx: &Renderer, gui_scale: f32) {
-        self.gui_scale(gui_scale);
+    pub fn update(&mut self, gfx: &Renderer, shared_state: &mut SharedState) {
+        self.gui_scale(shared_state.gui_scale);
         self.free_textures();
-        self.run();
+        self.run(shared_state);
         self.update_textures(gfx);
         self.upload_clipped_primitives(gfx);
     }
 
-    fn run(&mut self) {
-        let full_output = self.ctx.run(self.input.clone(), |ctx| (self.gui_fn)(ctx));
+    fn run(&mut self, shared_state: &mut SharedState) {
+        let full_output = self
+            .ctx
+            .run(self.input.clone(), |ctx| (self.gui_fn)(ctx, shared_state));
 
         self.input.events.clear();
 
@@ -317,6 +320,10 @@ impl EguiBackend {
         self.clipped_primitives = self
             .ctx
             .tessellate(full_output.shapes.clone(), full_output.pixels_per_point);
+
+        if self.clipped_primitives.is_empty() {
+            return;
+        }
 
         let mut index_buffers = Vec::new();
         let mut vertex_buffers = Vec::new();

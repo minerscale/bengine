@@ -1,5 +1,7 @@
 use egui_backend::GuiFn;
 
+use crate::{event_loop::SharedState, game::GameState};
+
 pub(crate) mod egui_backend;
 pub(crate) mod egui_sdl3_event;
 
@@ -15,8 +17,9 @@ pub fn create_gui() -> Box<GuiFn> {
     let mut my_f32 = 0.0f32;
     let mut my_boolean = false;
     let mut my_enum = Enum::First;
-    Box::new(move |ctx| {
-        egui::SidePanel::left("my_left_panel")
+
+    let mut main_menu = move |ctx: &egui::Context, shared_state: &mut SharedState| {
+        egui::SidePanel::left("main_menu")
             .frame(egui::Frame {
                 inner_margin: egui::Margin::symmetric(4, 4),
                 fill: egui::Color32::from_black_alpha(200),
@@ -30,7 +33,7 @@ pub fn create_gui() -> Box<GuiFn> {
                 ui.hyperlink("https://github.com/emilk/egui");
                 ui.text_edit_singleline(&mut my_string);
                 if ui.button("Click me").clicked() {
-                    println!("Clicked!!");
+                    shared_state.set_game_state(GameState::Playing);
                 }
                 ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
                 ui.add(egui::DragValue::new(&mut my_f32));
@@ -49,5 +52,18 @@ pub fn create_gui() -> Box<GuiFn> {
                     ui.label("Not much, as it turns out");
                 });
             });
+    };
+
+    let playing_menu = move |ctx: &egui::Context, shared_state: &mut SharedState| {
+        ctx.input(|input| {
+            if input.key_pressed(egui::Key::Q) {
+                shared_state.set_game_state(GameState::Menu);
+            }
+        });
+    };
+
+    Box::new(move |ctx, shared_state| match shared_state.game_state() {
+        GameState::Menu => main_menu(ctx, shared_state),
+        GameState::Playing => playing_menu(ctx, shared_state),
     })
 }

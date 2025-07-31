@@ -20,9 +20,6 @@ lto = true
 [profile.dev.package.image]
 opt-level = 3
 
-[profile.dev.package.zune-jpeg]
-opt-level = 3
-
 [dependencies]
 bytemuck = "1.23.1"
 colored = "3.0.0"

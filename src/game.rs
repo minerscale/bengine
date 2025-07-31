@@ -1,6 +1,5 @@
 use ash::vk;
 use easy_cast::{Cast, CastApprox};
-use tracing_mutex::stdsync::Mutex;
 use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
 
 use crate::{
@@ -8,8 +7,7 @@ use crate::{
     audio::{Audio, AudioParameters},
     clock::{Clock, FIXED_UPDATE_INTERVAL},
     event_loop::SharedState,
-    gui::create_gui,
-    gui::egui_backend::EguiBackend,
+    gui::{create_gui, egui_backend::EguiBackend},
     node::{Node, Object},
     physics::{Physics, from_nalgebra},
     player::Player,
@@ -22,6 +20,12 @@ use crate::{
     shader_pipelines::{EGUI_PIPELINE, MAIN_PIPELINE, SKYBOX_PIPELINE},
     skybox::Skybox,
 };
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum GameState {
+    Menu,
+    Playing,
+}
 
 pub struct Game {
     pub player: Player,
@@ -59,51 +63,12 @@ impl Game {
         }
     }
 
-    pub fn draw(
-        &mut self,
-        shared_state: &Mutex<SharedState>,
+    fn begin_render_pass(
         device: &Device,
-        render_pass: &RenderPass,
         command_buffer: ActiveMultipleSubmitCommandBuffer,
-        uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
+        render_pass: &RenderPass,
         image: &SwapchainImage,
     ) -> ActiveMultipleSubmitCommandBuffer {
-        let window_size = egui::Vec2::new(image.extent.width.cast(), image.extent.height.cast());
-        self.gui.window_size = window_size;
-
-        let interpolation_factor = (self.clock.previous_time.elapsed().as_secs_f64()
-            / FIXED_UPDATE_INTERVAL)
-            .cast_approx();
-
-        let player_transform = self
-            .player
-            .previous_position
-            .lerp(self.player.position, interpolation_factor);
-
-        let state = shared_state.lock().unwrap();
-        let camera_rotation = Self::get_camera_rotor(
-            state
-                .previous
-                .camera_rotation
-                .lerp(state.camera_rotation, interpolation_factor),
-        );
-        drop(state);
-
-        let camera_transform = Isometry3::new(
-            player_transform + Vec3::new(0.0, 0.8, 0.0),
-            camera_rotation.reversed(),
-        );
-
-        let fov = FOV.to_radians();
-        let ez = f32::tan(fov / 2.0).recip();
-
-        let ubo = UniformBufferObject {
-            view_transform: camera_transform,
-            time: self.clock.time.cast_approx(),
-            fov: ez,
-            scale_y: window_size.x / window_size.y,
-        };
-
         let clear_color = [
             vk::ClearValue {
                 color: vk::ClearColorValue {
@@ -126,6 +91,60 @@ impl Game {
             })
             .clear_values(&clear_color);
 
+        unsafe {
+            device.cmd_begin_render_pass(
+                *command_buffer,
+                &render_pass_info,
+                vk::SubpassContents::INLINE,
+            );
+        }
+
+        command_buffer
+    }
+
+    fn draw_playing(
+        &mut self,
+        shared_state: &mut SharedState,
+        device: &Device,
+        render_pass: &RenderPass,
+        command_buffer: ActiveMultipleSubmitCommandBuffer,
+        uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
+        image: &SwapchainImage,
+    ) -> ActiveMultipleSubmitCommandBuffer {
+        let window_size = egui::Vec2::new(image.extent.width.cast(), image.extent.height.cast());
+        self.gui.window_size = window_size;
+
+        let interpolation_factor = (self.clock.previous_time.elapsed().as_secs_f64()
+            / FIXED_UPDATE_INTERVAL)
+            .cast_approx();
+
+        let player_transform = self
+            .player
+            .previous_position
+            .lerp(self.player.position, interpolation_factor);
+
+        let camera_rotation = Self::get_camera_rotor(
+            shared_state
+                .previous
+                .camera_rotation
+                .lerp(shared_state.camera_rotation, interpolation_factor),
+        );
+
+        let camera_transform = Isometry3::new(
+            player_transform + Vec3::new(0.0, 0.8, 0.0),
+            camera_rotation.reversed(),
+        );
+
+        let fov = FOV.to_radians();
+        let ez = f32::tan(fov / 2.0).recip();
+
+        let ubo = UniformBufferObject {
+            view_transform: camera_transform,
+            time: self.clock.time.cast_approx(),
+            fov: ez,
+            scale_y: window_size.x / window_size.y,
+        };
+
         let uniform_buffer = &mut uniform_buffers[0];
 
         let uniform_buffer_descriptor_set = [*uniform_buffer.descriptor_set];
@@ -138,9 +157,9 @@ impl Game {
             self.skybox
                 .render(device, command_buffer, &uniform_buffer.descriptor_set);
 
-        unsafe {
-            device.cmd_begin_render_pass(cmd_buf, &render_pass_info, vk::SubpassContents::INLINE);
+        let command_buffer = Self::begin_render_pass(device, command_buffer, render_pass, image);
 
+        unsafe {
             let command_buffer = self.skybox.blit(
                 device,
                 command_buffer,
@@ -186,43 +205,57 @@ impl Game {
                 }
             }
 
-            let pipeline = &render_pass.pipelines[EGUI_PIPELINE];
-            self.gui.draw(device, image.extent, cmd_buf, pipeline);
-
-            device.cmd_end_render_pass(cmd_buf);
-
             command_buffer
         }
     }
 
-    pub fn update(
+    pub fn draw(
         &mut self,
-        shared_state: &Mutex<SharedState>,
-        events: Vec<egui::Event>,
-        modifiers: egui::Modifiers,
-    ) {
-        self.clock.update();
+        shared_state: &mut SharedState,
+        device: &Device,
+        render_pass: &RenderPass,
+        command_buffer: ActiveMultipleSubmitCommandBuffer,
+        uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
+        image: &SwapchainImage,
+    ) -> ActiveMultipleSubmitCommandBuffer {
+        let command_buffer = if shared_state.game_state() == GameState::Playing {
+            self.draw_playing(
+                shared_state,
+                device,
+                render_pass,
+                command_buffer,
+                uniform_buffers,
+                image,
+            )
+        } else {
+            Self::begin_render_pass(device, command_buffer, render_pass, image)
+        };
 
-        self.gui.update_input(&self.clock, events, modifiers);
+        let cmd_buf = *command_buffer;
+        let pipeline = &render_pass.pipelines[EGUI_PIPELINE];
 
+        self.gui.draw(device, image.extent, cmd_buf, pipeline);
+
+        unsafe { device.cmd_end_render_pass(cmd_buf) };
+
+        command_buffer
+    }
+
+    fn update_playing(&mut self, shared_state: &mut SharedState) {
         let player_rigid_body_handle = self.player.rigid_body_handle;
-
-        let state = shared_state.lock().unwrap();
 
         let player = &mut self.player;
         let physics = &mut self.physics;
 
         player.update(
             physics,
-            &state,
-            Self::get_camera_rotor(state.camera_rotation),
+            shared_state,
+            Self::get_camera_rotor(shared_state.camera_rotation),
             self.clock.dt,
         );
 
         let player_transform =
             from_nalgebra(physics.rigid_body_set[player_rigid_body_handle].position());
-
-        drop(state);
 
         physics.step(&mut self.scene, &mut self.player, self.clock.dt);
 
@@ -235,7 +268,27 @@ impl Game {
 
         self.audio
             .parameter_stream
-            .send(AudioParameters::new(distance.into()))
+            .send(AudioParameters::new(1.0, distance.into()))
             .unwrap();
+    }
+
+    pub fn update(
+        &mut self,
+        shared_state: &mut SharedState,
+        events: Vec<egui::Event>,
+        modifiers: egui::Modifiers,
+    ) {
+        self.clock.update();
+
+        self.gui.update_input(&self.clock, events, modifiers);
+
+        match shared_state.game_state() {
+            GameState::Menu => self
+                .audio
+                .parameter_stream
+                .send(AudioParameters::new(0.0, 100.0))
+                .unwrap(),
+            GameState::Playing => self.update_playing(shared_state),
+        }
     }
 }

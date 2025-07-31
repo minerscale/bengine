@@ -4,17 +4,19 @@ use std::{
 };
 
 use easy_cast::Cast;
-use sdl3::{event::Event, keyboard::Keycode};
+use sdl3::event::Event;
 use tracing_mutex::stdsync::Mutex;
 use ultraviolet::Vec2;
 
 use crate::{
     clock::FIXED_UPDATE_INTERVAL,
+    game::GameState,
     gui::egui_sdl3_event::{sdl3_to_egui_event, sdl3_to_egui_modifiers},
 };
 
 pub struct EventLoop {
     sdl_context: sdl3::Sdl,
+    window: sdl3::video::Window,
     pump: sdl3::EventPump,
 }
 
@@ -37,6 +39,9 @@ pub struct SharedState {
     pub previous: Input,
 
     pub framebuffer_resized: Option<(u32, u32)>,
+    game_state: GameState,
+    previous_game_state: GameState,
+    game_state_just_changed: bool,
     pub gui_scale: f32,
 }
 
@@ -61,17 +66,37 @@ impl SharedState {
             previous: initial_state,
             framebuffer_resized: None,
             gui_scale,
+            game_state: GameState::Menu,
+            previous_game_state: GameState::Menu,
+            game_state_just_changed: false,
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn game_state(&self) -> GameState {
+        self.game_state
+    }
+
+    pub fn set_game_state(&mut self, new_state: GameState) {
+        self.previous_game_state = self.game_state;
+        self.game_state = new_state;
+        self.game_state_just_changed = true;
+    }
+
+    pub fn update(&mut self, sdl_context: &sdl3::Sdl, window: &sdl3::video::Window) {
         self.previous = self.inputs.clone();
+
+        if self.game_state_just_changed {
+            match self.game_state {
+                GameState::Menu => sdl_context.mouse().set_relative_mouse_mode(window, false),
+                GameState::Playing => sdl_context.mouse().set_relative_mouse_mode(window, true),
+            }
+        }
     }
 }
 
 impl Input {
-    pub fn set_input(&mut self, key: sdl3::keyboard::Keycode, pressed: bool) {
-        type K = Keycode;
+    pub fn set_input(&mut self, key: sdl3::keyboard::Scancode, pressed: bool) {
+        type K = sdl3::keyboard::Scancode;
         if cfg!(feature = "colemak") {
             match key {
                 K::W => self.forward = pressed,
@@ -108,15 +133,15 @@ fn process_event(
     event: Event,
     input: &mut SharedState,
     modifiers: egui::Modifiers,
-) -> [Option<egui::Event>;2] {
+) -> [Option<egui::Event>; 2] {
     match event {
         Event::KeyDown {
-            keycode: Some(key),
+            scancode: Some(key),
             repeat: false,
             ..
         } => input.set_input(key, true),
         Event::KeyUp {
-            keycode: Some(key),
+            scancode: Some(key),
             repeat: false,
             ..
         } => input.set_input(key, false),
@@ -158,9 +183,13 @@ fn process_event(
 }
 
 impl EventLoop {
-    pub fn new(sdl_context: sdl3::Sdl) -> Self {
+    pub fn new(sdl_context: sdl3::Sdl, window: sdl3::video::Window) -> Self {
         let pump = sdl_context.event_pump().unwrap();
-        Self { sdl_context, pump }
+        Self {
+            sdl_context,
+            window,
+            pump,
+        }
     }
 
     pub fn run<
@@ -200,12 +229,15 @@ impl EventLoop {
             let fixed_update_interval = Duration::from_secs_f64(FIXED_UPDATE_INTERVAL);
             'quit: loop {
                 let mut state = shared_state.lock().unwrap();
-                state.update();
+                state.update(&self.sdl_context, &self.window);
 
                 let modifiers = sdl3_to_egui_modifiers(self.sdl_context.keyboard().mod_state());
                 let mut egui_events = Vec::new();
                 while let Some(event) = self.pump.poll_event() {
-                    for event in process_event(event, &mut state, modifiers).into_iter().flatten() {
+                    for event in process_event(event, &mut state, modifiers)
+                        .into_iter()
+                        .flatten()
+                    {
                         egui_events.push(event);
                     }
                 }

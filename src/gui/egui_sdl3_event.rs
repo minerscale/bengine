@@ -107,11 +107,14 @@ pub fn sdl3_to_egui_event(
             direction: _,
             mouse_x: _,
             mouse_y: _,
-        } => [Some(EEv::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::Vec2::new(x, y) / gui_scale,
-            modifiers,
-        }), None],
+        } => [
+            Some(EEv::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::Vec2::new(x, y) / gui_scale,
+                modifiers,
+            }),
+            None,
+        ],
         SEv::MouseButtonDown {
             timestamp: _,
             window_id: _,
@@ -120,7 +123,10 @@ pub fn sdl3_to_egui_event(
             clicks: _,
             x,
             y,
-        } => [mouse_button(mouse_btn, x, y, true, modifiers, gui_scale), None],
+        } => [
+            mouse_button(mouse_btn, x, y, true, modifiers, gui_scale),
+            None,
+        ],
         SEv::MouseButtonUp {
             timestamp: _,
             window_id: _,
@@ -129,7 +135,10 @@ pub fn sdl3_to_egui_event(
             clicks: _,
             x,
             y,
-        } => [mouse_button(mouse_btn, x, y, false, modifiers, gui_scale), None],
+        } => [
+            mouse_button(mouse_btn, x, y, false, modifiers, gui_scale),
+            None,
+        ],
         SEv::Window {
             timestamp: _,
             window_id: _,
@@ -143,7 +152,7 @@ pub fn sdl3_to_egui_event(
                 _ => None,
             };
             [event, None]
-        },
+        }
         _ => [None, None],
     }
 }

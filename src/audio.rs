@@ -13,13 +13,15 @@ pub struct Audio {
     pub parameter_stream: Sender<AudioParameters>,
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct AudioParameters {
+    volume: f64,
     distance: f64,
 }
 
 impl AudioParameters {
-    pub fn new(distance: f64) -> Self {
-        Self { distance }
+    pub fn new(volume: f64, distance: f64) -> Self {
+        Self { volume, distance }
     }
 }
 
@@ -32,10 +34,12 @@ struct OscillatorParameters {
 
 impl OscillatorParameters {
     pub fn new(smoothing_constant: f64) -> Self {
+        let inputs = AudioParameters::new(0.0, 100.0);
+
         Self {
             position: 0.0,
-            smoothed_inputs: AudioParameters::new(100.0),
-            latest_parameters: AudioParameters::new(100.0),
+            smoothed_inputs: inputs,
+            latest_parameters: inputs,
             alpha: 1.0 - f64::exp(-(f64::from(SAMPLE_RATE)).recip() / smoothing_constant),
         }
     }
@@ -50,6 +54,11 @@ impl OscillatorParameters {
 
     pub fn update(&mut self) {
         self.smoothed_inputs = AudioParameters {
+            volume: Self::exponential_smoothing(
+                self.alpha,
+                self.latest_parameters.distance,
+                self.smoothed_inputs.distance,
+            ),
             distance: Self::exponential_smoothing(
                 self.alpha,
                 self.latest_parameters.distance,
@@ -64,17 +73,22 @@ fn write_audio<T: Sample + cpal::FromSample<f64>>(
     data: &mut [T],
     parameters: &mut OscillatorParameters,
 ) {
+    const EPSILON: f64 = 0.0001;
+
     for sample in data.iter_mut() {
         parameters.update();
 
-        let d = (parameters.smoothed_inputs.distance + 1.0).recip();
+        if parameters.smoothed_inputs.volume > EPSILON {
+            let d = (parameters.smoothed_inputs.distance + 1.0).recip();
 
-        parameters.position +=
-            (std::f64::consts::TAU * 440.0 * d.powf(1.5)) / f64::from(SAMPLE_RATE);
+            parameters.position +=
+                (std::f64::consts::TAU * 440.0 * d.powf(1.5)) / f64::from(SAMPLE_RATE);
 
-        let out = d.powi(2) * parameters.position.sin();
-
-        *sample = Sample::from_sample(out);
+            let out = parameters.smoothed_inputs.volume * d.powi(2) * parameters.position.sin();
+            *sample = Sample::from_sample(out);
+        } else {
+            *sample = Sample::from_sample(0.0);
+        }
     }
 }
 

@@ -26,7 +26,7 @@ impl Clock {
             .checked_sub(std::time::Duration::from_secs_f64(FIXED_UPDATE_INTERVAL))
             .unwrap();
 
-        let dt = (start_time - previous_time).as_secs_f32();
+        let dt = FIXED_UPDATE_INTERVAL.cast_approx();
         let time = 0.0;
 
         Self {
