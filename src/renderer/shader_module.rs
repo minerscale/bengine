@@ -1,3 +1,4 @@
+use crate::renderer::Device;
 use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
@@ -26,7 +27,7 @@ impl<'a> Deref for SpecializationInfo<'a> {
 }
 
 pub struct ShaderModule<'a> {
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
     shader: vk::ShaderModule,
     pub stage: vk::ShaderStageFlags,
     pub specialization_info: Option<SpecializationInfo<'a>>,
@@ -59,7 +60,7 @@ pub(crate) use spv;
 
 impl<'a> ShaderModule<'a> {
     pub fn new(
-        device: Arc<ash::Device>,
+        device: Arc<Device>,
         shader: vk::ShaderModule,
         stage: vk::ShaderStageFlags,
         specialization_info: Option<SpecializationInfo<'a>>,

@@ -150,7 +150,7 @@ fn process_event(
         _ => (),
     }
 
-    sdl3_to_egui_event(event, &modifiers)
+    sdl3_to_egui_event(event, modifiers)
 }
 
 impl EventLoop {

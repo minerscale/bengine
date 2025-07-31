@@ -7,6 +7,7 @@ use log::debug;
 use crate::renderer::{
     buffer::{Buffer, find_memory_type},
     command_buffer::ActiveCommandBuffer,
+    device::Device,
     render_pass::RenderPass,
 };
 
@@ -16,12 +17,12 @@ pub struct SwapchainImage {
     pub view: vk::ImageView,
     pub framebuffer: vk::Framebuffer,
     pub extent: vk::Extent2D,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 impl SwapchainImage {
     pub fn new(
-        device: Arc<ash::Device>,
+        device: Arc<Device>,
         image: vk::Image,
         format: vk::Format,
         extent: vk::Extent2D,
@@ -56,7 +57,7 @@ pub struct Image {
 
     pub mip_levels: u32,
 
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 fn copy_buffer_to_image<C: ActiveCommandBuffer>(
@@ -94,6 +95,16 @@ fn copy_buffer_to_image<C: ActiveCommandBuffer>(
         );
         cmd_buf.add_dependency(buffer);
     }
+}
+
+pub struct ImageCreateInfo {
+    pub sample_count: vk::SampleCountFlags,
+    pub format: vk::Format,
+    pub tiling: vk::ImageTiling,
+    pub usage: vk::ImageUsageFlags,
+    pub memory_properties: vk::MemoryPropertyFlags,
+    pub aspect_flags: vk::ImageAspectFlags,
+    pub mipmapping: bool,
 }
 
 impl Image {
@@ -169,9 +180,7 @@ impl Image {
     }
 
     pub fn from_image<C: ActiveCommandBuffer>(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        device: &Arc<ash::Device>,
+        device: &Arc<Device>,
         cmd_buf: &mut C,
         image: DynamicImage,
         gamma_correction: bool,
@@ -179,9 +188,21 @@ impl Image {
         let extent = image.dimensions();
         let img = image.into_rgba8().into_vec();
 
+        let info = ImageCreateInfo {
+            sample_count: vk::SampleCountFlags::TYPE_1,
+            format: if gamma_correction {
+                vk::Format::R8G8B8A8_SRGB
+            } else {
+                vk::Format::R8G8B8A8_UNORM
+            },
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::empty(),
+            memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+            aspect_flags: vk::ImageAspectFlags::COLOR,
+            mipmapping: true,
+        };
+
         Self::new_staged(
-            instance,
-            physical_device,
             device,
             vk::Extent2D {
                 width: extent.0,
@@ -189,69 +210,45 @@ impl Image {
             },
             &img,
             cmd_buf,
-            vk::SampleCountFlags::TYPE_1,
-            if gamma_correction {
-                vk::Format::R8G8B8A8_SRGB
-            } else {
-                vk::Format::R8G8B8A8_UNORM
-            },
-            vk::ImageTiling::OPTIMAL,
-            vk::MemoryPropertyFlags::DEVICE_LOCAL,
-            vk::ImageAspectFlags::COLOR,
-            true,
+            info,
         )
     }
 
     pub fn from_bytes<C: ActiveCommandBuffer>(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        device: &Arc<ash::Device>,
+        device: &Arc<Device>,
         cmd_buf: &mut C,
         bytes: &[u8],
     ) -> Arc<Self> {
         let image = ::image::load_from_memory(bytes).unwrap();
 
-        Self::from_image(instance, physical_device, device, cmd_buf, image, true)
+        Self::from_image(device, cmd_buf, image, true)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn new_staged<C: ActiveCommandBuffer>(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        device: &Arc<ash::Device>,
+        device: &Arc<Device>,
         extent: vk::Extent2D,
         image_data: &[u8],
         cmd_buf: &mut C,
-        sample_count: vk::SampleCountFlags,
-        format: vk::Format,
-        tiling: vk::ImageTiling,
-        properties: vk::MemoryPropertyFlags,
-        aspect_flags: vk::ImageAspectFlags,
-        mipmapping: bool,
+        info: ImageCreateInfo,
     ) -> Arc<Self> {
-        let image = Arc::new(Self::new(
-            instance,
-            physical_device,
-            device.clone(),
-            extent,
-            sample_count,
-            format,
-            tiling,
-            if mipmapping {
-                vk::ImageUsageFlags::TRANSFER_SRC
-            } else {
-                vk::ImageUsageFlags::empty()
-            } | vk::ImageUsageFlags::TRANSFER_DST
+        let mipmapping = info.mipmapping;
+
+        let info = ImageCreateInfo {
+            usage: info.usage
+                | if mipmapping {
+                    vk::ImageUsageFlags::TRANSFER_SRC
+                } else {
+                    vk::ImageUsageFlags::empty()
+                }
+                | vk::ImageUsageFlags::TRANSFER_DST
                 | vk::ImageUsageFlags::SAMPLED,
-            properties,
-            aspect_flags,
-            mipmapping,
-        ));
+            ..info
+        };
+
+        let image = Arc::new(Self::new(device.clone(), extent, info));
 
         let staging_buffer = Arc::new(Buffer::new(
-            device.clone(),
-            instance,
-            physical_device,
+            device,
             image_data,
             vk::BufferUsageFlags::TRANSFER_SRC,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
@@ -356,53 +353,21 @@ impl Image {
     }
 
     pub fn new_with_layout<C: ActiveCommandBuffer>(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        device: &Arc<ash::Device>,
+        device: &Arc<Device>,
         extent: vk::Extent2D,
-        sample_count: vk::SampleCountFlags,
-        format: vk::Format,
-        tiling: vk::ImageTiling,
-        usage: vk::ImageUsageFlags,
-        properties: vk::MemoryPropertyFlags,
-        aspect_flags: vk::ImageAspectFlags,
+        info: ImageCreateInfo,
         cmd_buf: &mut C,
         layout: vk::ImageLayout,
     ) -> Self {
-        let image = Self::new(
-            instance,
-            physical_device,
-            device.clone(),
-            extent,
-            sample_count,
-            format,
-            tiling,
-            usage,
-            properties,
-            aspect_flags,
-            false,
-        );
+        let image = Self::new(device.clone(), extent, info);
 
         image.transition_layout(device, cmd_buf, None, vk::ImageLayout::UNDEFINED, layout);
 
         image
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        device: Arc<ash::Device>,
-        extent: vk::Extent2D,
-        sample_count: vk::SampleCountFlags,
-        format: vk::Format,
-        tiling: vk::ImageTiling,
-        usage: vk::ImageUsageFlags,
-        properties: vk::MemoryPropertyFlags,
-        aspect_flags: vk::ImageAspectFlags,
-        mipmapping: bool,
-    ) -> Self {
-        let mip_levels = if mipmapping {
+    pub fn new(device: Arc<Device>, extent: vk::Extent2D, info: ImageCreateInfo) -> Self {
+        let mip_levels = if info.mipmapping {
             extent.width.max(extent.height).ilog2() + 1
         } else {
             1
@@ -417,11 +382,11 @@ impl Image {
             })
             .mip_levels(mip_levels)
             .array_layers(1)
-            .format(format)
-            .tiling(tiling)
+            .format(info.format)
+            .tiling(info.tiling)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .usage(usage)
-            .samples(sample_count)
+            .usage(info.usage)
+            .samples(info.sample_count)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (image, memory) = unsafe {
@@ -431,10 +396,10 @@ impl Image {
             let alloc_info = vk::MemoryAllocateInfo::default()
                 .allocation_size(memory_requirements.size)
                 .memory_type_index(find_memory_type(
-                    instance,
-                    physical_device,
+                    &device.instance,
+                    device.physical_device,
                     memory_requirements.memory_type_bits,
-                    properties,
+                    info.memory_properties,
                 ));
 
             let memory = device.allocate_memory(&alloc_info, None).unwrap();
@@ -445,7 +410,7 @@ impl Image {
 
         Self {
             image,
-            view: create_image_view(&device, image, format, aspect_flags, mip_levels),
+            view: create_image_view(&device, image, info.format, info.aspect_flags, mip_levels),
             memory,
             extent,
             device,

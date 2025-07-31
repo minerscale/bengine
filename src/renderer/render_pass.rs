@@ -8,22 +8,21 @@ use crate::renderer::{device::Device, pipeline::Pipeline, swapchain::find_depth_
 pub struct RenderPass {
     render_pass: vk::RenderPass,
     pub pipelines: Vec<Pipeline>,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 impl RenderPass {
     pub fn new<
         T: Iterator<
             Item = impl Fn(
-                &Device,
+                &Arc<Device>,
                 vk::Extent2D,
                 vk::RenderPass,
                 &[vk::DescriptorSetLayout],
             ) -> Pipeline,
         >,
     >(
-        instance: &ash::Instance,
-        device: &Device,
+        device: &Arc<Device>,
         format: vk::Format,
         extent: vk::Extent2D,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
@@ -43,7 +42,7 @@ impl RenderPass {
             });
 
         let depth_attachment = vk::AttachmentDescription::default()
-            .format(find_depth_format(instance, device.physical_device))
+            .format(find_depth_format(&device.instance, device.physical_device))
             .samples(device.msaa_samples)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::DONT_CARE)
@@ -127,7 +126,7 @@ impl RenderPass {
             .collect::<Vec<_>>();
 
         Self {
-            device: device.device.clone(),
+            device: device.clone(),
             render_pass,
             pipelines,
         }

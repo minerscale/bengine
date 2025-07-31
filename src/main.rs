@@ -13,6 +13,7 @@ mod egui_backend;
 mod egui_sdl3_event;
 mod event_loop;
 mod game;
+mod gltf;
 mod mesh;
 mod node;
 mod physics;
@@ -22,7 +23,6 @@ mod scene;
 mod shader_pipelines;
 mod skybox;
 mod vertex;
-mod gltf;
 
 use event_loop::EventLoop;
 use game::Game;

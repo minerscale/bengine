@@ -1,11 +1,11 @@
-use std::{mem::ManuallyDrop, ops::Deref};
+use std::{mem::ManuallyDrop, ops::Deref, sync::Arc};
 
 use ash::{khr, vk};
 use log::{debug, info, warn};
 
 use crate::renderer::{
     device::Device,
-    image::{Image, SwapchainImage, find_supported_format},
+    image::{Image, ImageCreateInfo, SwapchainImage, find_supported_format},
     pipeline::Pipeline,
     render_pass::RenderPass,
 };
@@ -25,7 +25,7 @@ impl Swapchain {
         T: Iterator<
             Item = &'a (
                            impl Fn(
-                &Device,
+                &Arc<Device>,
                 vk::Extent2D,
                 vk::RenderPass,
                 &[vk::DescriptorSetLayout],
@@ -34,10 +34,7 @@ impl Swapchain {
                        ),
         >,
     >(
-        instance: &ash::Instance,
-        device: &Device,
-        surface_loader: &khr::surface::Instance,
-        surface: vk::SurfaceKHR,
+        device: &Arc<Device>,
         extent: vk::Extent2D,
         descriptor_set_layouts: &[vk::DescriptorSetLayout],
         pipelines: T,
@@ -46,16 +43,21 @@ impl Swapchain {
         info!("creating new swapchain");
 
         let swapchain_loader = old_swapchain.map_or_else(
-            || khr::swapchain::Device::new(instance, device),
+            || khr::swapchain::Device::new(&device.instance, device),
             |swapchain| swapchain.loader.clone(),
         );
 
-        let surface_format =
-            Self::choose_swap_surface_format(device.physical_device, surface_loader, surface);
+        let surface_format = Self::choose_swap_surface_format(
+            device.physical_device,
+            &device.surface.loader,
+            *device.surface,
+        );
 
         let surface_capabilities = unsafe {
-            surface_loader
-                .get_physical_device_surface_capabilities(device.physical_device, surface)
+            device
+                .surface
+                .loader
+                .get_physical_device_surface_capabilities(device.physical_device, *device.surface)
                 .unwrap()
         };
 
@@ -82,8 +84,10 @@ impl Swapchain {
             surface_capabilities.current_transform
         };
         let present_modes = unsafe {
-            surface_loader
-                .get_physical_device_surface_present_modes(device.physical_device, surface)
+            device
+                .surface
+                .loader
+                .get_physical_device_surface_present_modes(device.physical_device, *device.surface)
                 .unwrap()
         };
         let present_mode = present_modes
@@ -92,7 +96,7 @@ impl Swapchain {
             .unwrap_or(vk::PresentModeKHR::FIFO);
 
         let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
-            .surface(surface)
+            .surface(*device.surface)
             .min_image_count(desired_image_count)
             .image_color_space(surface_format.color_space)
             .image_format(surface_format.format)
@@ -113,7 +117,7 @@ impl Swapchain {
         };
 
         let depth_image = {
-            let depth_format = find_depth_format(instance, device.physical_device);
+            let depth_format = find_depth_format(&device.instance, device.physical_device);
 
             fn has_stencil_component(format: vk::Format) -> bool {
                 format == vk::Format::D32_SFLOAT_S8_UINT || format == vk::Format::D24_UNORM_S8_UINT
@@ -122,39 +126,39 @@ impl Swapchain {
             has_stencil_component(depth_format);
 
             ManuallyDrop::new(Image::new(
-                instance,
-                device.physical_device,
-                device.device.clone(),
+                device.clone(),
                 extent,
-                device.msaa_samples,
-                depth_format,
-                vk::ImageTiling::OPTIMAL,
-                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                vk::ImageAspectFlags::DEPTH,
-                false,
+                ImageCreateInfo {
+                    sample_count: device.msaa_samples,
+                    format: depth_format,
+                    tiling: vk::ImageTiling::OPTIMAL,
+                    usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                    memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                    aspect_flags: vk::ImageAspectFlags::DEPTH,
+                    mipmapping: false,
+                },
             ))
         };
 
         let color_image = match device.msaa_samples {
             vk::SampleCountFlags::TYPE_1 => None,
             _ => Some(Image::new(
-                instance,
-                device.physical_device,
-                device.device.clone(),
+                device.clone(),
                 extent,
-                device.msaa_samples,
-                surface_format.format,
-                vk::ImageTiling::OPTIMAL,
-                vk::ImageUsageFlags::TRANSIENT_ATTACHMENT | vk::ImageUsageFlags::COLOR_ATTACHMENT,
-                vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                vk::ImageAspectFlags::COLOR,
-                false,
+                ImageCreateInfo {
+                    sample_count: device.msaa_samples,
+                    format: surface_format.format,
+                    tiling: vk::ImageTiling::OPTIMAL,
+                    usage: vk::ImageUsageFlags::TRANSIENT_ATTACHMENT
+                        | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                    memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                    aspect_flags: vk::ImageAspectFlags::COLOR,
+                    mipmapping: false,
+                },
             )),
         };
 
         let render_pass = RenderPass::new(
-            instance,
             device,
             surface_format.format,
             extent,
@@ -166,7 +170,7 @@ impl Swapchain {
             .iter()
             .map(|&image| {
                 SwapchainImage::new(
-                    device.device.clone(),
+                    device.clone(),
                     image,
                     surface_format.format,
                     extent,

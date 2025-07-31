@@ -1,16 +1,15 @@
-use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts, sync::Arc};
+use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts};
 
 use ash::{khr, vk};
 use log::{debug, info};
 
 use crate::renderer::{
+    debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
     instance::{Instance, TARGET_API_VERSION},
     surface::Surface,
 };
 
 pub struct Device {
-    pub device: Arc<ash::Device>,
-
     pub physical_device: vk::PhysicalDevice,
     pub device_memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub graphics_index: u32,
@@ -18,6 +17,11 @@ pub struct Device {
     pub msaa_samples: vk::SampleCountFlags,
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
+    pub surface: Surface,
+    pub debug_callback: Option<DebugMessenger>,
+    pub device: ash::Device,
+    pub instance: Instance,
+    pub entry: ash::Entry,
 }
 
 macro_rules! feature_subset {
@@ -41,7 +45,6 @@ macro_rules! feature_subset {
     }};
 }
 
-#[allow(clippy::too_many_arguments)]
 fn pick_physical_device(
     instance: &ash::Instance,
     surface: &Surface,
@@ -187,7 +190,19 @@ fn pick_physical_device(
 }
 
 impl Device {
-    pub fn new(instance: &Instance, surface: &Surface) -> Self {
+    pub fn new(window: &sdl3::video::Window) -> Self {
+        let entry = ash::Entry::linked();
+
+        let instance = Instance::new(&entry, window);
+
+        let debug_callback = if ENABLE_VALIDATION_LAYERS {
+            Some(DebugMessenger::new(&entry, &instance))
+        } else {
+            None
+        };
+
+        let surface = Surface::new(&entry, window, &instance);
+
         let features = vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true);
         let mut features11 = vk::PhysicalDeviceVulkan11Features::default();
         let mut features12 = vk::PhysicalDeviceVulkan12Features::default();
@@ -196,8 +211,8 @@ impl Device {
         let physical_devices = unsafe { instance.enumerate_physical_devices() }.unwrap();
         let (physical_device, (graphics_index, present_index), msaa_samples) =
             pick_physical_device(
-                instance,
-                surface,
+                &instance,
+                &surface,
                 &physical_devices,
                 &features,
                 &features11,
@@ -251,16 +266,19 @@ impl Device {
             device_create_info
         };
 
-        let device = Arc::new(
-            unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap(),
-        );
+        let device =
+            unsafe { instance.create_device(physical_device, &device_create_info, None) }.unwrap();
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_index, 0) };
         let present_queue = unsafe { device.get_device_queue(present_index, 0) };
 
         Self {
+            entry,
+            instance,
+            debug_callback,
             device,
             physical_device,
+            surface,
             device_memory_properties,
             graphics_index,
             present_index,

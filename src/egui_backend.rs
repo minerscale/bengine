@@ -50,9 +50,7 @@ fn create_texture<C: ActiveCommandBuffer>(
     let mip_levels = width.max(height).ilog2() + 1;
 
     let sampler = Sampler::new(
-        &gfx.instance,
-        gfx.device.device.clone(),
-        gfx.device.physical_device,
+        gfx.device.clone(),
         match image_delta.options.wrap_mode {
             egui::TextureWrapMode::ClampToEdge => SamplerAddressMode::CLAMP_TO_EDGE,
             egui::TextureWrapMode::Repeat => SamplerAddressMode::REPEAT,
@@ -87,14 +85,7 @@ fn create_texture<C: ActiveCommandBuffer>(
     }
     .unwrap();
 
-    let image = Image::from_image(
-        &gfx.instance,
-        gfx.device.physical_device,
-        &gfx.device.device,
-        command_buffer,
-        image.into(),
-        false,
-    );
+    let image = Image::from_image(&gfx.device, command_buffer, image.into(), false);
 
     let mut descriptor_set = gfx
         .descriptor_pool
@@ -114,7 +105,8 @@ impl EguiBackend {
 
         input.max_texture_side = unsafe {
             Some(
-                gfx.instance
+                gfx.device
+                    .instance
                     .get_physical_device_properties(gfx.device.physical_device)
                     .limits
                     .max_image_dimension2_d
@@ -167,7 +159,9 @@ impl EguiBackend {
                     ui.label("This is a label");
                     ui.hyperlink("https://github.com/emilk/egui");
                     ui.text_edit_singleline(&mut my_string);
-                    if ui.button("Click me").clicked() {}
+                    if ui.button("Click me").clicked() {
+                        println!("Clicked!!");
+                    }
                     ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
                     ui.add(egui::DragValue::new(&mut my_f32));
 
@@ -217,7 +211,7 @@ impl EguiBackend {
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |command_buffer| {
                 for (tex_id, image_delta) in &full_output.textures_delta.set {
-                    let tex = self.textures.get_mut(&tex_id);
+                    let tex = self.textures.get_mut(tex_id);
 
                     match tex {
                         Some(_tex) => todo!(),
@@ -268,9 +262,7 @@ impl EguiBackend {
             gfx.device.graphics_queue,
             |cmd_buf| {
                 Buffer::new_staged_with(
-                    &gfx.instance,
-                    gfx.device.device.clone(),
-                    gfx.device.physical_device,
+                    &gfx.device,
                     cmd_buf,
                     vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::INDEX_BUFFER,
                     |mapped_memory: &mut [u8]| {
@@ -436,7 +428,7 @@ impl EguiBackend {
 }
 
 pub fn make_egui_pipeline(
-    device: &Device,
+    device: &Arc<Device>,
     extent: vk::Extent2D,
     render_pass: vk::RenderPass,
     descriptor_set_layouts: &[vk::DescriptorSetLayout],
@@ -466,13 +458,13 @@ pub fn make_egui_pipeline(
 
     let shader_stages = [
         spv!(
-            device.device.clone(),
+            device.clone(),
             "egui.vert",
             vk::ShaderStageFlags::VERTEX,
             Some(vertex_specialization)
         ),
         spv!(
-            device.device.clone(),
+            device.clone(),
             "egui.frag",
             vk::ShaderStageFlags::FRAGMENT,
             None
@@ -551,7 +543,7 @@ pub fn make_egui_pipeline(
         .stage_flags(vk::ShaderStageFlags::VERTEX)];
 
     PipelineBuilder::new()
-        .device(device.device.clone())
+        .device(device.clone())
         .render_pass(render_pass)
         .descriptor_set_layouts(descriptor_set_layouts)
         .shader_stages(&shader_stages)

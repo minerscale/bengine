@@ -1,7 +1,4 @@
-use std::{
-    io::Cursor,
-    sync::Arc,
-};
+use std::{io::Cursor, sync::Arc};
 
 use ash::vk;
 use rapier3d::{
@@ -12,9 +9,18 @@ use rapier3d::{
 use ultraviolet::Vec3;
 
 use crate::{
-    gltf::load_gltf, mesh::{collider_from_obj, Mesh, Primitive}, node::Node, physics::Physics, renderer::{
-        command_buffer::OneTimeSubmitCommandBuffer, image::Image, material::{Material, MaterialProperties}, sampler::Sampler, Renderer
-    }, shader_pipelines::MATERIAL_LAYOUT
+    gltf::load_gltf,
+    mesh::{Mesh, Primitive, collider_from_obj},
+    node::Node,
+    physics::Physics,
+    renderer::{
+        Renderer,
+        command_buffer::OneTimeSubmitCommandBuffer,
+        image::Image,
+        material::{Material, MaterialProperties},
+        sampler::Sampler,
+    },
+    shader_pipelines::MATERIAL_LAYOUT,
 };
 
 fn scene(
@@ -24,22 +30,14 @@ fn scene(
 ) -> Vec<Node> {
     macro_rules! image {
         ($filename:literal) => {
-            Image::from_bytes(
-                &gfx.instance,
-                gfx.device.physical_device,
-                &gfx.device.device,
-                cmd_buf,
-                include_bytes!($filename),
-            )
+            Image::from_bytes(&gfx.device, cmd_buf, include_bytes!($filename))
         };
     }
 
     macro_rules! mesh {
         ($filename:literal, $material:expr, $scale:expr) => {
             Arc::new(Mesh::new(Box::new([Primitive::from_obj(
-                &gfx.instance,
-                gfx.device.physical_device,
-                gfx.device.device.clone(),
+                &gfx.device,
                 Cursor::new(include_bytes!($filename)),
                 cmd_buf,
                 $material,
@@ -69,9 +67,7 @@ fn scene(
 
     let sampler = |mip_levels: u32| {
         Arc::new(Sampler::new(
-            &gfx.instance,
-            gfx.device.device.clone(),
-            gfx.device.physical_device,
+            gfx.device.clone(),
             vk::SamplerAddressMode::REPEAT,
             vk::Filter::LINEAR,
             vk::Filter::LINEAR,

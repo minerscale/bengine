@@ -1,11 +1,30 @@
-use std::{collections::HashMap, fs::File, io::{BufReader, Cursor}, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufReader, Cursor},
+    path::Path,
+    sync::Arc,
+};
 
 use ash::vk;
 use gltf::Gltf;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use ultraviolet::Vec3;
 
-use crate::{mesh::{Mesh, Primitive}, node::Node, renderer::{buffer::Buffer, command_buffer::OneTimeSubmitCommandBuffer, image::Image, material::{Material, MaterialProperties}, sampler::Sampler, Renderer}, shader_pipelines::MATERIAL_LAYOUT, vertex::Vertex};
+use crate::{
+    mesh::{Mesh, Primitive},
+    node::Node,
+    renderer::{
+        Renderer,
+        buffer::Buffer,
+        command_buffer::OneTimeSubmitCommandBuffer,
+        image::Image,
+        material::{Material, MaterialProperties},
+        sampler::Sampler,
+    },
+    shader_pipelines::MATERIAL_LAYOUT,
+    vertex::Vertex,
+};
 
 pub fn load_gltf(
     gfx: &Renderer,
@@ -74,19 +93,7 @@ pub fn load_gltf(
         })
         .collect::<Box<_>>()
         .into_iter()
-        .map(|(uri, image)| {
-            (
-                uri,
-                Image::from_image(
-                    &gfx.instance,
-                    gfx.device.physical_device,
-                    &gfx.device.device,
-                    cmd_buf,
-                    image,
-                    true,
-                ),
-            )
-        })
+        .map(|(uri, image)| (uri, Image::from_image(&gfx.device, cmd_buf, image, true)))
         .collect();
 
     let materials = document
@@ -112,9 +119,7 @@ pub fn load_gltf(
                 &gfx.device,
                 image.clone(),
                 Arc::new(Sampler::new(
-                    &gfx.instance,
-                    gfx.device.device.clone(),
-                    gfx.device.physical_device,
+                    gfx.device.clone(),
                     vk::SamplerAddressMode::REPEAT,
                     vk::Filter::LINEAR,
                     vk::Filter::LINEAR,
@@ -131,7 +136,15 @@ pub fn load_gltf(
     let mut vertex_buffers: Vec<Vertex> = Vec::new();
     let mut index_buffers: Vec<u32> = Vec::new();
 
-    let mut mesh_info: Vec<((usize, usize), (usize, usize), Arc<Material>)> = Vec::new();
+    struct MeshInfo {
+        vertex_idx: usize,
+        vertex_size: usize,
+        index_idx: usize,
+        index_size: usize,
+        material: Arc<Material>,
+    }
+
+    let mut mesh_info: Vec<MeshInfo> = Vec::new();
 
     for primitive in document.meshes().next().unwrap().primitives() {
         let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -159,20 +172,20 @@ pub fn load_gltf(
         let index_size = indices.len();
         index_buffers.extend(indices);
 
-        mesh_info.push((
-            (vertex_idx, vertex_size),
-            (index_idx, index_size),
-            materials[primitive.material().index().unwrap()].clone(),
-        ));
+        mesh_info.push(MeshInfo {
+            vertex_idx,
+            vertex_size,
+            index_idx,
+            index_size,
+            material: materials[primitive.material().index().unwrap()].clone(),
+        });
     }
 
     let vertex_byte_length = vertex_buffers.len() * size_of::<Vertex>();
     let index_byte_length = index_buffers.len() * size_of::<u32>();
 
     let buffer = Buffer::new_staged_with(
-        &gfx.instance,
-        gfx.device.device.clone(),
-        gfx.device.physical_device,
+        &gfx.device,
         cmd_buf,
         vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::INDEX_BUFFER,
         |mapped_memory: &mut [u8]| {
@@ -187,35 +200,31 @@ pub fn load_gltf(
         vertex_byte_length + index_byte_length,
     );
 
-    let make_primitive = |((vertex_idx, vertex_size), (index_idx, index_size), material): (
-        (usize, usize),
-        (usize, usize),
-        Arc<Material>,
-    )| {
+    let make_primitive = |info: MeshInfo| {
         Primitive::new_raw(
             Buffer::new_with_memory(
                 vk::BufferUsageFlags::VERTEX_BUFFER,
                 (
                     buffer.memory.0.clone(),
-                    (vertex_idx * size_of::<Vertex>()).try_into().unwrap(),
+                    (info.vertex_idx * size_of::<Vertex>()).try_into().unwrap(),
                 ),
-                gfx.device.device.clone(),
-                vertex_size,
+                gfx.device.clone(),
+                info.vertex_size,
             )
             .into(),
             Buffer::new_with_memory(
                 vk::BufferUsageFlags::INDEX_BUFFER,
                 (
                     buffer.memory.0.clone(),
-                    (index_idx * size_of::<u32>() + vertex_byte_length)
+                    (info.index_idx * size_of::<u32>() + vertex_byte_length)
                         .try_into()
                         .unwrap(),
                 ),
-                gfx.device.device.clone(),
-                index_size,
+                gfx.device.clone(),
+                info.index_size,
             )
             .into(),
-            material,
+            info.material,
         )
     };
 

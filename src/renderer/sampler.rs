@@ -1,3 +1,4 @@
+use crate::renderer::Device;
 use std::sync::Arc;
 
 use ash::vk;
@@ -5,14 +6,12 @@ use log::debug;
 
 pub struct Sampler {
     pub sampler: vk::Sampler,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 impl Sampler {
     pub fn new(
-        instance: &ash::Instance,
-        device: Arc<ash::Device>,
-        physical_device: vk::PhysicalDevice,
+        device: Arc<Device>,
         address_mode: vk::SamplerAddressMode,
         mag_filter: vk::Filter,
         min_filter: vk::Filter,
@@ -27,8 +26,9 @@ impl Sampler {
             .address_mode_w(address_mode)
             .anisotropy_enable(anisotropy_enable)
             .max_anisotropy(unsafe {
-                instance
-                    .get_physical_device_properties(physical_device)
+                device
+                    .instance
+                    .get_physical_device_properties(device.physical_device)
                     .limits
                     .max_sampler_anisotropy
             })

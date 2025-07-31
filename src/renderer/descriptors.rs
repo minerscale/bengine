@@ -4,17 +4,16 @@ use ash::vk;
 use log::debug;
 
 use crate::renderer::{
-    MAX_FRAMES_IN_FLIGHT, buffer::Buffer, image::Image, material::MAX_TEXTURES, sampler::Sampler,
+    MAX_FRAMES_IN_FLIGHT, buffer::Buffer, device::Device, dtor_entry::DtorEntry, image::Image,
+    material::MAX_TEXTURES, sampler::Sampler,
 };
-
-use super::dtor_entry::DtorEntry;
 
 #[derive(Clone)]
 pub struct DescriptorSetLayout {
     pub layout: vk::DescriptorSetLayout,
     pub descriptor_type: vk::DescriptorType,
     pub binding: u32,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 #[derive(Debug)]
@@ -40,7 +39,7 @@ impl Deref for DescriptorSet {
 impl DescriptorSet {
     pub fn bind_buffer<T: Copy + Sync + Send + 'static>(
         &mut self,
-        device: &ash::Device,
+        device: &Device,
         binding: u32,
         buffer: Arc<Buffer<T>>,
     ) {
@@ -111,7 +110,7 @@ impl DescriptorSet {
 }
 
 impl DescriptorSetLayout {
-    pub fn new(device: Arc<ash::Device>, binding: vk::DescriptorSetLayoutBinding) -> Self {
+    pub fn new(device: Arc<Device>, binding: vk::DescriptorSetLayoutBinding) -> Self {
         let bindings = [binding];
 
         let layout_info = vk::DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
@@ -141,12 +140,12 @@ impl Drop for DescriptorSetLayout {
 
 pub struct DescriptorPool {
     pub pool: vk::DescriptorPool,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 const MAX_STORAGE_IMAGES: u32 = 1;
 impl DescriptorPool {
-    pub fn new(device: Arc<ash::Device>) -> Self {
+    pub fn new(device: Arc<Device>) -> Self {
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::UNIFORM_BUFFER)

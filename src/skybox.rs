@@ -13,7 +13,7 @@ use crate::{
         command_buffer::ActiveMultipleSubmitCommandBuffer,
         descriptors::{DescriptorSet, DescriptorSetLayout},
         device::Device,
-        image::Image,
+        image::{Image, ImageCreateInfo},
         material::{Material, MaterialProperties},
         pipeline::{ComputePipelineBuilder, Pipeline, PipelineBuilder},
         sampler::Sampler,
@@ -116,16 +116,17 @@ impl Skybox {
             .command_pool
             .one_time_submit(gfx.device.graphics_queue, |cmd_buf| {
                 Arc::new(Image::new_with_layout(
-                    &gfx.instance,
-                    gfx.device.physical_device,
-                    &gfx.device.device,
+                    &gfx.device,
                     SKYBOX_RESOLUTION,
-                    vk::SampleCountFlags::TYPE_1,
-                    vk::Format::R8G8B8A8_UNORM,
-                    vk::ImageTiling::OPTIMAL,
-                    vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
-                    vk::MemoryPropertyFlags::DEVICE_LOCAL,
-                    vk::ImageAspectFlags::COLOR,
+                    ImageCreateInfo {
+                        sample_count: vk::SampleCountFlags::TYPE_1,
+                        format: vk::Format::R8G8B8A8_UNORM,
+                        tiling: vk::ImageTiling::OPTIMAL,
+                        usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
+                        memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                        aspect_flags: vk::ImageAspectFlags::COLOR,
+                        mipmapping: false,
+                    },
                     cmd_buf,
                     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
                 ))
@@ -138,7 +139,7 @@ impl Skybox {
                 .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
                 .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
-            DescriptorSetLayout::new(gfx.device.device.clone(), texture_bindings)
+            DescriptorSetLayout::new(gfx.device.clone(), texture_bindings)
         };
 
         let descriptor_set_layouts = [
@@ -147,7 +148,7 @@ impl Skybox {
         ];
 
         let shader = spv!(
-            gfx.device.device.clone(),
+            gfx.device.clone(),
             "skybox.comp",
             vk::ShaderStageFlags::COMPUTE,
             None
@@ -158,9 +159,7 @@ impl Skybox {
         descriptor.bind_image(&gfx.device.device, 0, image.clone());
 
         let skybox_sampler = Arc::new(Sampler::new(
-            &gfx.instance,
-            gfx.device.device.clone(),
-            gfx.device.physical_device,
+            gfx.device.clone(),
             vk::SamplerAddressMode::CLAMP_TO_EDGE,
             vk::Filter::LINEAR,
             vk::Filter::LINEAR,
@@ -178,7 +177,7 @@ impl Skybox {
         );
 
         let compute_pipeline = ComputePipelineBuilder::new()
-            .device(gfx.device.device.clone())
+            .device(gfx.device.clone())
             .layouts(&descriptor_set_layouts)
             .shader(&shader)
             .build();
@@ -193,20 +192,20 @@ impl Skybox {
 }
 
 pub fn make_skybox_pipeline(
-    device: &Device,
+    device: &Arc<Device>,
     extent: vk::Extent2D,
     render_pass: vk::RenderPass,
     descriptor_set_layouts: &[vk::DescriptorSetLayout],
 ) -> Pipeline {
     let shader_stages = [
         spv!(
-            device.device.clone(),
+            device.clone(),
             "skybox.vert",
             vk::ShaderStageFlags::VERTEX,
             None
         ),
         spv!(
-            device.device.clone(),
+            device.clone(),
             "skybox.frag",
             vk::ShaderStageFlags::FRAGMENT,
             None
@@ -232,7 +231,7 @@ pub fn make_skybox_pipeline(
         .min_sample_shading(1.0);
 
     PipelineBuilder::new()
-        .device(device.device.clone())
+        .device(device.clone())
         .shader_stages(&shader_stages)
         .multisampling(&multisampling)
         .descriptor_set_layouts(descriptor_set_layouts)

@@ -1,4 +1,4 @@
-/// Translates `sdl3` events to `egui` events.
+//! Translates `sdl3` events to `egui` events.
 
 type SEv = sdl3::event::Event;
 type EEv = egui::Event;
@@ -41,11 +41,9 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: &egui::Modifiers) -> Option<EEv
         repeat: bool,
         pressed: bool,
     ) -> Option<egui::Event> {
-        let physical_key = scancode.and_then(|k| sdl3_to_egui_scancode(k));
+        let physical_key = scancode.and_then(sdl3_to_egui_scancode);
 
-        let key = keycode
-            .and_then(|k| sdl3_to_egui_keycode(k))
-            .or(physical_key);
+        let key = keycode.and_then(sdl3_to_egui_keycode).or(physical_key);
 
         key.map(|key| EEv::Key {
             key,

@@ -3,16 +3,14 @@ use std::{ops::Deref, sync::Arc};
 use ash::vk;
 use log::debug;
 
-use crate::renderer::device::Device;
-
-use super::dtor_entry::DtorEntry;
+use crate::renderer::{device::Device, dtor_entry::DtorEntry};
 
 pub trait ActiveCommandBuffer: Deref<Target = vk::CommandBuffer> {
     fn add_dependency<T: Into<DtorEntry>>(&mut self, dependency: T);
 }
 
 pub struct OneTimeSubmitCommandBuffer {
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
     command_buffer: vk::CommandBuffer,
     dependencies: Vec<DtorEntry>,
 }
@@ -56,7 +54,7 @@ impl OneTimeSubmitCommandBuffer {
 }
 
 pub struct MultipleSubmitCommandBuffer {
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
     command_buffer: vk::CommandBuffer,
 }
 
@@ -145,7 +143,7 @@ impl ActiveMultipleSubmitCommandBuffer {
 
 pub struct CommandPool {
     command_pool: vk::CommandPool,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 impl CommandPool {
@@ -202,14 +200,16 @@ impl CommandPool {
         }
     }
 
-    pub fn new(device: &Device) -> Self {
+    pub fn new(device: Arc<Device>) -> Self {
         let pool_create_info = vk::CommandPoolCreateInfo::default()
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
             .queue_family_index(device.graphics_index);
 
+        let command_pool = unsafe { device.create_command_pool(&pool_create_info, None).unwrap() };
+
         Self {
-            device: device.device.clone(),
-            command_pool: unsafe { device.create_command_pool(&pool_create_info, None).unwrap() },
+            device,
+            command_pool,
         }
     }
 

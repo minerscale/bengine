@@ -26,12 +26,9 @@ mod synchronization;
 use crate::renderer::{
     buffer::MappedBuffer,
     command_buffer::{ActiveMultipleSubmitCommandBuffer, CommandPool, MultipleSubmitCommandBuffer},
-    debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
     descriptors::{DescriptorPool, DescriptorSetLayout},
     device::Device,
     image::SwapchainImage,
-    instance::Instance,
-    surface::Surface,
     swapchain::Swapchain,
     synchronization::{Fence, Semaphore},
 };
@@ -50,13 +47,13 @@ pub struct UniformBufferObject {
 }
 
 pub type PipelineFunction = for<'a, 'b> fn(
-    &'a device::Device,
+    &'a Arc<device::Device>,
     vk::Extent2D,
     ash::vk::RenderPass,
     &'b [ash::vk::DescriptorSetLayout],
 ) -> Pipeline;
 
-pub type DescriptorSetLayoutFunction = fn(Arc<ash::Device>) -> DescriptorSetLayout;
+pub type DescriptorSetLayoutFunction = fn(Arc<Device>) -> DescriptorSetLayout;
 
 enum ImageIndex {
     Acquiring,
@@ -86,17 +83,7 @@ pub struct Renderer {
 
     pub swapchain: Swapchain,
 
-    pub device: Device,
-
-    surface: Surface,
-
-    #[allow(dead_code)]
-    debug_callback: Option<DebugMessenger>,
-
-    pub instance: Instance,
-
-    #[allow(dead_code)]
-    entry: ash::Entry,
+    pub device: Arc<Device>,
 
     current_frame: usize,
 }
@@ -241,10 +228,7 @@ impl Renderer {
         self.wait_idle();
 
         let swapchain = Swapchain::new(
-            &self.instance,
             &self.device,
-            &self.surface.loader,
-            *self.surface,
             extent,
             &get_descriptor_set_layouts(&self.descriptor_set_layouts),
             self.pipelines.iter(),
@@ -263,26 +247,14 @@ impl Renderer {
         descriptor_set_layouts: &[DescriptorSetLayoutFunction],
         pipelines: &'static [PipelineFunction],
     ) -> Self {
-        let entry = ash::Entry::linked();
-
-        let instance = Instance::new(&entry, window);
-
-        let debug_callback = if ENABLE_VALIDATION_LAYERS {
-            Some(DebugMessenger::new(&entry, &instance))
-        } else {
-            None
-        };
-
-        let surface = Surface::new(&entry, window, &instance);
-
-        let device = Device::new(&instance, &surface);
+        let device = Arc::new(Device::new(window));
 
         let descriptor_set_layouts = descriptor_set_layouts
             .iter()
-            .map(|f| f(device.device.clone()))
+            .map(|f| f(device.clone()))
             .collect::<Box<[_]>>();
 
-        let descriptor_pool = DescriptorPool::new(device.device.clone());
+        let descriptor_pool = DescriptorPool::new(device.clone());
 
         let uniform_buffers = with_n(
             || {
@@ -295,9 +267,7 @@ impl Renderer {
                     })
                     .map(|(idx, binding)| {
                         MappedBuffer::new(
-                            &device.device,
-                            &instance,
-                            device.physical_device,
+                            &device,
                             &[UniformBufferObject::default()],
                             vk::BufferUsageFlags::UNIFORM_BUFFER,
                             vk::MemoryPropertyFlags::HOST_VISIBLE
@@ -313,35 +283,28 @@ impl Renderer {
         );
 
         let swapchain = Swapchain::new(
-            &instance,
             &device,
-            &surface.loader,
-            *surface,
             vk::Extent2D { width, height },
             &get_descriptor_set_layouts(&descriptor_set_layouts),
             pipelines.iter(),
             None,
         );
 
-        let command_pool = CommandPool::new(&device);
+        let command_pool = CommandPool::new(device.clone());
 
         fn with_n<T, F: Fn() -> T>(f: F, n: usize) -> Box<[T]> {
             repeat_with(f).take(n).collect()
         }
 
-        let image_avaliable_semaphores = with_n(
-            || Semaphore::new(device.device.clone()),
-            MAX_FRAMES_IN_FLIGHT,
-        );
-        let in_flight_fences = with_n(|| Fence::new(device.device.clone()), MAX_FRAMES_IN_FLIGHT);
+        let image_avaliable_semaphores =
+            with_n(|| Semaphore::new(device.clone()), MAX_FRAMES_IN_FLIGHT);
+        let in_flight_fences = with_n(|| Fence::new(device.clone()), MAX_FRAMES_IN_FLIGHT);
         let command_buffers = with_n(
             || command_pool.create_command_buffer(),
             MAX_FRAMES_IN_FLIGHT,
         );
-        let render_finished_semaphores = with_n(
-            || Semaphore::new(device.device.clone()),
-            swapchain.images.len(),
-        );
+        let render_finished_semaphores =
+            with_n(|| Semaphore::new(device.clone()), swapchain.images.len());
 
         let image_index = ImageIndex::Acquiring;
         let recreate_swapchain = false;
@@ -363,10 +326,6 @@ impl Renderer {
             pipelines,
             swapchain,
             device,
-            surface,
-            debug_callback,
-            instance,
-            entry,
             current_frame: 0,
         }
     }

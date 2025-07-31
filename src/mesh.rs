@@ -10,12 +10,17 @@ use rapier3d::na;
 use rapier3d::prelude::ColliderShape;
 use ultraviolet::{Isometry3, Vec3};
 
-use crate::renderer::material::MaterialProperties;
-use crate::renderer::pipeline::Pipeline;
-use crate::renderer::{buffer::Buffer, command_buffer::ActiveCommandBuffer, material::Material};
-
-use crate::shader_pipelines::PushConstants;
-use crate::vertex::Vertex;
+use crate::{
+    renderer::{
+        buffer::Buffer,
+        command_buffer::ActiveCommandBuffer,
+        device::Device,
+        material::{Material, MaterialProperties},
+        pipeline::Pipeline,
+    },
+    shader_pipelines::PushConstants,
+    vertex::Vertex,
+};
 
 #[derive(Debug)]
 pub struct Mesh {
@@ -127,27 +132,21 @@ impl Primitive {
     }
 
     pub fn new<C: ActiveCommandBuffer>(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        device: Arc<ash::Device>,
+        device: &Arc<Device>,
         vertex_buffer: &[Vertex],
         index_buffer: &[u32],
         material: Arc<Material>,
         cmd_buf: &mut C,
     ) -> Self {
         let vertex_buffer = Buffer::new_staged(
-            instance,
-            device.clone(),
-            physical_device,
+            device,
             cmd_buf,
             vk::BufferUsageFlags::VERTEX_BUFFER,
             vertex_buffer,
         );
 
         let index_buffer = Buffer::new_staged(
-            instance,
             device,
-            physical_device,
             cmd_buf,
             vk::BufferUsageFlags::INDEX_BUFFER,
             index_buffer,
@@ -161,9 +160,7 @@ impl Primitive {
     }
 
     pub fn from_obj<T: BufRead, C: ActiveCommandBuffer>(
-        instance: &ash::Instance,
-        physical_device: vk::PhysicalDevice,
-        device: Arc<ash::Device>,
+        device: &Arc<Device>,
         file: T,
         cmd_buf: &mut C,
         material: Arc<Material>,
@@ -178,18 +175,14 @@ impl Primitive {
         }
 
         let vertex_buffer = Buffer::new_staged(
-            instance,
-            device.clone(),
-            physical_device,
+            device,
             cmd_buf,
             vk::BufferUsageFlags::VERTEX_BUFFER,
             &mesh.vertices,
         );
 
         let index_buffer = Buffer::new_staged(
-            instance,
             device,
-            physical_device,
             cmd_buf,
             vk::BufferUsageFlags::INDEX_BUFFER,
             &mesh.indices,

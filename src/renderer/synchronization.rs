@@ -1,3 +1,4 @@
+use crate::renderer::Device;
 use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
@@ -5,11 +6,11 @@ use log::debug;
 
 pub struct Fence {
     fence: vk::Fence,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 impl Fence {
-    pub fn new(device: Arc<ash::Device>) -> Self {
+    pub fn new(device: Arc<Device>) -> Self {
         let fence_create_info =
             vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
 
@@ -37,11 +38,11 @@ impl Drop for Fence {
 
 pub struct Semaphore {
     semaphore: vk::Semaphore,
-    device: Arc<ash::Device>,
+    device: Arc<Device>,
 }
 
 impl Semaphore {
-    pub fn new(device: Arc<ash::Device>) -> Self {
+    pub fn new(device: Arc<Device>) -> Self {
         let semaphore_create_info = vk::SemaphoreCreateInfo::default();
 
         Self {

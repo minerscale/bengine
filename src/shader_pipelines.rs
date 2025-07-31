@@ -24,7 +24,7 @@ use crate::{
 };
 
 fn make_main_pipeline(
-    device: &Device,
+    device: &Arc<Device>,
     extent: vk::Extent2D,
     render_pass: vk::RenderPass,
     descriptor_set_layouts: &[vk::DescriptorSetLayout],
@@ -54,13 +54,13 @@ fn make_main_pipeline(
 
     let shader_stages = [
         spv!(
-            device.device.clone(),
+            device.clone(),
             "main.vert",
             vk::ShaderStageFlags::VERTEX,
             Some(vertex_specialization)
         ),
         spv!(
-            device.device.clone(),
+            device.clone(),
             "main.frag",
             vk::ShaderStageFlags::FRAGMENT,
             None
@@ -107,7 +107,7 @@ fn make_main_pipeline(
         .stencil_test_enable(false);
 
     PipelineBuilder::new()
-        .device(device.device.clone())
+        .device(device.clone())
         .descriptor_set_layouts(descriptor_set_layouts)
         .multisampling(&multisampling)
         .shader_stages(&shader_stages)
@@ -125,7 +125,7 @@ pub const UNIFORM_BUFFER_LAYOUT: usize = 0;
 pub const MATERIAL_LAYOUT: usize = 1;
 
 pub const DESCRIPTOR_SET_LAYOUTS: [DescriptorSetLayoutFunction; 2] = [
-    |device: Arc<ash::Device>| {
+    |device: Arc<Device>| {
         DescriptorSetLayout::new(
             device,
             vk::DescriptorSetLayoutBinding::default()
@@ -139,7 +139,7 @@ pub const DESCRIPTOR_SET_LAYOUTS: [DescriptorSetLayoutFunction; 2] = [
                 ),
         )
     },
-    |device: Arc<ash::Device>| {
+    |device: Arc<Device>| {
         DescriptorSetLayout::new(
             device,
             vk::DescriptorSetLayoutBinding::default()
