@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use rapier3d::prelude::{Collider, ColliderHandle, RigidBody, RigidBodyHandle};
+use ultraviolet::Isometry3;
 
 use crate::{mesh::Mesh, physics::Physics};
-
-use ultraviolet::Isometry3;
 
 #[derive(Debug)]
 pub enum Object {

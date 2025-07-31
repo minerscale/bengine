@@ -7,6 +7,7 @@ use std::{
 };
 
 use ash::vk;
+use easy_cast::Cast;
 use gltf::Gltf;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use ultraviolet::Vec3;
@@ -32,6 +33,18 @@ pub fn load_gltf(
     file: Result<&str, &[u8]>,
     scale: f32,
 ) -> Node {
+    fn get_uri(view: &gltf::buffer::View) -> String {
+        view.index().to_string() + &view.offset().to_string()
+    }
+
+    struct MeshInfo {
+        vertex_idx: usize,
+        vertex_size: usize,
+        index_idx: usize,
+        index_size: usize,
+        material: Arc<Material>,
+    }
+
     let current_dir = Path::new(".");
 
     let (root, gltf) = match file {
@@ -53,10 +66,6 @@ pub fn load_gltf(
     let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
     let document = gltf.document;
 
-    fn get_uri(view: gltf::buffer::View) -> String {
-        view.index().to_string() + &view.offset().to_string()
-    }
-
     let images: HashMap<String, Arc<Image>> = document
         .images()
         .collect::<Vec<_>>()
@@ -69,7 +78,7 @@ pub fn load_gltf(
                     let buffer = &buffers[view.buffer().index()][start..end];
 
                     (
-                        get_uri(view),
+                        get_uri(&view),
                         image::ImageReader::new(Cursor::new(buffer))
                             .with_guessed_format()
                             .unwrap()
@@ -107,7 +116,7 @@ pub fn load_gltf(
                 .source()
                 .source()
             {
-                gltf::image::Source::View { view, mime_type: _ } => &images[&get_uri(view)],
+                gltf::image::Source::View { view, mime_type: _ } => &images[&get_uri(&view)],
                 gltf::image::Source::Uri { uri, mime_type: _ } => &images[uri],
             };
 
@@ -135,14 +144,6 @@ pub fn load_gltf(
 
     let mut vertex_buffers: Vec<Vertex> = Vec::new();
     let mut index_buffers: Vec<u32> = Vec::new();
-
-    struct MeshInfo {
-        vertex_idx: usize,
-        vertex_size: usize,
-        index_idx: usize,
-        index_size: usize,
-        material: Arc<Material>,
-    }
 
     let mut mesh_info: Vec<MeshInfo> = Vec::new();
 
@@ -190,11 +191,11 @@ pub fn load_gltf(
         vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::INDEX_BUFFER,
         |mapped_memory: &mut [u8]| {
             mapped_memory[0..vertex_byte_length].copy_from_slice(unsafe {
-                std::slice::from_raw_parts(vertex_buffers.as_ptr() as *const u8, vertex_byte_length)
+                std::slice::from_raw_parts(vertex_buffers.as_ptr().cast::<u8>(), vertex_byte_length)
             });
 
             mapped_memory[vertex_byte_length..].copy_from_slice(unsafe {
-                std::slice::from_raw_parts(index_buffers.as_ptr() as *const u8, index_byte_length)
+                std::slice::from_raw_parts(index_buffers.as_ptr().cast::<u8>(), index_byte_length)
             });
         },
         vertex_byte_length + index_byte_length,
@@ -206,7 +207,7 @@ pub fn load_gltf(
                 vk::BufferUsageFlags::VERTEX_BUFFER,
                 (
                     buffer.memory.0.clone(),
-                    (info.vertex_idx * size_of::<Vertex>()).try_into().unwrap(),
+                    (info.vertex_idx * size_of::<Vertex>()).cast(),
                 ),
                 gfx.device.clone(),
                 info.vertex_size,

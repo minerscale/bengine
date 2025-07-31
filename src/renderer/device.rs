@@ -1,6 +1,7 @@
 use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts};
 
 use ash::{khr, vk};
+use easy_cast::Cast;
 use log::{debug, info};
 
 use crate::renderer::{
@@ -158,21 +159,19 @@ fn pick_physical_device(
             .iter()
             .enumerate()
             .find_map(|(index, info)| {
+                let index: u32 = index.cast();
+
                 if graphics_index.is_none() && info.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                    graphics_index = Some(index as u32);
+                    graphics_index = Some(index);
                 }
 
                 if present_index.is_none()
                     && surface
                         .loader
-                        .get_physical_device_surface_support(
-                            *physical_device,
-                            index as u32,
-                            **surface,
-                        )
+                        .get_physical_device_surface_support(*physical_device, index, **surface)
                         .unwrap()
                 {
-                    present_index = Some(index as u32);
+                    present_index = Some(index);
                 }
 
                 if let (Some(graphics_index), Some(present_index)) = (graphics_index, present_index)
@@ -273,18 +272,18 @@ impl Device {
         let present_queue = unsafe { device.get_device_queue(present_index, 0) };
 
         Self {
-            entry,
-            instance,
-            debug_callback,
-            device,
             physical_device,
-            surface,
             device_memory_properties,
             graphics_index,
             present_index,
             msaa_samples,
             graphics_queue,
             present_queue,
+            surface,
+            debug_callback,
+            device,
+            instance,
+            entry,
         }
     }
 }

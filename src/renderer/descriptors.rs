@@ -1,6 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
+use easy_cast::Cast;
 use log::debug;
 
 use crate::renderer::{
@@ -46,7 +47,7 @@ impl DescriptorSet {
         let buffer_info = [vk::DescriptorBufferInfo::default()
             .buffer(**buffer)
             .offset(0)
-            .range(size_of::<T>().try_into().unwrap())];
+            .range(size_of::<T>().cast())];
 
         let descriptor_writes = [vk::WriteDescriptorSet::default()
             .dst_set(**self)
@@ -149,7 +150,7 @@ impl DescriptorPool {
         let pool_sizes = [
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(MAX_FRAMES_IN_FLIGHT.try_into().unwrap()),
+                .descriptor_count(MAX_FRAMES_IN_FLIGHT.cast()),
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .descriptor_count(MAX_TEXTURES),

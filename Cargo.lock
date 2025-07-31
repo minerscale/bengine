@@ -162,6 +162,7 @@ dependencies = [
  "bytemuck",
  "colored",
  "cpal",
+ "easy-cast",
  "egui",
  "env_logger",
  "gltf",
@@ -376,6 +377,12 @@ name = "downcast-rs"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea8a8b81cacc08888170eef4d13b775126db426d0b348bee9d18c2c1eaf123cf"
+
+[[package]]
+name = "easy-cast"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72852736692ec862655eca398c9bb1b476161b563c9f80f45f4808b9629750d6"
 
 [[package]]
 name = "ecolor"
@@ -1853,9 +1860,9 @@ checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
 
 [[package]]
 name = "zune-jpeg"
-version = "0.4.19"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9e525af0a6a658e031e95f14b7f889976b74a11ba0eca5a5fc9ac8a1c43a6a"
+checksum = "fc1f7e205ce79eb2da3cd71c5f55f3589785cb7c79f6a03d1c8d1491bda5d089"
 dependencies = [
  "zune-core",
 ]

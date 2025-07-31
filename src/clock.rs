@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use easy_cast::CastApprox;
+
 pub const FIXED_UPDATE_INTERVAL: f64 = 1.0 / 120.0;
 
 #[derive(Debug, Clone)]
@@ -38,7 +40,7 @@ impl Clock {
     pub fn update(&mut self) {
         let new_time = std::time::Instant::now();
 
-        self.dt = FIXED_UPDATE_INTERVAL as f32;
+        self.dt = FIXED_UPDATE_INTERVAL.cast_approx();
         self.time = (new_time - self.start_time).as_secs_f64();
 
         self.previous_time = new_time;

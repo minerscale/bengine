@@ -1,11 +1,11 @@
 #![windows_subsystem = "windows"]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::items_after_statements)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_precision_loss)]
+#![warn(clippy::pedantic, clippy::cargo)]
+#![allow(clippy::multiple_crate_versions)]
 #![allow(clippy::missing_const_for_fn)]
 #![allow(clippy::struct_field_names)]
-#![allow(clippy::if_not_else)]
+
+use log::info;
+use tracing_mutex::stdsync::Mutex;
 
 mod audio;
 mod clock;
@@ -28,9 +28,6 @@ use event_loop::EventLoop;
 use game::Game;
 use renderer::{HEIGHT, Renderer, WIDTH};
 use shader_pipelines::{DESCRIPTOR_SET_LAYOUTS, PIPELINES};
-
-use log::info;
-use tracing_mutex::stdsync::Mutex;
 
 pub const FOV: f32 = 100.0;
 
@@ -93,7 +90,7 @@ fn main() {
                         command_buffer,
                         uniform_buffers,
                         image,
-                        &extent,
+                        extent,
                     )
                 },
             );

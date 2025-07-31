@@ -1,8 +1,10 @@
-use crate::renderer::Device;
 use std::sync::Arc;
 
 use ash::vk;
+use easy_cast::Cast;
 use log::debug;
+
+use crate::renderer::Device;
 
 pub struct Sampler {
     pub sampler: vk::Sampler,
@@ -41,7 +43,7 @@ impl Sampler {
 
         if let Some((mipmap_mode, mip_levels)) = mipmap_info {
             sampler_info.mipmap_mode = mipmap_mode;
-            sampler_info.max_lod = mip_levels as f32;
+            sampler_info.max_lod = mip_levels.cast();
         }
 
         let sampler = unsafe { device.create_sampler(&sampler_info, None).unwrap() };

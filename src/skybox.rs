@@ -1,11 +1,7 @@
 use std::sync::Arc;
 
 use ash::vk;
-
-const SKYBOX_RESOLUTION: vk::Extent2D = vk::Extent2D {
-    width: WIDTH / 2,
-    height: HEIGHT / 2,
-};
+use easy_cast::Cast;
 
 use crate::{
     renderer::{
@@ -20,6 +16,11 @@ use crate::{
         shader_module::spv,
     },
     shader_pipelines::{MATERIAL_LAYOUT, UNIFORM_BUFFER_LAYOUT},
+};
+
+const SKYBOX_RESOLUTION: vk::Extent2D = vk::Extent2D {
+    width: WIDTH / 2,
+    height: HEIGHT / 2,
 };
 
 pub struct Skybox {
@@ -215,8 +216,8 @@ pub fn make_skybox_pipeline(
     let viewport = [vk::Viewport::default()
         .x(0.0)
         .y(0.0)
-        .width(extent.width as f32)
-        .height(extent.height as f32)
+        .width(extent.width.cast())
+        .height(extent.height.cast())
         .min_depth(0.0)
         .max_depth(1.0)];
 

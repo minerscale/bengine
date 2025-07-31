@@ -35,20 +35,20 @@ impl<T: FromRaw + Send + Sync> From<T> for DtorEntry {
 
 unsafe impl<T> FromRaw for Arc<T> {
     fn into_raw(self) -> *mut () {
-        Arc::into_raw(self).cast_mut().cast()
+        Self::into_raw(self).cast_mut().cast()
     }
 
     unsafe fn from_raw(p: *mut ()) -> Self {
-        unsafe { Arc::from_raw(p.cast_const().cast()) }
+        unsafe { Self::from_raw(p.cast_const().cast()) }
     }
 }
 
 unsafe impl<T> FromRaw for Box<T> {
     fn into_raw(self) -> *mut () {
-        Box::into_raw(self).cast()
+        Self::into_raw(self).cast()
     }
 
     unsafe fn from_raw(p: *mut ()) -> Self {
-        unsafe { Box::from_raw(p.cast()) }
+        unsafe { Self::from_raw(p.cast()) }
     }
 }

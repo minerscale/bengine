@@ -1,6 +1,7 @@
 use std::{mem::offset_of, sync::Arc};
 
 use ash::vk::{self, SamplerAddressMode};
+use easy_cast::{Cast, CastFloat};
 use egui::{ClippedPrimitive, Vec2, ahash::HashMap};
 
 use crate::{
@@ -73,12 +74,12 @@ fn create_texture<C: ActiveCommandBuffer>(
     let image = match &image_delta.image {
         egui::ImageData::Color(color_image) => {
             image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(
-                width as u32,
-                height as u32,
+                width.cast(),
+                height.cast(),
                 color_image
                     .pixels
                     .iter()
-                    .flat_map(|c| c.to_array())
+                    .flat_map(egui::Color32::to_array)
                     .collect::<Vec<_>>(),
             )
         }
@@ -100,8 +101,11 @@ impl EguiBackend {
     pub fn new(gfx: &Renderer) -> Self {
         let mut input = egui::RawInput::default();
 
-        let window_size = egui::Vec2::new(gfx.window_size.0 as f32, gfx.window_size.1 as f32);
-        input.screen_rect = Some(egui::Rect::from_min_size(Default::default(), window_size));
+        let window_size = egui::Vec2::new(gfx.window_size.0.cast(), gfx.window_size.1.cast());
+        input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::default(),
+            window_size,
+        ));
 
         input.max_texture_side = unsafe {
             Some(
@@ -133,17 +137,17 @@ impl EguiBackend {
     }
 
     pub fn run(&mut self) {
-        let mut my_string = String::new();
-        let mut my_f32 = 0.0f32;
-        let mut my_boolean = false;
-        let mut my_enum = Enum::First;
-
         #[derive(PartialEq)]
         enum Enum {
             First,
             Second,
             Third,
         }
+
+        let mut my_string = String::new();
+        let mut my_f32 = 0.0f32;
+        let mut my_boolean = false;
+        let mut my_enum = Enum::First;
 
         let full_output = self.ctx.run(self.input.clone(), |ctx| {
             egui::SidePanel::left("my_left_panel")
@@ -215,18 +219,19 @@ impl EguiBackend {
 
                     match tex {
                         Some(_tex) => todo!(),
-                        None => match image_delta.pos {
-                            Some(_pos) => todo!(),
-                            None => {
+                        None => {
+                            if let Some(_pos) = image_delta.pos {
+                                todo!()
+                            } else {
                                 let descriptor_set =
                                     create_texture(gfx, image_delta, command_buffer);
 
                                 self.textures.insert(*tex_id, descriptor_set);
                             }
-                        },
+                        }
                     }
                 }
-            })
+            });
     }
 
     pub fn upload_clipped_primitives(&mut self, gfx: &Renderer) {
@@ -268,14 +273,14 @@ impl EguiBackend {
                     |mapped_memory: &mut [u8]| {
                         mapped_memory[0..vertex_byte_length].copy_from_slice(unsafe {
                             std::slice::from_raw_parts(
-                                vertex_buffers.as_ptr() as *const u8,
+                                vertex_buffers.as_ptr().cast::<u8>(),
                                 vertex_byte_length,
                             )
                         });
 
                         mapped_memory[vertex_byte_length..].copy_from_slice(unsafe {
                             std::slice::from_raw_parts(
-                                index_buffers.as_ptr() as *const u8,
+                                index_buffers.as_ptr().cast::<u8>(),
                                 index_byte_length,
                             )
                         });
@@ -289,7 +294,7 @@ impl EguiBackend {
     pub fn draw(
         &mut self,
         device: &Device,
-        extent: &vk::Extent2D,
+        extent: vk::Extent2D,
         cmd_buf: vk::CommandBuffer,
         pipeline: &Pipeline,
     ) {
@@ -306,8 +311,8 @@ impl EguiBackend {
         let mut index_offest = 0;
 
         unsafe {
-            device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline)
-        };
+            device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
+        }
 
         let vertex_index_buffer = self.vertex_index_buffer.as_ref().unwrap().buffer;
 
@@ -315,7 +320,7 @@ impl EguiBackend {
             device.cmd_bind_index_buffer(
                 cmd_buf,
                 vertex_index_buffer,
-                self.index_offset.try_into().unwrap(),
+                self.index_offset.cast(),
                 vk::IndexType::UINT32,
             );
 
@@ -329,17 +334,17 @@ impl EguiBackend {
                 vk::ShaderStageFlags::VERTEX,
                 0,
                 &self.ctx.pixels_per_point().to_ne_bytes(),
-            )
-        };
+            );
+        }
 
         let mut draw_primitive =
             |mesh: &egui::epaint::Mesh, primitive: &egui::epaint::ClippedPrimitive| {
                 let clip_rect = primitive.clip_rect;
 
-                let clip_x = (clip_rect.min.x * pixels_per_point).round() as i32;
-                let clip_y = (clip_rect.min.y * pixels_per_point).round() as i32;
-                let clip_w = (clip_rect.max.x * pixels_per_point).round() as i32;
-                let clip_h = (clip_rect.max.y * pixels_per_point).round() as i32;
+                let clip_x: i32 = (clip_rect.min.x * pixels_per_point).cast_nearest();
+                let clip_y: i32 = (clip_rect.min.y * pixels_per_point).cast_nearest();
+                let clip_w: i32 = (clip_rect.max.x * pixels_per_point).cast_nearest();
+                let clip_h: i32 = (clip_rect.max.y * pixels_per_point).cast_nearest();
 
                 unsafe {
                     device.cmd_set_scissor(
@@ -347,12 +352,13 @@ impl EguiBackend {
                         0,
                         &[vk::Rect2D {
                             offset: vk::Offset2D {
-                                x: clip_x.clamp(0, extent.width as i32),
-                                y: clip_y.clamp(0, extent.height as i32),
+                                x: clip_x.clamp(0, extent.width.cast()),
+                                y: clip_y.clamp(0, extent.height.cast()),
                             },
                             extent: vk::Extent2D {
-                                width: (clip_w.clamp(clip_x, extent.width as i32) - clip_x) as _,
-                                height: (clip_h.clamp(clip_y, extent.height as i32) - clip_y) as _,
+                                width: (clip_w.clamp(clip_x, extent.width.cast()) - clip_x).cast(),
+                                height: (clip_h.clamp(clip_y, extent.height.cast()) - clip_y)
+                                    .cast(),
                             },
                         }],
                     );
@@ -368,15 +374,15 @@ impl EguiBackend {
                             1,
                             &[*self.textures[&mesh.texture_id]],
                             &[],
-                        )
+                        );
                     }
 
                     device.cmd_draw_indexed(
                         cmd_buf,
-                        mesh.indices.len().try_into().unwrap(),
+                        mesh.indices.len().cast(),
                         1,
-                        index_offest.try_into().unwrap(),
-                        vertex_offset.try_into().unwrap(),
+                        index_offest.cast(),
+                        vertex_offset.cast(),
                         0,
                     );
 
@@ -397,6 +403,8 @@ impl EguiBackend {
         }
     }
 
+    #[allow(clippy::unused_self)]
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn handle_platform_output(&mut self, platform_output: &egui::PlatformOutput) {
         for event in &platform_output.events {
             match event {
@@ -417,7 +425,7 @@ impl EguiBackend {
         modifiers: egui::Modifiers,
     ) {
         self.input.screen_rect = Some(egui::Rect::from_min_size(
-            Default::default(),
+            egui::Pos2::default(),
             self.window_size,
         ));
 
@@ -433,28 +441,27 @@ pub fn make_egui_pipeline(
     render_pass: vk::RenderPass,
     descriptor_set_layouts: &[vk::DescriptorSetLayout],
 ) -> Pipeline {
-    let extent_f32 = ultraviolet::Vec2::new(extent.width as f32, extent.height as f32);
+    let extent_f32 = ultraviolet::Vec2::new(extent.width.cast(), extent.height.cast());
 
-    let vertex_specialization = SpecializationInfo::new(
-        &[
-            vk::SpecializationMapEntry {
-                constant_id: 0,
-                offset: offset_of!(Vec2, x) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-            vk::SpecializationMapEntry {
-                constant_id: 1,
-                offset: offset_of!(Vec2, y) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-        ],
-        unsafe {
-            std::slice::from_raw_parts(
-                (&raw const extent_f32).cast::<u8>(),
-                std::mem::size_of::<Vec2>(),
-            )
+    let info = [
+        vk::SpecializationMapEntry {
+            constant_id: 0,
+            offset: offset_of!(Vec2, x).cast(),
+            size: std::mem::size_of::<f32>(),
         },
-    );
+        vk::SpecializationMapEntry {
+            constant_id: 1,
+            offset: offset_of!(Vec2, y).cast(),
+            size: std::mem::size_of::<f32>(),
+        },
+    ];
+
+    let vertex_specialization = SpecializationInfo::new(&info, unsafe {
+        std::slice::from_raw_parts(
+            (&raw const extent_f32).cast::<u8>(),
+            std::mem::size_of::<Vec2>(),
+        )
+    });
 
     let shader_stages = [
         spv!(
@@ -474,8 +481,8 @@ pub fn make_egui_pipeline(
     let viewport = [vk::Viewport::default()
         .x(0.0)
         .y(0.0)
-        .width(extent.width as f32)
-        .height(extent.height as f32)
+        .width(extent.width.cast())
+        .height(extent.height.cast())
         .min_depth(0.0)
         .max_depth(1.0)];
 
@@ -491,7 +498,7 @@ pub fn make_egui_pipeline(
 
     let vertex_binding_descriptions = [vk::VertexInputBindingDescription::default()
         .binding(0)
-        .stride(size_of::<egui::epaint::Vertex>() as u32)
+        .stride(size_of::<egui::epaint::Vertex>().cast())
         .input_rate(vk::VertexInputRate::VERTEX)];
 
     let vertex_attribute_descriptions = [
@@ -499,19 +506,19 @@ pub fn make_egui_pipeline(
             location: 0,
             binding: 0,
             format: vk::Format::R32G32B32_SFLOAT,
-            offset: offset_of!(egui::epaint::Vertex, pos) as u32,
+            offset: offset_of!(egui::epaint::Vertex, pos).cast(),
         },
         vk::VertexInputAttributeDescription {
             location: 1,
             binding: 0,
             format: vk::Format::R32G32B32_SFLOAT,
-            offset: offset_of!(egui::epaint::Vertex, uv) as u32,
+            offset: offset_of!(egui::epaint::Vertex, uv).cast(),
         },
         vk::VertexInputAttributeDescription {
             location: 2,
             binding: 0,
             format: vk::Format::R8G8B8A8_UNORM,
-            offset: offset_of!(egui::epaint::Vertex, color) as u32,
+            offset: offset_of!(egui::epaint::Vertex, color).cast(),
         },
     ];
 
@@ -539,7 +546,7 @@ pub fn make_egui_pipeline(
 
     let push_constant_ranges = [vk::PushConstantRange::default()
         .offset(0)
-        .size(std::mem::size_of::<f32>().try_into().unwrap())
+        .size(std::mem::size_of::<f32>().cast())
         .stage_flags(vk::ShaderStageFlags::VERTEX)];
 
     PipelineBuilder::new()

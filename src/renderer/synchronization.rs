@@ -1,8 +1,9 @@
-use crate::renderer::Device;
 use std::{ops::Deref, sync::Arc};
 
 use ash::vk;
 use log::debug;
+
+use crate::renderer::Device;
 
 pub struct Fence {
     fence: vk::Fence,

@@ -1,6 +1,7 @@
 use std::{mem::offset_of, sync::Arc};
 
 use ash::vk;
+use easy_cast::Cast;
 use ultraviolet::{Isometry3, Vec2};
 
 #[repr(C)]
@@ -31,26 +32,25 @@ fn make_main_pipeline(
 ) -> Pipeline {
     let camera_parameters = Vec2::new(0.01, 1000.0);
 
-    let vertex_specialization = SpecializationInfo::new(
-        &[
-            vk::SpecializationMapEntry {
-                constant_id: 0,
-                offset: offset_of!(Vec2, x) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-            vk::SpecializationMapEntry {
-                constant_id: 1,
-                offset: offset_of!(Vec2, y) as u32,
-                size: std::mem::size_of::<f32>(),
-            },
-        ],
-        unsafe {
-            std::slice::from_raw_parts(
-                (&raw const camera_parameters).cast::<u8>(),
-                std::mem::size_of::<Vec2>(),
-            )
+    let info = [
+        vk::SpecializationMapEntry {
+            constant_id: 0,
+            offset: offset_of!(Vec2, x).cast(),
+            size: std::mem::size_of::<f32>(),
         },
-    );
+        vk::SpecializationMapEntry {
+            constant_id: 1,
+            offset: offset_of!(Vec2, y).cast(),
+            size: std::mem::size_of::<f32>(),
+        },
+    ];
+
+    let vertex_specialization = SpecializationInfo::new(&info, unsafe {
+        std::slice::from_raw_parts(
+            (&raw const camera_parameters).cast::<u8>(),
+            std::mem::size_of::<Vec2>(),
+        )
+    });
 
     let shader_stages = [
         spv!(
@@ -69,7 +69,7 @@ fn make_main_pipeline(
 
     let push_constant_ranges = [vk::PushConstantRange::default()
         .offset(0)
-        .size(std::mem::size_of::<PushConstants>().try_into().unwrap())
+        .size(std::mem::size_of::<PushConstants>().cast())
         .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)];
 
     let multisampling = vk::PipelineMultisampleStateCreateInfo::default()
@@ -80,8 +80,8 @@ fn make_main_pipeline(
     let viewport = [vk::Viewport::default()
         .x(0.0)
         .y(0.0)
-        .width(extent.width as f32)
-        .height(extent.height as f32)
+        .width(extent.width.cast())
+        .height(extent.height.cast())
         .min_depth(0.0)
         .max_depth(1.0)];
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ash::vk;
+use easy_cast::Cast;
 use image::{DynamicImage, GenericImageView};
 use log::debug;
 
@@ -97,6 +98,7 @@ fn copy_buffer_to_image<C: ActiveCommandBuffer>(
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct ImageCreateInfo {
     pub sample_count: vk::SampleCountFlags,
     pub format: vk::Format,
@@ -267,8 +269,8 @@ impl Image {
         copy_buffer_to_image(device, image.image, extent, cmd_buf, staging_buffer);
 
         if mipmapping {
-            let mut mip_width = image.extent.width as i32;
-            let mut mip_height = image.extent.height as i32;
+            let mut mip_width: i32 = image.extent.width.cast();
+            let mut mip_height: i32 = image.extent.height.cast();
             for i in 1..image.mip_levels {
                 let next_width = (mip_width / 2).max(1);
                 let next_height = (mip_height / 2).max(1);

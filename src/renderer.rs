@@ -130,7 +130,7 @@ impl Renderer {
                 (Err(_), _) => {
                     panic!("failed to acquire swapchain image")
                 }
-            };
+            }
         };
 
         unsafe {
@@ -247,6 +247,10 @@ impl Renderer {
         descriptor_set_layouts: &[DescriptorSetLayoutFunction],
         pipelines: &'static [PipelineFunction],
     ) -> Self {
+        fn with_n<T, F: Fn() -> T>(f: F, n: usize) -> Box<[T]> {
+            repeat_with(f).take(n).collect()
+        }
+
         let device = Arc::new(Device::new(window));
 
         let descriptor_set_layouts = descriptor_set_layouts
@@ -291,10 +295,6 @@ impl Renderer {
         );
 
         let command_pool = CommandPool::new(device.clone());
-
-        fn with_n<T, F: Fn() -> T>(f: F, n: usize) -> Box<[T]> {
-            repeat_with(f).take(n).collect()
-        }
 
         let image_avaliable_semaphores =
             with_n(|| Semaphore::new(device.clone()), MAX_FRAMES_IN_FLIGHT);

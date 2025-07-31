@@ -6,13 +6,13 @@ type SKey = sdl3::keyboard::Keycode;
 type SScan = sdl3::keyboard::Scancode;
 type EKey = egui::Key;
 
-pub fn sdl3_to_egui_event(event: SEv, modifiers: &egui::Modifiers) -> Option<EEv> {
+pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers) -> Option<EEv> {
     fn mouse_button(
         mouse_btn: sdl3::mouse::MouseButton,
         x: f32,
         y: f32,
         pressed: bool,
-        modifiers: &egui::Modifiers,
+        modifiers: egui::Modifiers,
     ) -> Option<egui::Event> {
         let button = (|mouse_btn| {
             let button = match mouse_btn {
@@ -21,7 +21,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: &egui::Modifiers) -> Option<EEv
                 sdl3::mouse::MouseButton::Right => egui::PointerButton::Secondary,
                 sdl3::mouse::MouseButton::X1 => egui::PointerButton::Extra1,
                 sdl3::mouse::MouseButton::X2 => egui::PointerButton::Extra2,
-                _ => None?,
+                sdl3::mouse::MouseButton::Unknown => None?,
             };
             Some(button)
         })(mouse_btn);
@@ -30,7 +30,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: &egui::Modifiers) -> Option<EEv
             pos: egui::Pos2::new(x, y),
             button,
             pressed,
-            modifiers: *modifiers,
+            modifiers,
         })
     }
 
@@ -102,7 +102,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: &egui::Modifiers) -> Option<EEv
         } => Some(EEv::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
             delta: egui::Vec2::new(x, y),
-            modifiers: *modifiers,
+            modifiers,
         }),
         SEv::MouseButtonDown {
             timestamp: _,
@@ -248,11 +248,11 @@ pub fn sdl3_to_egui_modifiers(modifiers: sdl3::keyboard::Mod) -> egui::Modifiers
     let mut ret = egui::Modifiers::NONE;
 
     if modifiers.intersects(sdl3::keyboard::Mod::LCTRLMOD | sdl3::keyboard::Mod::RCTRLMOD) {
-        ret |= egui::Modifiers::COMMAND
+        ret |= egui::Modifiers::COMMAND;
     }
 
     if modifiers.intersects(sdl3::keyboard::Mod::LALTMOD | sdl3::keyboard::Mod::RALTMOD) {
-        ret |= egui::Modifiers::ALT
+        ret |= egui::Modifiers::ALT;
     }
 
     if modifiers.intersects(sdl3::keyboard::Mod::LSHIFTMOD | sdl3::keyboard::Mod::RSHIFTMOD) {

@@ -171,10 +171,10 @@ impl Player {
             Vec3::zero()
         };
 
-        if !on_floor {
-            self.time_since_left_ground += dt;
-        } else {
+        if on_floor {
             self.time_since_left_ground = 0.0;
+        } else {
+            self.time_since_left_ground += dt;
         }
 
         let movement_direction =
@@ -184,7 +184,9 @@ impl Player {
             Vec3::from(rigid_body.linvel().as_slice().first_chunk::<3>().unwrap())
                 * Vec3::new(1.0, 0.0, 1.0);
 
-        let correction = if horizontal_velocity != Vec3::zero() {
+        let correction = if horizontal_velocity == Vec3::zero() {
+            Vec3::zero()
+        } else {
             let movement_direction = if movement_direction == Vec3::zero() {
                 horizontal_velocity * if on_floor { FLOOR_DRAG } else { AIR_DRAG }
             } else {
@@ -197,8 +199,6 @@ impl Player {
             .mag();
 
             horizontal_velocity * (1.0 - ((TOP_SPEED - speed_in_direction) / TOP_SPEED))
-        } else {
-            Vec3::zero()
         };
 
         let friction = if rigid_body.linvel().magnitude() < STATIC_FRICTION_CUTOFF
@@ -297,9 +297,9 @@ fn floor_contact(
 }
 
 fn normalize_if_not_zero(v: Vec3) -> Vec3 {
-    if v != Vec3::zero() {
-        v.normalized()
-    } else {
+    if v == Vec3::zero() {
         Vec3::zero()
+    } else {
+        v.normalized()
     }
 }

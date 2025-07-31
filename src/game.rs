@@ -1,4 +1,5 @@
 use ash::vk;
+use easy_cast::{Cast, CastApprox};
 use tracing_mutex::stdsync::Mutex;
 use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
 
@@ -64,13 +65,14 @@ impl Game {
         command_buffer: ActiveMultipleSubmitCommandBuffer,
         uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
         image: &SwapchainImage,
-        extent: &vk::Extent2D,
+        extent: vk::Extent2D,
     ) -> ActiveMultipleSubmitCommandBuffer {
-        self.gui.window_size = egui::Vec2::new(extent.width as f32, extent.height as f32);
+        let window_size = egui::Vec2::new(extent.width.cast(), extent.height.cast());
+        self.gui.window_size = window_size;
 
-        let interpolation_factor = ((std::time::Instant::now() - self.clock.previous_time)
-            .as_secs_f64()
-            / FIXED_UPDATE_INTERVAL) as f32;
+        let interpolation_factor = (self.clock.previous_time.elapsed().as_secs_f64()
+            / FIXED_UPDATE_INTERVAL)
+            .cast_approx();
 
         let player_transform = self
             .player
@@ -96,9 +98,9 @@ impl Game {
 
         let ubo = UniformBufferObject {
             view_transform: camera_transform,
-            time: self.clock.time as f32,
+            time: self.clock.time.cast_approx(),
             fov: ez,
-            scale_y: (extent.width as f32) / (extent.height as f32),
+            scale_y: window_size.x / window_size.y,
         };
 
         let clear_color = [

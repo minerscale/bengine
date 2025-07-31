@@ -87,10 +87,10 @@ impl RenderPass {
             .color_attachments(&color_attachment_ref)
             .depth_stencil_attachment(&depth_attachment_ref);
 
-        let subpass = if device.msaa_samples != vk::SampleCountFlags::TYPE_1 {
-            [subpass.resolve_attachments(&color_attachment_resolve_ref)]
-        } else {
+        let subpass = if device.msaa_samples == vk::SampleCountFlags::TYPE_1 {
             [subpass]
+        } else {
+            [subpass.resolve_attachments(&color_attachment_resolve_ref)]
         };
 
         let dependency = [vk::SubpassDependency::default()

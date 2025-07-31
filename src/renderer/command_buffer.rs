@@ -208,8 +208,8 @@ impl CommandPool {
         let command_pool = unsafe { device.create_command_pool(&pool_create_info, None).unwrap() };
 
         Self {
-            device,
             command_pool,
+            device,
         }
     }
 

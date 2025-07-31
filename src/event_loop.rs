@@ -1,11 +1,11 @@
-use tracing_mutex::stdsync::Mutex;
-
 use std::{
     ops::{Deref, DerefMut},
     time::{Duration, Instant},
 };
 
+use easy_cast::Cast;
 use sdl3::{event::Event, keyboard::Keycode};
+use tracing_mutex::stdsync::Mutex;
 use ultraviolet::Vec2;
 
 use crate::{
@@ -103,7 +103,7 @@ impl Inputs {
 fn process_event(
     event: Event,
     input: &mut Input,
-    modifiers: &egui::Modifiers,
+    modifiers: egui::Modifiers,
 ) -> Option<egui::Event> {
     match event {
         Event::KeyDown {
@@ -144,7 +144,7 @@ fn process_event(
             window_id: _,
             win_event: sdl3::event::WindowEvent::PixelSizeChanged(x, y),
         } => {
-            input.framebuffer_resized = Some((x.try_into().unwrap(), y.try_into().unwrap()));
+            input.framebuffer_resized = Some((x.cast(), y.cast()));
         }
 
         _ => (),
@@ -199,9 +199,9 @@ impl EventLoop {
                 let modifiers = sdl3_to_egui_modifiers(self.sdl_context.keyboard().mod_state());
                 let mut egui_events = Vec::new();
                 while let Some(event) = self.pump.poll_event() {
-                    if let Some(event) = process_event(event, &mut minput, &modifiers) {
+                    if let Some(event) = process_event(event, &mut minput, modifiers) {
                         egui_events.push(event);
-                    };
+                    }
                 }
                 let quit = minput.quit;
                 drop(minput);

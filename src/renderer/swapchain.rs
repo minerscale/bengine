@@ -117,12 +117,12 @@ impl Swapchain {
         };
 
         let depth_image = {
-            let depth_format = find_depth_format(&device.instance, device.physical_device);
-
             fn has_stencil_component(format: vk::Format) -> bool {
                 format == vk::Format::D32_SFLOAT_S8_UINT || format == vk::Format::D24_UNORM_S8_UINT
             }
 
+            let depth_format = find_depth_format(&device.instance, device.physical_device);
+            
             has_stencil_component(depth_format);
 
             ManuallyDrop::new(Image::new(

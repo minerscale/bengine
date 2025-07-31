@@ -1,13 +1,9 @@
-use std::io::BufRead;
-use std::mem::offset_of;
-use std::ptr::addr_of;
-use std::sync::Arc;
+use std::{io::BufRead, mem::offset_of, ptr::addr_of, sync::Arc};
 
 use ash::vk;
-use obj::raw::RawObj;
-use obj::{Obj, load_obj};
-use rapier3d::na;
-use rapier3d::prelude::ColliderShape;
+use easy_cast::Cast;
+use obj::{Obj, load_obj, raw::RawObj};
+use rapier3d::{na, prelude::ColliderShape};
 use ultraviolet::{Isometry3, Vec3};
 
 use crate::{
@@ -98,14 +94,7 @@ impl Mesh {
                     vk::IndexType::UINT32,
                 );
 
-                device.cmd_draw_indexed(
-                    cmd_buf,
-                    primitive.index_buffer.len().try_into().unwrap(),
-                    1,
-                    0,
-                    0,
-                    0,
-                );
+                device.cmd_draw_indexed(cmd_buf, primitive.index_buffer.len().cast(), 1, 0, 0, 0);
             }
         }
     }

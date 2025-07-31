@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, ops::Deref, sync::Arc};
 
 use ash::vk;
+use easy_cast::Cast;
 use log::debug;
 
 use crate::renderer::{
@@ -82,7 +83,7 @@ impl<T: Copy + Sync + Send + 'static> MappedBuffer<T> {
         descriptor_set_layout: &DescriptorSetLayout,
         binding: u32,
     ) -> Self {
-        let size: vk::DeviceSize = std::mem::size_of_val(data).try_into().unwrap();
+        let size: vk::DeviceSize = std::mem::size_of_val(data).cast();
 
         let (buffer, memory) = Buffer::<T>::create_buffer(device, size, usage, properties);
 
@@ -191,7 +192,7 @@ impl<T: Copy + Sync + Send + 'static> Buffer<T> {
         device: Arc<Device>,
         num_elements: usize,
     ) -> Self {
-        let size = (num_elements * size_of::<T>()).try_into().unwrap();
+        let size = (num_elements * size_of::<T>()).cast();
 
         let vertex_buffer_info = vk::BufferCreateInfo::default()
             .size(size)
@@ -206,7 +207,7 @@ impl<T: Copy + Sync + Send + 'static> Buffer<T> {
             buffer
         };
 
-        Buffer {
+        Self {
             buffer,
             memory,
             device,
@@ -290,7 +291,7 @@ impl<T: Copy + Sync + Send + 'static> Buffer<T> {
         usage: vk::BufferUsageFlags,
         properties: vk::MemoryPropertyFlags,
     ) -> Self {
-        let size = (num_elements * size_of::<T>()).try_into().unwrap();
+        let size = (num_elements * size_of::<T>()).cast();
 
         let (buffer, memory) = Self::create_buffer(device, size, usage, properties);
         {

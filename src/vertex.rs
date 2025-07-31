@@ -33,6 +33,7 @@ impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 impl Vertex {
     pub const fn new(pos: Vec3, normal: Vec3, tex_coord: Vec2) -> Self {
         Self {

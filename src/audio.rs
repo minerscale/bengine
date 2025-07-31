@@ -1,11 +1,8 @@
-use std::f64;
-
 use std::sync::mpsc::{self, Receiver, Sender};
 
-use cpal::BufferSize;
-use cpal::traits::StreamTrait;
 use cpal::{
-    Sample, SampleFormat, Stream,
+    BufferSize, Sample, SampleFormat, Stream,
+    traits::StreamTrait,
     traits::{DeviceTrait, HostTrait},
 };
 use log::info;
@@ -44,7 +41,7 @@ impl OscillatorParameters {
     }
 
     fn exponential_smoothing(alpha: f64, new_value: f64, previous_smoothed: f64) -> f64 {
-        alpha * new_value + (1.0 - alpha) * previous_smoothed
+        alpha.mul_add(new_value, (1.0 - alpha) * previous_smoothed)
     }
 
     pub fn update_latest_parameters(&mut self, new_parameters: AudioParameters) {
@@ -72,7 +69,8 @@ fn write_audio<T: Sample + cpal::FromSample<f64>>(
 
         let d = (parameters.smoothed_inputs.distance + 1.0).recip();
 
-        parameters.position += (f64::consts::TAU * 440.0 * d.powf(1.5)) / f64::from(SAMPLE_RATE);
+        parameters.position +=
+            (std::f64::consts::TAU * 440.0 * d.powf(1.5)) / f64::from(SAMPLE_RATE);
 
         let out = d.powi(2) * parameters.position.sin();
 

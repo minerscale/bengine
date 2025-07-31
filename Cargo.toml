@@ -1,6 +1,12 @@
 [package]
 name = "bengine"
+license = "MIT OR Apache-2.0"
 version = "0.1.0"
+description = "yet another game engine"
+readme = "README.md"
+categories = ["game-engines", "graphics", "rendering"]
+keywords = ["game", "engine", "gamedev", "graphics", "bengine"]
+repository = "https://github.com/minerscale/bengine"
 edition = "2024"
 
 [features]
@@ -21,6 +27,7 @@ opt-level = 3
 bytemuck = "1.23.1"
 colored = "3.0.0"
 cpal = "0.16.0"
+easy-cast = "0.5.3"
 egui = "0.32.0"
 gltf = "1.4.1"
 log = "0.4.22"
