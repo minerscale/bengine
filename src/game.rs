@@ -7,8 +7,9 @@ use crate::{
     FOV,
     audio::{Audio, AudioParameters},
     clock::{Clock, FIXED_UPDATE_INTERVAL},
-    egui_backend::EguiBackend,
-    event_loop::Input,
+    event_loop::SharedState,
+    gui::create_gui,
+    gui::egui_backend::EguiBackend,
     node::{Node, Object},
     physics::{Physics, from_nalgebra},
     player::Player,
@@ -44,7 +45,8 @@ impl Game {
         let scene = create_scene(gfx, &mut physics);
         let clock = Clock::new();
         let skybox = Skybox::new(gfx);
-        let gui = EguiBackend::new(gfx);
+
+        let gui = EguiBackend::new(gfx, create_gui());
 
         Self {
             player,
@@ -59,15 +61,14 @@ impl Game {
 
     pub fn draw(
         &mut self,
-        input: &Mutex<Input>,
+        shared_state: &Mutex<SharedState>,
         device: &Device,
         render_pass: &RenderPass,
         command_buffer: ActiveMultipleSubmitCommandBuffer,
         uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
         image: &SwapchainImage,
-        extent: vk::Extent2D,
     ) -> ActiveMultipleSubmitCommandBuffer {
-        let window_size = egui::Vec2::new(extent.width.cast(), extent.height.cast());
+        let window_size = egui::Vec2::new(image.extent.width.cast(), image.extent.height.cast());
         self.gui.window_size = window_size;
 
         let interpolation_factor = (self.clock.previous_time.elapsed().as_secs_f64()
@@ -79,14 +80,14 @@ impl Game {
             .previous_position
             .lerp(self.player.position, interpolation_factor);
 
-        let minput = input.lock().unwrap();
+        let state = shared_state.lock().unwrap();
         let camera_rotation = Self::get_camera_rotor(
-            minput
+            state
                 .previous
                 .camera_rotation
-                .lerp(minput.camera_rotation, interpolation_factor),
+                .lerp(state.camera_rotation, interpolation_factor),
         );
-        drop(minput);
+        drop(state);
 
         let camera_transform = Isometry3::new(
             player_transform + Vec3::new(0.0, 0.8, 0.0),
@@ -186,7 +187,7 @@ impl Game {
             }
 
             let pipeline = &render_pass.pipelines[EGUI_PIPELINE];
-            self.gui.draw(device, extent, cmd_buf, pipeline);
+            self.gui.draw(device, image.extent, cmd_buf, pipeline);
 
             device.cmd_end_render_pass(cmd_buf);
 
@@ -196,7 +197,7 @@ impl Game {
 
     pub fn update(
         &mut self,
-        input: &Mutex<Input>,
+        shared_state: &Mutex<SharedState>,
         events: Vec<egui::Event>,
         modifiers: egui::Modifiers,
     ) {
@@ -206,22 +207,22 @@ impl Game {
 
         let player_rigid_body_handle = self.player.rigid_body_handle;
 
-        let input = input.lock().unwrap();
+        let state = shared_state.lock().unwrap();
 
         let player = &mut self.player;
         let physics = &mut self.physics;
 
         player.update(
             physics,
-            &input,
-            Self::get_camera_rotor(input.camera_rotation),
+            &state,
+            Self::get_camera_rotor(state.camera_rotation),
             self.clock.dt,
         );
 
         let player_transform =
             from_nalgebra(physics.rigid_body_set[player_rigid_body_handle].position());
 
-        drop(input);
+        drop(state);
 
         physics.step(&mut self.scene, &mut self.player, self.clock.dt);
 

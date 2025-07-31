@@ -20,7 +20,8 @@ use crate::{
     shader_pipelines::MATERIAL_LAYOUT,
 };
 
-/// A Vulkan painter using ash + my renderer
+pub type GuiFn = dyn FnMut(&egui::Context) + Send + Sync;
+
 pub struct EguiBackend {
     pub ctx: egui::Context,
     pub input: egui::RawInput,
@@ -33,6 +34,8 @@ pub struct EguiBackend {
     vertex_index_buffer: Option<Arc<Buffer<u8>>>,
 
     textures: HashMap<egui::TextureId, Texture>,
+
+    gui_fn: Box<GuiFn>,
 }
 
 #[allow(dead_code)]
@@ -210,11 +213,11 @@ impl Texture {
 }
 
 impl EguiBackend {
-    pub fn gui_scale(&mut self, gui_scale: f32) {
+    fn gui_scale(&mut self, gui_scale: f32) {
         self.ctx.set_zoom_factor(gui_scale);
     }
 
-    pub fn new(gfx: &Renderer) -> Self {
+    pub fn new(gfx: &Renderer, gui_fn: Box<GuiFn>) -> Self {
         let mut input = egui::RawInput::default();
 
         let window_size = egui::Vec2::new(gfx.window_size.0.cast(), gfx.window_size.1.cast());
@@ -248,57 +251,20 @@ impl EguiBackend {
             index_offset: 0,
             clipped_primitives: Vec::new(),
             vertex_index_buffer: None,
+            gui_fn,
         }
     }
 
-    pub fn run(&mut self) {
-        #[derive(PartialEq)]
-        enum Enum {
-            First,
-            Second,
-            Third,
-        }
+    pub fn update(&mut self, gfx: &Renderer, gui_scale: f32) {
+        self.gui_scale(gui_scale);
+        self.free_textures();
+        self.run();
+        self.update_textures(gfx);
+        self.upload_clipped_primitives(gfx);
+    }
 
-        let mut my_string = String::new();
-        let mut my_f32 = 0.0f32;
-        let mut my_boolean = false;
-        let mut my_enum = Enum::First;
-
-        let full_output = self.ctx.run(self.input.clone(), |ctx| {
-            egui::SidePanel::left("my_left_panel")
-                .frame(egui::Frame {
-                    inner_margin: egui::Margin::symmetric(4, 4),
-                    fill: egui::Color32::from_black_alpha(200),
-                    stroke: egui::Stroke::NONE,
-                    corner_radius: egui::CornerRadius::ZERO,
-                    outer_margin: egui::Margin::ZERO,
-                    shadow: egui::Shadow::NONE,
-                })
-                .show(ctx, |ui| {
-                    ui.label("This is a label");
-                    ui.hyperlink("https://github.com/emilk/egui");
-                    ui.text_edit_singleline(&mut my_string);
-                    if ui.button("Click me").clicked() {
-                        println!("Clicked!!");
-                    }
-                    ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
-                    ui.add(egui::DragValue::new(&mut my_f32));
-
-                    ui.checkbox(&mut my_boolean, "Checkbox");
-
-                    ui.horizontal(|ui| {
-                        ui.radio_value(&mut my_enum, Enum::First, "First");
-                        ui.radio_value(&mut my_enum, Enum::Second, "Second");
-                        ui.radio_value(&mut my_enum, Enum::Third, "Third");
-                    });
-
-                    ui.separator();
-
-                    ui.collapsing("Click to see what is hidden!", |ui| {
-                        ui.label("Not much, as it turns out");
-                    });
-                });
-        });
+    fn run(&mut self) {
+        let full_output = self.ctx.run(self.input.clone(), |ctx| (self.gui_fn)(ctx));
 
         self.input.events.clear();
 
@@ -307,7 +273,7 @@ impl EguiBackend {
         self.full_output = Some(full_output);
     }
 
-    pub fn free_textures(&mut self) {
+    fn free_textures(&mut self) {
         if let Some(full_output) = &self.full_output {
             log::debug!("freeing {} textures", full_output.textures_delta.free.len());
             for tex in &full_output.textures_delta.free {
@@ -316,7 +282,7 @@ impl EguiBackend {
         }
     }
 
-    pub fn update_textures(&mut self, gfx: &Renderer) {
+    fn update_textures(&mut self, gfx: &Renderer) {
         let full_output = self
             .full_output
             .as_ref()
@@ -342,7 +308,7 @@ impl EguiBackend {
             });
     }
 
-    pub fn upload_clipped_primitives(&mut self, gfx: &Renderer) {
+    fn upload_clipped_primitives(&mut self, gfx: &Renderer) {
         let full_output = self
             .full_output
             .as_ref()
@@ -513,7 +479,7 @@ impl EguiBackend {
 
     #[allow(clippy::unused_self)]
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn handle_platform_output(&mut self, platform_output: &egui::PlatformOutput) {
+    fn handle_platform_output(&mut self, platform_output: &egui::PlatformOutput) {
         for event in &platform_output.events {
             match event {
                 egui::output::OutputEvent::Clicked(_widget_info) => (),

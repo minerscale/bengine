@@ -10,7 +10,7 @@ use ultraviolet::Vec2;
 
 use crate::{
     clock::FIXED_UPDATE_INTERVAL,
-    egui_sdl3_event::{sdl3_to_egui_event, sdl3_to_egui_modifiers},
+    gui::egui_sdl3_event::{sdl3_to_egui_event, sdl3_to_egui_modifiers},
 };
 
 pub struct EventLoop {
@@ -20,7 +20,7 @@ pub struct EventLoop {
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default, Clone)]
-pub struct Inputs {
+pub struct Input {
     pub camera_rotation: Vec2,
     pub forward: bool,
     pub backward: bool,
@@ -29,35 +29,38 @@ pub struct Inputs {
     pub up: bool,
     pub down: bool,
     pub quit: bool,
+}
+
+#[derive(Debug)]
+pub struct SharedState {
+    inputs: Input,
+    pub previous: Input,
+
     pub framebuffer_resized: Option<(u32, u32)>,
     pub gui_scale: f32,
 }
 
-#[derive(Debug)]
-pub struct Input {
-    inputs: Inputs,
-    pub previous: Inputs,
-}
-
-impl Deref for Input {
-    type Target = Inputs;
+impl Deref for SharedState {
+    type Target = Input;
 
     fn deref(&self) -> &Self::Target {
         &self.inputs
     }
 }
 
-impl DerefMut for Input {
+impl DerefMut for SharedState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inputs
     }
 }
 
-impl Input {
-    pub fn new(initial_state: Inputs) -> Self {
+impl SharedState {
+    pub fn new(initial_state: Input, gui_scale: f32) -> Self {
         Self {
             inputs: initial_state.clone(),
             previous: initial_state,
+            framebuffer_resized: None,
+            gui_scale,
         }
     }
 
@@ -66,7 +69,7 @@ impl Input {
     }
 }
 
-impl Inputs {
+impl Input {
     pub fn set_input(&mut self, key: sdl3::keyboard::Keycode, pressed: bool) {
         type K = Keycode;
         if cfg!(feature = "colemak") {
@@ -99,19 +102,13 @@ impl Inputs {
 
         self
     }
-
-    pub fn gui_scale(mut self, gui_scale: f32) -> Self {
-        self.gui_scale = gui_scale;
-
-        self
-    }
 }
 
 fn process_event(
     event: Event,
-    input: &mut Input,
+    input: &mut SharedState,
     modifiers: egui::Modifiers,
-) -> Option<egui::Event> {
+) -> [Option<egui::Event>;2] {
     match event {
         Event::KeyDown {
             keycode: Some(key),
@@ -167,20 +164,19 @@ impl EventLoop {
     }
 
     pub fn run<
-        F: FnMut(&Mutex<Input>) + Send,
-        G: FnMut(&Mutex<Input>, Vec<egui::Event>, egui::Modifiers),
+        F: FnMut(&Mutex<SharedState>) + Send,
+        G: FnMut(&Mutex<SharedState>, Vec<egui::Event>, egui::Modifiers),
     >(
         &mut self,
         mut render: F,
         mut update: G,
     ) {
-        let input = Mutex::new(Input::new(
-            Inputs::default()
-                .camera_rotation(Vec2::new(
-                    3.0 * std::f32::consts::FRAC_PI_4,
-                    std::f32::consts::FRAC_PI_8,
-                ))
-                .gui_scale(1.5),
+        let shared_state = Mutex::new(SharedState::new(
+            Input::default().camera_rotation(Vec2::new(
+                3.0 * std::f32::consts::FRAC_PI_4,
+                std::f32::consts::FRAC_PI_8,
+            )),
+            1.5,
         ));
 
         std::thread::scope(|scope| {
@@ -190,9 +186,9 @@ impl EventLoop {
                 let quit_rx = quit_rx;
 
                 'quit: loop {
-                    render(&input);
+                    render(&shared_state);
 
-                    let quit = input.lock().unwrap().quit;
+                    let quit = shared_state.lock().unwrap().quit;
                     if quit {
                         quit_rx.recv().unwrap();
                         break 'quit;
@@ -203,21 +199,20 @@ impl EventLoop {
             let mut target_time = Instant::now();
             let fixed_update_interval = Duration::from_secs_f64(FIXED_UPDATE_INTERVAL);
             'quit: loop {
-                let mut minput = input.lock().unwrap();
-
-                minput.update();
+                let mut state = shared_state.lock().unwrap();
+                state.update();
 
                 let modifiers = sdl3_to_egui_modifiers(self.sdl_context.keyboard().mod_state());
                 let mut egui_events = Vec::new();
                 while let Some(event) = self.pump.poll_event() {
-                    if let Some(event) = process_event(event, &mut minput, modifiers) {
+                    for event in process_event(event, &mut state, modifiers).into_iter().flatten() {
                         egui_events.push(event);
                     }
                 }
-                let quit = minput.quit;
-                drop(minput);
+                let quit = state.quit;
+                drop(state);
 
-                update(&input, egui_events, modifiers);
+                update(&shared_state, egui_events, modifiers);
 
                 if quit {
                     quit_tx.send(()).unwrap();

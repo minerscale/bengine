@@ -10,7 +10,7 @@ use rapier3d::{
 use ultraviolet::{Rotor3, Vec3};
 
 use crate::{
-    event_loop::Input,
+    event_loop::SharedState,
     physics::{Physics, from_nalgebra},
 };
 
@@ -80,7 +80,7 @@ impl Player {
     pub fn update(
         &mut self,
         physics: &mut Physics,
-        input: &Input,
+        input: &SharedState,
         camera_rotation: Rotor3,
         dt: f32,
     ) {

@@ -1,3 +1,6 @@
+// -----------------------------------------------
+// Adapted from
+// https://github.com/emilk/egui/blob/main/crates/egui_glow/src/shader/fragment.glsl
 #version 450
 
 #define DITHERING true

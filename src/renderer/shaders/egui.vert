@@ -1,3 +1,6 @@
+// -----------------------------------------------
+// Adapted from
+// https://github.com/emilk/egui/blob/main/crates/egui_glow/src/shader/vertex.glsl
 #version 450
 
 layout(location = 0) in vec2 pos;

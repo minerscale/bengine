@@ -6,7 +6,11 @@ type SKey = sdl3::keyboard::Keycode;
 type SScan = sdl3::keyboard::Scancode;
 type EKey = egui::Key;
 
-pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32) -> Option<EEv> {
+pub fn sdl3_to_egui_event(
+    event: SEv,
+    modifiers: egui::Modifiers,
+    gui_scale: f32,
+) -> [Option<EEv>; 2] {
     fn mouse_button(
         mouse_btn: sdl3::mouse::MouseButton,
         x: f32,
@@ -65,7 +69,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32
             repeat,
             which: _,
             raw: _,
-        } => key(keycode, scancode, keymod, repeat, true),
+        } => [key(keycode, scancode, keymod, repeat, true), None],
         SEv::KeyUp {
             timestamp: _,
             window_id: _,
@@ -75,7 +79,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32
             repeat,
             which: _,
             raw: _,
-        } => key(keycode, scancode, keymod, repeat, false),
+        } => [key(keycode, scancode, keymod, repeat, false), None],
         SEv::MouseMotion {
             timestamp: _,
             window_id: _,
@@ -83,14 +87,17 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32
             mousestate: _,
             x,
             y,
-            xrel: _,
-            yrel: _,
-        } => Some(EEv::PointerMoved(egui::Pos2::new(x, y) / gui_scale)),
+            xrel,
+            yrel,
+        } => [
+            Some(EEv::PointerMoved(egui::Pos2::new(x, y) / gui_scale)),
+            Some(EEv::MouseMoved(egui::Vec2::new(xrel, yrel))),
+        ],
         SEv::TextInput {
             timestamp: _,
             window_id: _,
             text,
-        } => Some(EEv::Text(text)),
+        } => [Some(EEv::Text(text)), None],
         SEv::MouseWheel {
             timestamp: _,
             window_id: _,
@@ -100,11 +107,11 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32
             direction: _,
             mouse_x: _,
             mouse_y: _,
-        } => Some(EEv::MouseWheel {
+        } => [Some(EEv::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
             delta: egui::Vec2::new(x, y) / gui_scale,
             modifiers,
-        }),
+        }), None],
         SEv::MouseButtonDown {
             timestamp: _,
             window_id: _,
@@ -113,7 +120,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32
             clicks: _,
             x,
             y,
-        } => mouse_button(mouse_btn, x, y, true, modifiers, gui_scale),
+        } => [mouse_button(mouse_btn, x, y, true, modifiers, gui_scale), None],
         SEv::MouseButtonUp {
             timestamp: _,
             window_id: _,
@@ -122,22 +129,22 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32
             clicks: _,
             x,
             y,
-        } => mouse_button(mouse_btn, x, y, false, modifiers, gui_scale),
+        } => [mouse_button(mouse_btn, x, y, false, modifiers, gui_scale), None],
         SEv::Window {
             timestamp: _,
             window_id: _,
             win_event,
-        } => (|| {
+        } => {
             use sdl3::event::WindowEvent as SWEv;
             let event = match win_event {
-                SWEv::MouseLeave => EEv::PointerGone,
-                SWEv::FocusGained => EEv::WindowFocused(true),
-                SWEv::FocusLost => EEv::WindowFocused(false),
-                _ => None?,
+                SWEv::MouseLeave => Some(EEv::PointerGone),
+                SWEv::FocusGained => Some(EEv::WindowFocused(true)),
+                SWEv::FocusLost => Some(EEv::WindowFocused(false)),
+                _ => None,
             };
-            Some(event)
-        })(),
-        _ => None,
+            [event, None]
+        },
+        _ => [None, None],
     }
 }
 

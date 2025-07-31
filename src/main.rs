@@ -9,11 +9,10 @@ use tracing_mutex::stdsync::Mutex;
 
 mod audio;
 mod clock;
-mod egui_backend;
-mod egui_sdl3_event;
 mod event_loop;
 mod game;
 mod gltf;
+mod gui;
 mod mesh;
 mod node;
 mod physics;
@@ -35,18 +34,17 @@ fn main() {
     env_logger::init();
 
     let sdl_context = sdl3::init().unwrap();
-    let window = {
-        sdl_context
-            .video()
-            .unwrap()
-            .window("bengine", WIDTH, HEIGHT)
-            .vulkan()
-            .position_centered()
-            .resizable()
-            .build()
-            .unwrap()
-    };
+    let video = sdl_context.video().unwrap();
+
+    let window = video
+        .window("bengine", WIDTH, HEIGHT)
+        .vulkan()
+        .position_centered()
+        .resizable()
+        .build()
+        .unwrap();
     sdl_context.mouse().set_relative_mouse_mode(&window, true);
+    sdl_context.video().unwrap().text_input().start(&window);
 
     let mut gfx = Renderer::new(WIDTH, HEIGHT, &window, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
 
@@ -58,8 +56,6 @@ fn main() {
 
     event_loop.run(
         |input| {
-            let extent = gfx.swapchain.images[0].extent;
-
             let mut minput = input.lock().unwrap();
 
             let framebuffer_resized = if let Some(framebuffer_size) = minput.framebuffer_resized {
@@ -74,13 +70,7 @@ fn main() {
             let gui_scale = minput.gui_scale;
             drop(minput);
 
-            let mut mgame = game.lock().unwrap();
-            mgame.gui.gui_scale(gui_scale);
-            mgame.gui.free_textures();
-            mgame.gui.run();
-            mgame.gui.update_textures(&gfx);
-            mgame.gui.upload_clipped_primitives(&gfx);
-            drop(mgame);
+            game.lock().unwrap().gui.update(&gfx, gui_scale);
 
             gfx.acquire_next_image(framebuffer_resized);
             gfx.draw(
@@ -92,7 +82,6 @@ fn main() {
                         command_buffer,
                         uniform_buffers,
                         image,
-                        extent,
                     )
                 },
             );

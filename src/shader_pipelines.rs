@@ -11,7 +11,7 @@ pub struct PushConstants {
 }
 
 use crate::{
-    egui_backend,
+    gui::egui_backend,
     renderer::{
         DescriptorSetLayoutFunction, PipelineFunction,
         descriptors::DescriptorSetLayout,
