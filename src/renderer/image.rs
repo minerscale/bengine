@@ -226,6 +226,77 @@ impl Image {
         Self::from_image(device, cmd_buf, image, true)
     }
 
+    pub fn generate_mipmaps<C: ActiveCommandBuffer>(&self, device: &Device, cmd_buf: &mut C) {
+        let mut mip_width: i32 = self.extent.width.cast();
+        let mut mip_height: i32 = self.extent.height.cast();
+        for i in 1..self.mip_levels {
+            let next_width = (mip_width / 2).max(1);
+            let next_height = (mip_height / 2).max(1);
+
+            self.transition_layout(
+                device,
+                cmd_buf,
+                Some(i - 1),
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            );
+
+            let blit = [vk::ImageBlit {
+                src_subresource: vk::ImageSubresourceLayers {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    mip_level: i - 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                },
+                src_offsets: [
+                    vk::Offset3D { x: 0, y: 0, z: 0 },
+                    vk::Offset3D {
+                        x: mip_width,
+                        y: mip_height,
+                        z: 1,
+                    },
+                ],
+                dst_subresource: vk::ImageSubresourceLayers {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    mip_level: i,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                },
+                dst_offsets: [
+                    vk::Offset3D { x: 0, y: 0, z: 0 },
+                    vk::Offset3D {
+                        x: next_width,
+                        y: next_height,
+                        z: 1,
+                    },
+                ],
+            }];
+
+            unsafe {
+                device.cmd_blit_image(
+                    **cmd_buf,
+                    self.image,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    self.image,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &blit,
+                    vk::Filter::LINEAR,
+                );
+            }
+
+            mip_width = next_width;
+            mip_height = next_height;
+        }
+
+        self.transition_layout(
+            device,
+            cmd_buf,
+            Some(self.mip_levels - 1),
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        );
+    }
+
     fn new_staged<C: ActiveCommandBuffer>(
         device: &Arc<Device>,
         extent: vk::Extent2D,
@@ -269,74 +340,7 @@ impl Image {
         copy_buffer_to_image(device, image.image, extent, cmd_buf, staging_buffer);
 
         if mipmapping {
-            let mut mip_width: i32 = image.extent.width.cast();
-            let mut mip_height: i32 = image.extent.height.cast();
-            for i in 1..image.mip_levels {
-                let next_width = (mip_width / 2).max(1);
-                let next_height = (mip_height / 2).max(1);
-
-                image.transition_layout(
-                    device,
-                    cmd_buf,
-                    Some(i - 1),
-                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                );
-
-                let blit = [vk::ImageBlit {
-                    src_subresource: vk::ImageSubresourceLayers {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        mip_level: i - 1,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    },
-                    src_offsets: [
-                        vk::Offset3D { x: 0, y: 0, z: 0 },
-                        vk::Offset3D {
-                            x: mip_width,
-                            y: mip_height,
-                            z: 1,
-                        },
-                    ],
-                    dst_subresource: vk::ImageSubresourceLayers {
-                        aspect_mask: vk::ImageAspectFlags::COLOR,
-                        mip_level: i,
-                        base_array_layer: 0,
-                        layer_count: 1,
-                    },
-                    dst_offsets: [
-                        vk::Offset3D { x: 0, y: 0, z: 0 },
-                        vk::Offset3D {
-                            x: next_width,
-                            y: next_height,
-                            z: 1,
-                        },
-                    ],
-                }];
-
-                unsafe {
-                    device.cmd_blit_image(
-                        **cmd_buf,
-                        image.image,
-                        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                        image.image,
-                        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                        &blit,
-                        vk::Filter::LINEAR,
-                    );
-                }
-
-                mip_width = next_width;
-                mip_height = next_height;
-            }
-
-            image.transition_layout(
-                device,
-                cmd_buf,
-                Some(image.mip_levels - 1),
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            );
+            image.generate_mipmaps(device, cmd_buf);
         }
 
         image.transition_layout(

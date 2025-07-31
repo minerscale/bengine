@@ -122,7 +122,7 @@ impl Swapchain {
             }
 
             let depth_format = find_depth_format(&device.instance, device.physical_device);
-            
+
             has_stencil_component(depth_format);
 
             ManuallyDrop::new(Image::new(

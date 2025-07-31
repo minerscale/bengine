@@ -30,6 +30,7 @@ pub struct Inputs {
     pub down: bool,
     pub quit: bool,
     pub framebuffer_resized: Option<(u32, u32)>,
+    pub gui_scale: f32,
 }
 
 #[derive(Debug)]
@@ -98,6 +99,12 @@ impl Inputs {
 
         self
     }
+
+    pub fn gui_scale(mut self, gui_scale: f32) -> Self {
+        self.gui_scale = gui_scale;
+
+        self
+    }
 }
 
 fn process_event(
@@ -150,7 +157,7 @@ fn process_event(
         _ => (),
     }
 
-    sdl3_to_egui_event(event, modifiers)
+    sdl3_to_egui_event(event, modifiers, input.gui_scale)
 }
 
 impl EventLoop {
@@ -167,10 +174,14 @@ impl EventLoop {
         mut render: F,
         mut update: G,
     ) {
-        let input = Mutex::new(Input::new(Inputs::default().camera_rotation(Vec2::new(
-            3.0 * std::f32::consts::FRAC_PI_4,
-            std::f32::consts::FRAC_PI_8,
-        ))));
+        let input = Mutex::new(Input::new(
+            Inputs::default()
+                .camera_rotation(Vec2::new(
+                    3.0 * std::f32::consts::FRAC_PI_4,
+                    std::f32::consts::FRAC_PI_8,
+                ))
+                .gui_scale(1.5),
+        ));
 
         std::thread::scope(|scope| {
             let (quit_tx, quit_rx) = std::sync::mpsc::channel::<()>();

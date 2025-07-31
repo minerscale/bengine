@@ -71,9 +71,11 @@ fn main() {
 
             minput.framebuffer_resized = None;
 
+            let gui_scale = minput.gui_scale;
             drop(minput);
 
             let mut mgame = game.lock().unwrap();
+            mgame.gui.gui_scale(gui_scale);
             mgame.gui.free_textures();
             mgame.gui.run();
             mgame.gui.update_textures(&gfx);

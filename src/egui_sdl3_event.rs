@@ -6,13 +6,14 @@ type SKey = sdl3::keyboard::Keycode;
 type SScan = sdl3::keyboard::Scancode;
 type EKey = egui::Key;
 
-pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers) -> Option<EEv> {
+pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers, gui_scale: f32) -> Option<EEv> {
     fn mouse_button(
         mouse_btn: sdl3::mouse::MouseButton,
         x: f32,
         y: f32,
         pressed: bool,
         modifiers: egui::Modifiers,
+        gui_scale: f32,
     ) -> Option<egui::Event> {
         let button = (|mouse_btn| {
             let button = match mouse_btn {
@@ -27,7 +28,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers) -> Option<EEv>
         })(mouse_btn);
 
         button.map(|button| EEv::PointerButton {
-            pos: egui::Pos2::new(x, y),
+            pos: egui::Pos2::new(x, y) / gui_scale,
             button,
             pressed,
             modifiers,
@@ -84,7 +85,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers) -> Option<EEv>
             y,
             xrel: _,
             yrel: _,
-        } => Some(EEv::PointerMoved(egui::Pos2::new(x, y))),
+        } => Some(EEv::PointerMoved(egui::Pos2::new(x, y) / gui_scale)),
         SEv::TextInput {
             timestamp: _,
             window_id: _,
@@ -101,7 +102,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers) -> Option<EEv>
             mouse_y: _,
         } => Some(EEv::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
-            delta: egui::Vec2::new(x, y),
+            delta: egui::Vec2::new(x, y) / gui_scale,
             modifiers,
         }),
         SEv::MouseButtonDown {
@@ -112,7 +113,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers) -> Option<EEv>
             clicks: _,
             x,
             y,
-        } => mouse_button(mouse_btn, x, y, true, modifiers),
+        } => mouse_button(mouse_btn, x, y, true, modifiers, gui_scale),
         SEv::MouseButtonUp {
             timestamp: _,
             window_id: _,
@@ -121,7 +122,7 @@ pub fn sdl3_to_egui_event(event: SEv, modifiers: egui::Modifiers) -> Option<EEv>
             clicks: _,
             x,
             y,
-        } => mouse_button(mouse_btn, x, y, false, modifiers),
+        } => mouse_button(mouse_btn, x, y, false, modifiers, gui_scale),
         SEv::Window {
             timestamp: _,
             window_id: _,

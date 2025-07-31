@@ -1,6 +1,6 @@
 use std::{mem::offset_of, sync::Arc};
 
-use ash::vk::{self, SamplerAddressMode};
+use ash::vk;
 use easy_cast::{Cast, CastFloat};
 use egui::{ClippedPrimitive, Vec2, ahash::HashMap};
 
@@ -32,72 +32,188 @@ pub struct EguiBackend {
     index_offset: usize,
     vertex_index_buffer: Option<Arc<Buffer<u8>>>,
 
-    textures: HashMap<egui::TextureId, DescriptorSet>,
+    textures: HashMap<egui::TextureId, Texture>,
 }
 
-fn create_texture<C: ActiveCommandBuffer>(
-    gfx: &Renderer,
-    image_delta: &egui::epaint::ImageDelta,
-    command_buffer: &mut C,
-) -> DescriptorSet {
-    let texture_filter = |texture_filter: egui::TextureFilter| match texture_filter {
+#[allow(dead_code)]
+struct Texture {
+    image: Arc<Image>,
+    sampler: Arc<Sampler>,
+    descriptor_set: DescriptorSet,
+}
+
+fn texture_filter(texture_filter: egui::TextureFilter) -> vk::Filter {
+    match texture_filter {
         egui::TextureFilter::Nearest => vk::Filter::NEAREST,
         egui::TextureFilter::Linear => vk::Filter::LINEAR,
-    };
+    }
+}
 
-    let width = image_delta.image.width();
-    let height = image_delta.image.height();
+fn mipmap_filter(mipmap_filter: egui::TextureFilter) -> vk::SamplerMipmapMode {
+    match mipmap_filter {
+        egui::TextureFilter::Nearest => vk::SamplerMipmapMode::NEAREST,
+        egui::TextureFilter::Linear => vk::SamplerMipmapMode::LINEAR,
+    }
+}
 
-    let mip_levels = width.max(height).ilog2() + 1;
+fn wrap_mode(wrap_mode: egui::TextureWrapMode) -> vk::SamplerAddressMode {
+    match wrap_mode {
+        egui::TextureWrapMode::ClampToEdge => vk::SamplerAddressMode::CLAMP_TO_EDGE,
+        egui::TextureWrapMode::Repeat => vk::SamplerAddressMode::REPEAT,
+        egui::TextureWrapMode::MirroredRepeat => vk::SamplerAddressMode::MIRRORED_REPEAT,
+    }
+}
 
-    let sampler = Sampler::new(
-        gfx.device.clone(),
-        match image_delta.options.wrap_mode {
-            egui::TextureWrapMode::ClampToEdge => SamplerAddressMode::CLAMP_TO_EDGE,
-            egui::TextureWrapMode::Repeat => SamplerAddressMode::REPEAT,
-            egui::TextureWrapMode::MirroredRepeat => SamplerAddressMode::MIRRORED_REPEAT,
-        },
-        texture_filter(image_delta.options.magnification),
-        texture_filter(image_delta.options.minification),
-        false,
-        image_delta.options.mipmap_mode.map(|filter| {
-            (
-                match filter {
-                    egui::TextureFilter::Nearest => vk::SamplerMipmapMode::NEAREST,
-                    egui::TextureFilter::Linear => vk::SamplerMipmapMode::LINEAR,
-                },
-                mip_levels,
-            )
-        }),
-    );
+impl Texture {
+    fn update<C: ActiveCommandBuffer>(
+        &mut self,
+        gfx: &Renderer,
+        image_delta: &egui::epaint::ImageDelta,
+        command_buffer: &mut C,
+    ) {
+        let region = vk::Rect2D {
+            offset: image_delta
+                .pos
+                .map_or(vk::Offset2D::default(), |[x, y]| vk::Offset2D {
+                    x: x.cast(),
+                    y: y.cast(),
+                }),
+            extent: self.image.extent,
+        };
 
-    let image = match &image_delta.image {
-        egui::ImageData::Color(color_image) => {
-            image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(
-                width.cast(),
-                height.cast(),
-                color_image
-                    .pixels
-                    .iter()
-                    .flat_map(egui::Color32::to_array)
-                    .collect::<Vec<_>>(),
-            )
+        let data = match &image_delta.image {
+            egui::ImageData::Color(color_image) => color_image
+                .pixels
+                .iter()
+                .flat_map(egui::Color32::to_array)
+                .collect::<Vec<_>>(),
+        };
+
+        let staging_buffer = Arc::new(Buffer::new(
+            &gfx.device,
+            &data,
+            vk::BufferUsageFlags::TRANSFER_SRC,
+            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+        ));
+
+        self.image.transition_layout(
+            &gfx.device,
+            command_buffer,
+            None,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        );
+
+        let region = vk::BufferImageCopy::default()
+            .buffer_offset(0)
+            .buffer_row_length(0)
+            .buffer_image_height(0)
+            .image_subresource(vk::ImageSubresourceLayers {
+                aspect_mask: vk::ImageAspectFlags::COLOR,
+                mip_level: 0,
+                base_array_layer: 0,
+                layer_count: 1,
+            })
+            .image_offset(vk::Offset3D {
+                x: region.offset.x,
+                y: region.offset.y,
+                z: 0,
+            })
+            .image_extent(vk::Extent3D {
+                width: region.extent.width,
+                height: region.extent.height,
+                depth: 1,
+            });
+
+        unsafe {
+            gfx.device.cmd_copy_buffer_to_image(
+                **command_buffer,
+                staging_buffer.buffer,
+                self.image.image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[region],
+            );
+        }
+
+        let mipmapping = self.image.mip_levels > 1;
+
+        if mipmapping {
+            self.image.generate_mipmaps(&gfx.device, command_buffer);
+        }
+
+        command_buffer.add_dependency(staging_buffer);
+
+        self.image.transition_layout(
+            &gfx.device,
+            command_buffer,
+            None,
+            if mipmapping {
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+            } else {
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL
+            },
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+    }
+
+    fn new<C: ActiveCommandBuffer>(
+        gfx: &Renderer,
+        image_delta: &egui::epaint::ImageDelta,
+        command_buffer: &mut C,
+    ) -> Texture {
+        let width = image_delta.image.width();
+        let height = image_delta.image.height();
+
+        let mip_levels = width.max(height).ilog2() + 1;
+
+        let sampler = Arc::new(Sampler::new(
+            gfx.device.clone(),
+            wrap_mode(image_delta.options.wrap_mode),
+            texture_filter(image_delta.options.magnification),
+            texture_filter(image_delta.options.minification),
+            false,
+            image_delta
+                .options
+                .mipmap_mode
+                .map(|filter| (mipmap_filter(filter), mip_levels)),
+        ));
+
+        let image = match &image_delta.image {
+            egui::ImageData::Color(color_image) => {
+                image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_raw(
+                    width.cast(),
+                    height.cast(),
+                    color_image
+                        .pixels
+                        .iter()
+                        .flat_map(egui::Color32::to_array)
+                        .collect::<Vec<_>>(),
+                )
+            }
+        }
+        .unwrap();
+
+        let image = Image::from_image(&gfx.device, command_buffer, image.into(), false);
+
+        let mut descriptor_set = gfx
+            .descriptor_pool
+            .create_descriptor_set(&gfx.descriptor_set_layouts[MATERIAL_LAYOUT]);
+
+        descriptor_set.bind_texture(&gfx.device.device, 0, image.clone(), sampler.clone());
+
+        Texture {
+            image,
+            sampler,
+            descriptor_set,
         }
     }
-    .unwrap();
-
-    let image = Image::from_image(&gfx.device, command_buffer, image.into(), false);
-
-    let mut descriptor_set = gfx
-        .descriptor_pool
-        .create_descriptor_set(&gfx.descriptor_set_layouts[MATERIAL_LAYOUT]);
-
-    descriptor_set.bind_texture(&gfx.device.device, 0, image, sampler.into());
-
-    descriptor_set
 }
 
 impl EguiBackend {
+    pub fn gui_scale(&mut self, gui_scale: f32) {
+        self.ctx.set_zoom_factor(gui_scale);
+    }
+
     pub fn new(gfx: &Renderer) -> Self {
         let mut input = egui::RawInput::default();
 
@@ -121,7 +237,6 @@ impl EguiBackend {
 
         let ctx = egui::Context::default();
 
-        ctx.set_zoom_factor(1.5);
         ctx.set_visuals(egui::Visuals::dark());
 
         Self {
@@ -183,9 +298,9 @@ impl EguiBackend {
                         ui.label("Not much, as it turns out");
                     });
                 });
-
-            //egui::CentralPanel::default().show(&ctx, |ui| {});
         });
+
+        self.input.events.clear();
 
         self.handle_platform_output(&full_output.platform_output);
 
@@ -215,21 +330,14 @@ impl EguiBackend {
         gfx.command_pool
             .one_time_submit(gfx.device.graphics_queue, |command_buffer| {
                 for (tex_id, image_delta) in &full_output.textures_delta.set {
-                    let tex = self.textures.get_mut(tex_id);
-
-                    match tex {
-                        Some(_tex) => todo!(),
-                        None => {
-                            if let Some(_pos) = image_delta.pos {
-                                todo!()
-                            } else {
-                                let descriptor_set =
-                                    create_texture(gfx, image_delta, command_buffer);
-
-                                self.textures.insert(*tex_id, descriptor_set);
-                            }
-                        }
-                    }
+                    self.textures
+                        .entry(*tex_id)
+                        .and_modify(|tex| tex.update(gfx, image_delta, command_buffer))
+                        .or_insert(if let Some(_pos) = image_delta.pos {
+                            todo!()
+                        } else {
+                            Texture::new(gfx, image_delta, command_buffer)
+                        });
                 }
             });
     }
@@ -372,7 +480,7 @@ impl EguiBackend {
                             vk::PipelineBindPoint::GRAPHICS,
                             pipeline.pipeline_layout,
                             1,
-                            &[*self.textures[&mesh.texture_id]],
+                            &[*self.textures[&mesh.texture_id].descriptor_set],
                             &[],
                         );
                     }
@@ -431,7 +539,7 @@ impl EguiBackend {
 
         self.input.time = Some(clock.time);
         self.input.modifiers = modifiers;
-        self.input.events = events;
+        self.input.events.extend(events);
     }
 }
 
