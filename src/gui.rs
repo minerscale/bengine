@@ -34,6 +34,11 @@ pub fn create_gui() -> Box<GuiFn> {
                 ui.text_edit_singleline(&mut my_string);
                 if ui.button("Click me").clicked() {
                     shared_state.set_game_state(GameState::Playing);
+                    shared_state.last_mouse_position =
+                        ctx.input(|inputs| inputs.pointer.latest_pos()).map(|pos| {
+                            let pos = pos * shared_state.gui_scale;
+                            (pos.x, pos.y)
+                        });
                 }
                 ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
                 ui.add(egui::DragValue::new(&mut my_f32));

@@ -43,6 +43,7 @@ pub struct SharedState {
     previous_game_state: GameState,
     game_state_just_changed: bool,
     pub gui_scale: f32,
+    pub last_mouse_position: Option<(f32, f32)>,
 }
 
 impl Deref for SharedState {
@@ -69,6 +70,7 @@ impl SharedState {
             game_state: GameState::Menu,
             previous_game_state: GameState::Menu,
             game_state_just_changed: false,
+            last_mouse_position: None,
         }
     }
 
@@ -86,9 +88,18 @@ impl SharedState {
         self.previous = self.inputs.clone();
 
         if self.game_state_just_changed {
+            self.game_state_just_changed = false;
+            
             match self.game_state {
-                GameState::Menu => sdl_context.mouse().set_relative_mouse_mode(window, false),
-                GameState::Playing => sdl_context.mouse().set_relative_mouse_mode(window, true),
+                GameState::Menu => {
+                    if let Some((x, y)) = self.last_mouse_position.take() {
+                        sdl_context.mouse().warp_mouse_in_window(window, x, y);
+                    }
+                    sdl_context.mouse().set_relative_mouse_mode(window, false);
+                }
+                GameState::Playing => {
+                    sdl_context.mouse().set_relative_mouse_mode(window, true);
+                }
             }
         }
     }
@@ -131,7 +142,7 @@ impl Input {
 
 fn process_event(
     event: Event,
-    input: &mut SharedState,
+    shared_state: &mut SharedState,
     modifiers: egui::Modifiers,
 ) -> [Option<egui::Event>; 2] {
     match event {
@@ -139,12 +150,12 @@ fn process_event(
             scancode: Some(key),
             repeat: false,
             ..
-        } => input.set_input(key, true),
+        } => shared_state.set_input(key, true),
         Event::KeyUp {
             scancode: Some(key),
             repeat: false,
             ..
-        } => input.set_input(key, false),
+        } => shared_state.set_input(key, false),
         Event::MouseMotion {
             timestamp: _,
             window_id: _,
@@ -157,29 +168,32 @@ fn process_event(
         } => {
             const SENSITIVITY: f32 = 0.005;
 
-            input.camera_rotation = {
-                let mut rotation = input.camera_rotation + Vec2::new(xrel, yrel) * SENSITIVITY;
+            if shared_state.game_state() == GameState::Playing {
+                shared_state.camera_rotation = {
+                    let mut rotation =
+                        shared_state.camera_rotation + Vec2::new(xrel, yrel) * SENSITIVITY;
 
-                let vertical_look_limit = 0.99 * std::f32::consts::FRAC_PI_2;
+                    let vertical_look_limit = 0.99 * std::f32::consts::FRAC_PI_2;
 
-                rotation.y = rotation.y.clamp(-vertical_look_limit, vertical_look_limit);
+                    rotation.y = rotation.y.clamp(-vertical_look_limit, vertical_look_limit);
 
-                rotation
-            };
+                    rotation
+                };
+            }
         }
-        Event::Quit { timestamp: _ } => input.quit = true,
+        Event::Quit { timestamp: _ } => shared_state.quit = true,
         Event::Window {
             timestamp: _,
             window_id: _,
             win_event: sdl3::event::WindowEvent::PixelSizeChanged(x, y),
         } => {
-            input.framebuffer_resized = Some((x.cast(), y.cast()));
+            shared_state.framebuffer_resized = Some((x.cast(), y.cast()));
         }
 
         _ => (),
     }
 
-    sdl3_to_egui_event(event, modifiers, input.gui_scale)
+    sdl3_to_egui_event(event, modifiers, shared_state.gui_scale)
 }
 
 impl EventLoop {
