@@ -1,101 +1,30 @@
-use std::sync::mpsc::{self, Receiver, Sender};
-
 use cpal::{
-    BufferSize, Sample, SampleFormat, Stream,
+    BufferSize, SampleFormat, Stream,
     traits::StreamTrait,
     traits::{DeviceTrait, HostTrait},
 };
+use easy_cast::Cast;
+use libpd_rs::{Pd, functions::util::calculate_ticks};
 use log::info;
 
 #[allow(unused)]
 pub struct Audio {
     pub stream: Stream,
-    pub parameter_stream: Sender<AudioParameters>,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct AudioParameters {
-    volume: f64,
-    distance: f64,
-}
-
-impl AudioParameters {
-    pub fn new(volume: f64, distance: f64) -> Self {
-        Self { volume, distance }
-    }
-}
-
-struct OscillatorParameters {
-    position: f64,
-    smoothed_inputs: AudioParameters,
-    latest_parameters: AudioParameters,
-    alpha: f64,
-}
-
-impl OscillatorParameters {
-    pub fn new(smoothing_constant: f64) -> Self {
-        let inputs = AudioParameters::new(0.0, 100.0);
-
-        Self {
-            position: 0.0,
-            smoothed_inputs: inputs,
-            latest_parameters: inputs,
-            alpha: 1.0 - f64::exp(-(f64::from(SAMPLE_RATE)).recip() / smoothing_constant),
-        }
-    }
-
-    fn exponential_smoothing(alpha: f64, new_value: f64, previous_smoothed: f64) -> f64 {
-        alpha.mul_add(new_value, (1.0 - alpha) * previous_smoothed)
-    }
-
-    pub fn update_latest_parameters(&mut self, new_parameters: AudioParameters) {
-        self.latest_parameters = new_parameters;
-    }
-
-    pub fn update(&mut self) {
-        self.smoothed_inputs = AudioParameters {
-            volume: Self::exponential_smoothing(
-                self.alpha,
-                self.latest_parameters.distance,
-                self.smoothed_inputs.distance,
-            ),
-            distance: Self::exponential_smoothing(
-                self.alpha,
-                self.latest_parameters.distance,
-                self.smoothed_inputs.distance,
-            ),
-        }
-    }
-}
-
-// This is where art lives.
-fn write_audio<T: Sample + cpal::FromSample<f64>>(
-    data: &mut [T],
-    parameters: &mut OscillatorParameters,
-) {
-    const EPSILON: f64 = 0.0001;
-
-    for sample in data.iter_mut() {
-        parameters.update();
-
-        if parameters.smoothed_inputs.volume > EPSILON {
-            let d = (parameters.smoothed_inputs.distance + 1.0).recip();
-
-            parameters.position +=
-                (std::f64::consts::TAU * 440.0 * d.powf(1.5)) / f64::from(SAMPLE_RATE);
-
-            let out = parameters.smoothed_inputs.volume * d.powi(2) * parameters.position.sin();
-            *sample = Sample::from_sample(out);
-        } else {
-            *sample = Sample::from_sample(0.0);
-        }
-    }
 }
 
 const SAMPLE_RATE: u32 = 48000;
 const BUFFER_SIZE_SAMPLES: u32 = 2048;
+const CHANNELS: usize = 2;
 
 impl Audio {
+    pub fn process_events(&mut self, events: &mut Vec<Box<dyn Fn() -> () + Send + Sync>>) {
+        for event in &mut *events {
+            event()
+        }
+
+        events.clear();
+    }
+
     pub fn new() -> Self {
         let host = cpal::default_host();
 
@@ -110,7 +39,7 @@ impl Audio {
                 matches!(
                     c.sample_format(),
                     SampleFormat::F32 | SampleFormat::I16 | SampleFormat::U16
-                ) && c.channels() == 2
+                ) && c.channels() == cpal::ChannelCount::try_from(CHANNELS).unwrap()
                     && (c.min_sample_rate()..=c.max_sample_rate())
                         .contains(&cpal::SampleRate(SAMPLE_RATE))
                     && match c.buffer_size() {
@@ -136,16 +65,29 @@ impl Audio {
 
         let err_fn = |err| eprintln!("an error occurred on the output audio stream: {err}");
 
-        let mut osc_parameters = OscillatorParameters::new(0.1);
+        let pd: &'static mut Pd = {
+            let _gag = gag::Gag::stderr().unwrap();
+            Box::leak(Box::new(
+                Pd::init_and_configure(0, 2, SAMPLE_RATE.cast()).unwrap(),
+            ))
+        };
 
-        let (tx, rx): (Sender<AudioParameters>, Receiver<AudioParameters>) = mpsc::channel();
+        let ctx = pd.audio_context();
+
+        // Let's evaluate another pd patch.
+        // We could have opened a `.pd` file also.
+        let patch = include_str!("pd/patch.pd");
+
+        pd.eval_patch(patch).unwrap();
+
+        libpd_rs::functions::receive::on_print(|s| println!("{s}"));
 
         let callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            while let Ok(new_parameters) = rx.try_recv() {
-                osc_parameters.update_latest_parameters(new_parameters);
-            }
+            let ticks = calculate_ticks(2, data.len().cast());
 
-            write_audio(data, &mut osc_parameters);
+            ctx.receive_messages_from_pd();
+
+            ctx.process_float(ticks, &[], data);
         };
 
         let stream = device
@@ -154,9 +96,8 @@ impl Audio {
 
         stream.play().unwrap();
 
-        Self {
-            stream,
-            parameter_stream: tx,
-        }
+        pd.activate_audio(true).unwrap();
+
+        Self { stream }
     }
 }

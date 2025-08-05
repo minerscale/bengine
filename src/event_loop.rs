@@ -33,7 +33,6 @@ pub struct Input {
     pub quit: bool,
 }
 
-#[derive(Debug)]
 pub struct SharedState {
     inputs: Input,
     pub previous: Input,
@@ -44,6 +43,7 @@ pub struct SharedState {
     game_state_just_changed: bool,
     pub gui_scale: f32,
     pub last_mouse_position: Option<(f32, f32)>,
+    pub audio_events: Vec<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl Deref for SharedState {
@@ -71,6 +71,7 @@ impl SharedState {
             previous_game_state: GameState::Menu,
             game_state_just_changed: false,
             last_mouse_position: None,
+            audio_events: Vec::new(),
         }
     }
 
@@ -82,6 +83,10 @@ impl SharedState {
         self.previous_game_state = self.game_state;
         self.game_state = new_state;
         self.game_state_just_changed = true;
+
+        self.audio_events.push(Box::new(move || {
+            libpd_rs::functions::send::send_symbol_to("scene", <&str>::from(new_state)).unwrap();
+        }));
     }
 
     pub fn update(&mut self, sdl_context: &sdl3::Sdl, window: &sdl3::video::Window) {

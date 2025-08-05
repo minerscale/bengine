@@ -39,6 +39,9 @@ pub fn create_gui() -> Box<GuiFn> {
                             let pos = pos * shared_state.gui_scale;
                             (pos.x, pos.y)
                         });
+                    shared_state.audio_events.push(Box::new(move || {
+                        libpd_rs::functions::send::send_float_to("volume", my_f32 / 100.0).unwrap();
+                    }));
                 }
                 ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
                 ui.add(egui::DragValue::new(&mut my_f32));

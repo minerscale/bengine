@@ -4,7 +4,7 @@ use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
 
 use crate::{
     FOV,
-    audio::{Audio, AudioParameters},
+    audio::Audio,
     clock::{Clock, FIXED_UPDATE_INTERVAL},
     event_loop::SharedState,
     gui::{create_gui, egui_backend::EguiBackend},
@@ -25,6 +25,15 @@ use crate::{
 pub enum GameState {
     Menu,
     Playing,
+}
+
+impl From<GameState> for &str {
+    fn from(value: GameState) -> Self {
+        match value {
+            GameState::Menu => "menu",
+            GameState::Playing => "playing",
+        }
+    }
 }
 
 pub struct Game {
@@ -266,10 +275,14 @@ impl Game {
         ) - gems_and_jewel_location)
             .mag();
 
-        self.audio
+        /*self.audio
             .parameter_stream
             .send(AudioParameters::new(1.0, distance.into()))
             .unwrap();
+
+        libpd_rs::functions::send::send_float_to("distance", distance).unwrap();*/
+
+        libpd_rs::functions::send::send_float_to("distance", distance).unwrap();
     }
 
     pub fn update(
@@ -282,13 +295,13 @@ impl Game {
 
         self.gui.update_input(&self.clock, events, modifiers);
 
-        match shared_state.game_state() {
-            GameState::Menu => self
-                .audio
-                .parameter_stream
-                .send(AudioParameters::new(0.0, 100.0))
-                .unwrap(),
+        let game_state = shared_state.game_state();
+
+        match game_state {
+            GameState::Menu => (),
             GameState::Playing => self.update_playing(shared_state),
         }
+
+        self.audio.process_events(&mut shared_state.audio_events);
     }
 }
