@@ -5,6 +5,7 @@ use obj::FromRawVertex;
 use ultraviolet::{Vec2, Vec3};
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct Vertex {
     pub pos: Vec3,
     pub normal: Vec3,
@@ -30,6 +31,17 @@ impl<I: Copy + num_traits::cast::FromPrimitive> FromRawVertex<I> for Vertex {
                 .collect::<Vec<_>>(),
             i,
         ))
+    }
+}
+
+impl<'a> Vertex {
+    pub const fn as_u8_slice(&'a self) -> &'a [u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                std::ptr::from_ref::<Self>(self).cast::<u8>(),
+                size_of::<Self>(),
+            )
+        }
     }
 }
 

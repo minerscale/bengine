@@ -58,11 +58,23 @@ impl DeviceMemory {
     }
 }
 
+#[derive(Debug)]
+pub struct BufferMemory {
+    pub memory: Arc<DeviceMemory>,
+    pub offset: vk::DeviceSize,
+}
+
+impl BufferMemory {
+    pub fn new(memory: Arc<DeviceMemory>, offset: vk::DeviceSize) -> Self {
+        Self { memory, offset }
+    }
+}
+
 pub struct Buffer<T: Copy + Sync> {
     pub buffer: vk::Buffer,
-    pub memory: (Arc<DeviceMemory>, vk::DeviceSize),
-    device: Arc<Device>,
+    pub memory: Option<BufferMemory>,
     size: vk::DeviceSize,
+    device: Arc<Device>,
     phantom: PhantomData<T>,
 }
 
@@ -100,9 +112,9 @@ impl<T: Copy + Sync + Send + 'static> MappedBuffer<T> {
 
         let buffer = Arc::new(Buffer {
             buffer,
-            memory: (Arc::new(memory), 0),
-            device: device.clone(),
+            memory: Some(BufferMemory::new(Arc::new(memory), 0)),
             size,
+            device: device.clone(),
             phantom: PhantomData,
         });
 
@@ -123,7 +135,6 @@ impl<T: Copy + Sync> std::fmt::Debug for Buffer<T> {
         f.debug_struct("Buffer")
             .field("buffer", &self.buffer)
             .field("memory", &self.memory)
-            .field("size", &self.size)
             .finish_non_exhaustive()
     }
 }
@@ -157,26 +168,25 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + Send + 'static>(
 ) -> Arc<Buffer<T>> {
     let device = &buffer.device;
 
-    let (new_buffer, memory) = Buffer::<T>::create_buffer(device, buffer.size, usage, properties);
+    let size = buffer.size;
+    let (new_buffer, memory) = Buffer::<T>::create_buffer(device, size, usage, properties);
 
     let copy_region = [vk::BufferCopy {
-        src_offset: 0,
+        src_offset: buffer.memory.as_ref().unwrap().offset,
         dst_offset: 0,
-        size: buffer.size,
+        size,
     }];
 
     unsafe { device.cmd_copy_buffer(**cmd_buf, **buffer, new_buffer, &copy_region) };
 
     let device = buffer.device.clone();
-    let size = buffer.size;
-
     cmd_buf.add_dependency(buffer);
 
     let new_buffer = Arc::new(Buffer {
         buffer: new_buffer,
-        memory: (Arc::new(memory), 0),
-        device,
+        memory: Some(BufferMemory::new(Arc::new(memory), 0)),
         size,
+        device,
         phantom: PhantomData,
     });
 
@@ -186,34 +196,41 @@ fn copy_buffer<C: ActiveCommandBuffer, T: Copy + Sync + Send + 'static>(
 }
 
 impl<T: Copy + Sync + Send + 'static> Buffer<T> {
-    pub fn new_with_memory(
-        usage: vk::BufferUsageFlags,
-        memory: (Arc<DeviceMemory>, vk::DeviceSize),
+    pub fn memory_requirements(&self) -> vk::MemoryRequirements {
+        unsafe { self.device.get_buffer_memory_requirements(self.buffer) }
+    }
+
+    pub unsafe fn new_uninit(
         device: Arc<Device>,
+        usage: vk::BufferUsageFlags,
         num_elements: usize,
     ) -> Self {
         let size = (num_elements * size_of::<T>()).cast();
 
-        let vertex_buffer_info = vk::BufferCreateInfo::default()
+        let buffer_info = vk::BufferCreateInfo::default()
             .size(size)
             .usage(usage)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let buffer = unsafe {
-            let buffer = device.create_buffer(&vertex_buffer_info, None).unwrap();
-            device
-                .bind_buffer_memory(buffer, **memory.0, memory.1)
-                .unwrap();
-            buffer
-        };
+        let buffer = unsafe { device.create_buffer(&buffer_info, None).unwrap() };
 
         Self {
             buffer,
-            memory,
-            device,
+            memory: None,
             size,
+            device,
             phantom: PhantomData,
         }
+    }
+
+    pub unsafe fn bind_memory(&mut self, memory: BufferMemory) {
+        unsafe {
+            self.device
+                .bind_buffer_memory(self.buffer, **memory.memory, memory.offset)
+                .unwrap();
+        }
+
+        self.memory = Some(memory);
     }
 
     pub fn new_staged_with<C: ActiveCommandBuffer, F: Fn(&mut [T])>(
@@ -311,9 +328,9 @@ impl<T: Copy + Sync + Send + 'static> Buffer<T> {
 
         Self {
             buffer,
-            memory: (Arc::new(memory), 0),
-            device: device.clone(),
+            memory: Some(BufferMemory::new(memory.into(), 0)),
             size,
+            device: device.clone(),
             phantom: PhantomData,
         }
     }

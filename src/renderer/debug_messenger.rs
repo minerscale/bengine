@@ -8,6 +8,7 @@ use colored::Colorize;
 use log::debug;
 
 pub const ENABLE_VALIDATION_LAYERS: bool = cfg!(debug_assertions);
+const CRASH_ON_VALIDATION_ERROR: bool = false;
 
 pub struct DebugMessenger {
     debug_utils_loader: ext::debug_utils::Instance,
@@ -48,6 +49,10 @@ impl DebugMessenger {
                 _ => msg.into(),
             }
         );
+
+        if CRASH_ON_VALIDATION_ERROR {
+            assert!(message_severity != vk::DebugUtilsMessageSeverityFlagsEXT::ERROR);
+        }
 
         vk::FALSE
     }

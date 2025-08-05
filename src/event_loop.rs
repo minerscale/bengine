@@ -89,7 +89,7 @@ impl SharedState {
 
         if self.game_state_just_changed {
             self.game_state_just_changed = false;
-            
+
             match self.game_state {
                 GameState::Menu => {
                     if let Some((x, y)) = self.last_mouse_position.take() {

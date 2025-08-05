@@ -2,7 +2,7 @@ use std::{iter::zip, mem::offset_of, ops::Deref, ptr::slice_from_raw_parts};
 
 use ash::{khr, vk};
 use easy_cast::Cast;
-use log::{debug, info};
+use log::{debug, info, warn};
 
 use crate::renderer::{
     debug_messenger::{DebugMessenger, ENABLE_VALIDATION_LAYERS},
@@ -176,6 +176,15 @@ fn pick_physical_device(
 
                 if let (Some(graphics_index), Some(present_index)) = (graphics_index, present_index)
                 {
+                    physical_device_properties
+                        .device_name_as_c_str()
+                        .ok()
+                        .and_then(|name| name.to_str().ok())
+                        .map_or_else(
+                            || warn!("GPU name is not UTF-8"),
+                            |name| info!("GPU: {name}"),
+                        );
+
                     Some((
                         *physical_device,
                         (graphics_index, present_index),
