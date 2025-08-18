@@ -3,20 +3,23 @@ use std::sync::Arc;
 use rapier3d::prelude::{Collider, ColliderHandle, RigidBody, RigidBodyHandle};
 use ultraviolet::Isometry3;
 
-use crate::{mesh::Mesh, physics::Physics};
+use crate::{clock::Clock, mesh::Mesh, physics::Physics};
 
-#[derive(Debug)]
 pub enum Object {
     Mesh(Arc<Mesh>),
     RigidBody((ColliderHandle, RigidBodyHandle)),
     #[allow(dead_code)]
     Collider(ColliderHandle),
+    Behaviour(Arc<Behaviour>),
 }
+
+pub type Behaviour = dyn Fn(&mut Node, &Clock) + Send + Sync;
 
 pub struct Node {
     pub transform: Isometry3,
     pub previous_transform: Isometry3,
     pub objects: Vec<Object>,
+    pub to_delete: bool,
 }
 
 impl Node {
@@ -25,7 +28,27 @@ impl Node {
             transform: Isometry3::identity(),
             previous_transform: Isometry3::identity(),
             objects: vec![],
+            to_delete: false,
         }
+    }
+
+    pub fn find(&mut self, predicate: impl Fn(&&mut Object) -> bool) -> Option<&mut Object> {
+        self.objects.iter_mut().find(predicate)
+    }
+
+    pub fn new(transform: Isometry3) -> Self {
+        Self {
+            transform,
+            previous_transform: transform,
+            objects: vec![],
+            to_delete: false,
+        }
+    }
+
+    pub fn behaviour(mut self, behaviour: Arc<Behaviour>) -> Self {
+        self.objects.push(Object::Behaviour(behaviour));
+
+        self
     }
 
     pub fn set_transform(&mut self, transform: Isometry3) {

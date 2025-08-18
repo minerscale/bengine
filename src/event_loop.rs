@@ -3,12 +3,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bitfield_struct::bitfield;
 use easy_cast::Cast;
+use log_once::warn_once;
 use sdl3::event::Event;
 use tracing_mutex::stdsync::Mutex;
 use ultraviolet::Vec2;
 
 use crate::{
+    audio::PdEventFn,
     clock::FIXED_UPDATE_INTERVAL,
     game::GameState,
     gui::egui_sdl3_event::{sdl3_to_egui_event, sdl3_to_egui_modifiers},
@@ -20,10 +23,8 @@ pub struct EventLoop {
     pump: sdl3::EventPump,
 }
 
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Default, Clone)]
-pub struct Input {
-    pub camera_rotation: Vec2,
+#[bitfield(u8)]
+pub struct InputBitfield {
     pub forward: bool,
     pub backward: bool,
     pub left: bool,
@@ -31,6 +32,28 @@ pub struct Input {
     pub up: bool,
     pub down: bool,
     pub quit: bool,
+    pub action: bool,
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Default, Clone)]
+pub struct Input {
+    pub camera_rotation: Vec2,
+    input_bitfield: InputBitfield,
+}
+
+impl Deref for Input {
+    type Target = InputBitfield;
+
+    fn deref(&self) -> &Self::Target {
+        &self.input_bitfield
+    }
+}
+
+impl DerefMut for Input {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.input_bitfield
+    }
 }
 
 pub struct SharedState {
@@ -43,7 +66,7 @@ pub struct SharedState {
     game_state_just_changed: bool,
     pub gui_scale: f32,
     pub last_mouse_position: Option<(f32, f32)>,
-    pub audio_events: Vec<Box<dyn Fn() + Send + Sync>>,
+    pub audio_events: Vec<Box<PdEventFn>>,
 }
 
 impl Deref for SharedState {
@@ -84,8 +107,10 @@ impl SharedState {
         self.game_state = new_state;
         self.game_state_just_changed = true;
 
-        self.audio_events.push(Box::new(move || {
-            libpd_rs::functions::send::send_symbol_to("scene", <&str>::from(new_state)).unwrap();
+        self.audio_events.push(Box::new(move |pd| {
+            if pd.send_symbol_to("scene", <&str>::from(new_state)).is_err() {
+                warn_once!("pd: no reciever named 'scene'");
+            }
         }));
     }
 
@@ -115,24 +140,26 @@ impl Input {
         type K = sdl3::keyboard::Scancode;
         if cfg!(feature = "colemak") {
             match key {
-                K::W => self.forward = pressed,
-                K::R => self.backward = pressed,
-                K::A => self.left = pressed,
-                K::S => self.right = pressed,
-                K::Space => self.up = pressed,
-                K::C => self.down = pressed,
-                K::Escape => self.quit = pressed,
+                K::W => self.set_forward(pressed),
+                K::R => self.set_backward(pressed),
+                K::A => self.set_left(pressed),
+                K::S => self.set_right(pressed),
+                K::Space => self.set_up(pressed),
+                K::C => self.set_down(pressed),
+                K::Escape => self.set_quit(pressed),
+                K::F => self.set_action(pressed),
                 _ => (),
             }
         } else {
             match key {
-                K::W => self.forward = pressed,
-                K::S => self.backward = pressed,
-                K::A => self.left = pressed,
-                K::D => self.right = pressed,
-                K::Space => self.up = pressed,
-                K::C => self.down = pressed,
-                K::Escape => self.quit = pressed,
+                K::W => self.set_forward(pressed),
+                K::S => self.set_backward(pressed),
+                K::A => self.set_left(pressed),
+                K::D => self.set_right(pressed),
+                K::Space => self.set_up(pressed),
+                K::C => self.set_down(pressed),
+                K::Escape => self.set_quit(pressed),
+                K::E => self.set_action(pressed),
                 _ => (),
             }
         }
@@ -186,7 +213,7 @@ fn process_event(
                 };
             }
         }
-        Event::Quit { timestamp: _ } => shared_state.quit = true,
+        Event::Quit { timestamp: _ } => shared_state.set_quit(true),
         Event::Window {
             timestamp: _,
             window_id: _,
@@ -236,7 +263,7 @@ impl EventLoop {
                 'quit: loop {
                     render(&shared_state);
 
-                    let quit = shared_state.lock().unwrap().quit;
+                    let quit = shared_state.lock().unwrap().quit();
                     if quit {
                         quit_rx.recv().unwrap();
                         break 'quit;
@@ -260,7 +287,7 @@ impl EventLoop {
                         egui_events.push(event);
                     }
                 }
-                let quit = state.quit;
+                let quit = state.quit();
                 drop(state);
 
                 update(&shared_state, egui_events, modifiers);

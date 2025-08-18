@@ -52,7 +52,7 @@ impl Player {
 
         let rigid_body_handle = physics.rigid_body_set.insert(
             RigidBodyBuilder::dynamic()
-                .translation(vector![7.0, 8.0, 0.0])
+                .translation(vector![0.0, HALF_HEIGHT + RADIUS, 0.0])
                 .lock_rotations(),
         );
 
@@ -84,7 +84,7 @@ impl Player {
         camera_rotation: Rotor3,
         dt: f32,
     ) {
-        self.jump_buffer = match (input.up, input.previous.up) {
+        self.jump_buffer = match (input.up(), input.previous.up()) {
             (true, false) => true,
             (false, true) => false,
             _ => self.jump_buffer,
@@ -94,7 +94,7 @@ impl Player {
 
         let rigid_body = &physics.rigid_body_set[self.rigid_body_handle];
 
-        let is_jumping = input.up
+        let is_jumping = input.up()
             && self.time_since_left_ground <= COYOTE_TIME
             && rigid_body.linvel().y < JUMP_CUTOFF
             && self.jump_buffer;
@@ -157,15 +157,15 @@ impl Player {
 
         self.was_jumping = is_jumping;
 
-        let movement = if input.forward {
+        let movement = if input.forward() {
             Vec3::unit_z()
-        } else if input.backward {
+        } else if input.backward() {
             -Vec3::unit_z()
         } else {
             Vec3::zero()
-        } + if input.left {
+        } + if input.left() {
             Vec3::unit_x()
-        } else if input.right {
+        } else if input.right() {
             -Vec3::unit_x()
         } else {
             Vec3::zero()

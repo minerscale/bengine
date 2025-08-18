@@ -12,6 +12,17 @@ pub struct Sampler {
 }
 
 impl Sampler {
+    pub fn default(device: Arc<Device>) -> Self {
+        Self::new(
+            device,
+            vk::SamplerAddressMode::REPEAT,
+            vk::Filter::NEAREST,
+            vk::Filter::NEAREST,
+            false,
+            None,
+        )
+    }
+
     pub fn new(
         device: Arc<Device>,
         address_mode: vk::SamplerAddressMode,

@@ -1,4 +1,9 @@
-use std::{io::BufRead, mem::offset_of, ptr::addr_of, sync::Arc};
+use std::{
+    io::BufRead,
+    mem::offset_of,
+    ptr::addr_of,
+    sync::{Arc, atomic::AtomicU16},
+};
 
 use ash::vk;
 use easy_cast::Cast;
@@ -9,7 +14,7 @@ use ultraviolet::{Isometry3, Vec3};
 use crate::{
     renderer::{
         buffer::Buffer,
-        command_buffer::ActiveCommandBuffer,
+        command_buffer::{ActiveCommandBuffer, ActiveMultipleSubmitCommandBuffer},
         device::Device,
         material::{Material, MaterialProperties},
         pipeline::Pipeline,
@@ -21,6 +26,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Mesh {
     pub primitives: Box<[Primitive]>,
+    pub alpha: AtomicU16,
 }
 
 impl<'a> IntoIterator for &'a Mesh {
@@ -34,16 +40,21 @@ impl<'a> IntoIterator for &'a Mesh {
 
 impl Mesh {
     pub fn new(primitives: Box<[Primitive]>) -> Self {
-        Self { primitives }
+        Self {
+            primitives,
+            alpha: u16::MAX.into(),
+        }
     }
 
     pub fn draw(
         &self,
         device: &ash::Device,
-        cmd_buf: vk::CommandBuffer,
+        command_buffer: &mut ActiveMultipleSubmitCommandBuffer,
         pipeline: &Pipeline,
         modelview: Isometry3,
+        default_material: &Arc<Material>,
     ) {
+        let cmd_buf = **command_buffer;
         unsafe {
             device.cmd_push_constants(
                 cmd_buf,
@@ -58,8 +69,30 @@ impl Mesh {
                 ),
             );
 
+            let alpha = self.alpha.load(std::sync::atomic::Ordering::Relaxed);
+            let alpha = f32::from(alpha) / f32::from(u16::MAX);
+            device.cmd_push_constants(
+                cmd_buf,
+                pipeline.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                offset_of!(PushConstants, alpha).try_into().unwrap(),
+                std::slice::from_raw_parts(
+                    addr_of!(alpha).cast::<u8>(),
+                    std::mem::size_of::<f32>(),
+                ),
+            );
+
             for primitive in self {
-                let descriptor_sets = [*primitive.material.descriptor_set];
+                command_buffer.add_dependency(primitive.vertex_buffer.clone());
+                command_buffer.add_dependency(primitive.index_buffer.clone());
+
+                let material = primitive.material.as_ref().unwrap_or(default_material);
+
+                command_buffer.add_dependency(material.clone());
+
+                let material_properties = material.properties;
+
+                let descriptor_sets = [*material.descriptor_set];
 
                 device.cmd_push_constants(
                     cmd_buf,
@@ -69,7 +102,7 @@ impl Mesh {
                         .try_into()
                         .unwrap(),
                     std::slice::from_raw_parts(
-                        addr_of!(primitive.material.properties).cast::<u8>(),
+                        addr_of!(material_properties).cast::<u8>(),
                         std::mem::size_of::<MaterialProperties>(),
                     ),
                 );
@@ -104,14 +137,14 @@ impl Mesh {
 pub struct Primitive {
     pub vertex_buffer: Arc<Buffer<Vertex>>,
     pub index_buffer: Arc<Buffer<u32>>,
-    pub material: Arc<Material>,
+    pub material: Option<Arc<Material>>,
 }
 
 impl Primitive {
     pub fn new_raw(
         vertex_buffer: Arc<Buffer<Vertex>>,
         index_buffer: Arc<Buffer<u32>>,
-        material: Arc<Material>,
+        material: Option<Arc<Material>>,
     ) -> Self {
         Self {
             vertex_buffer,
@@ -124,7 +157,7 @@ impl Primitive {
         device: &Arc<Device>,
         vertex_buffer: &[Vertex],
         index_buffer: &[u32],
-        material: Arc<Material>,
+        material: Option<Arc<Material>>,
         cmd_buf: &mut C,
     ) -> Self {
         let vertex_buffer = Buffer::new_staged(
@@ -152,7 +185,7 @@ impl Primitive {
         device: &Arc<Device>,
         file: T,
         cmd_buf: &mut C,
-        material: Arc<Material>,
+        material: Option<Arc<Material>>,
         scale: Option<Vec3>,
     ) -> Self {
         let mut mesh: Obj<Vertex, u32> = load_obj(file).unwrap();

@@ -14,7 +14,6 @@ use ultraviolet::Vec3;
 
 use crate::{
     mesh::{Mesh, Primitive},
-    node::Node,
     renderer::{
         Renderer,
         buffer::{Buffer, BufferMemory},
@@ -42,21 +41,29 @@ fn extend_align(buffer: &mut Vec<u8>, align: usize) {
 struct MeshInfo {
     vertex_buffer: Buffer<Vertex>,
     index_buffer: Buffer<u32>,
-    material: Arc<Material>,
+    material: Option<Arc<Material>>,
     vertex_offset: vk::DeviceSize,
     index_offset: vk::DeviceSize,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum GltfFile<'a> {
+    #[allow(unused)]
+    Filename(&'a str),
+
+    Bytes(&'a [u8]),
 }
 
 pub fn load_gltf(
     gfx: &Renderer,
     cmd_buf: &mut OneTimeSubmitCommandBuffer,
-    file: Result<&str, &[u8]>,
+    file: GltfFile,
     scale: f32,
-) -> Node {
+) -> Mesh {
     let current_dir = Path::new(".");
 
     let (root, gltf) = match file {
-        Ok(filename) => {
+        GltfFile::Filename(filename) => {
             let root = Path::new(filename)
                 .parent()
                 .unwrap_or_else(|| Path::new("."));
@@ -68,7 +75,7 @@ pub fn load_gltf(
 
             (root, gltf)
         }
-        Err(file) => (current_dir, Gltf::from_slice(file).unwrap()),
+        GltfFile::Bytes(bytes) => (current_dir, Gltf::from_slice(bytes).unwrap()),
     };
 
     let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
@@ -221,7 +228,10 @@ pub fn load_gltf(
             MeshInfo {
                 vertex_buffer,
                 index_buffer,
-                material: materials[primitive.material().index().unwrap()].clone(),
+                material: primitive
+                    .material()
+                    .index()
+                    .map(|index| materials[index].clone()),
                 vertex_offset,
                 index_offset,
             }
@@ -267,5 +277,5 @@ pub fn load_gltf(
 
     let mesh = mesh_info.into_iter().map(make_primitive).collect();
 
-    Node::empty().mesh(Mesh::new(mesh).into())
+    Mesh::new(mesh)
 }

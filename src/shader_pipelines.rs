@@ -8,6 +8,7 @@ use ultraviolet::{Isometry3, Vec2};
 pub struct PushConstants {
     pub model_transform: Isometry3,
     pub material_properties: MaterialProperties,
+    pub alpha: f32,
 }
 
 use crate::{
@@ -106,6 +107,22 @@ fn make_main_pipeline(
         .depth_bounds_test_enable(false)
         .stencil_test_enable(false);
 
+    let color_blend_attachment = [vk::PipelineColorBlendAttachmentState {
+        blend_enable: vk::TRUE,
+        src_color_blend_factor: vk::BlendFactor::ONE,
+        dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+        color_blend_op: vk::BlendOp::ADD,
+        src_alpha_blend_factor: vk::BlendFactor::ONE_MINUS_DST_ALPHA,
+        dst_alpha_blend_factor: vk::BlendFactor::ONE,
+        alpha_blend_op: vk::BlendOp::ADD,
+        color_write_mask: vk::ColorComponentFlags::RGBA,
+    }];
+
+    let color_blending = vk::PipelineColorBlendStateCreateInfo::default()
+        .logic_op_enable(false)
+        .logic_op(vk::LogicOp::COPY)
+        .attachments(&color_blend_attachment);
+
     PipelineBuilder::new()
         .device(device.clone())
         .descriptor_set_layouts(descriptor_set_layouts)
@@ -118,6 +135,7 @@ fn make_main_pipeline(
         .rasterizer(&rasterizer)
         .depth_stencil(&depth_stencil)
         .render_pass(render_pass)
+        .color_blending(&color_blending)
         .build()
 }
 

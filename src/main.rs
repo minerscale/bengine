@@ -1,10 +1,12 @@
-#![feature(macro_metavar_expr_concat)]
 #![windows_subsystem = "windows"]
 #![warn(clippy::pedantic, clippy::cargo)]
 #![allow(clippy::multiple_crate_versions)]
 #![allow(clippy::missing_const_for_fn)]
 #![allow(clippy::struct_field_names)]
 
+use audio::{CHANNELS, SAMPLE_RATE};
+use easy_cast::Cast;
+use libpd_rs::Pd;
 use log::info;
 use tracing_mutex::stdsync::Mutex;
 
@@ -49,7 +51,8 @@ fn main() {
 
     let mut gfx = Renderer::new(WIDTH, HEIGHT, &window, &DESCRIPTOR_SET_LAYOUTS, &PIPELINES);
 
-    let game = Mutex::new(Game::new(&gfx));
+    let mut pd = Pd::init_and_configure(0, CHANNELS.cast(), SAMPLE_RATE.cast()).unwrap();
+    let game = Mutex::new(Game::new(&gfx, &mut pd));
 
     let mut event_loop = EventLoop::new(sdl_context, window);
 
@@ -89,9 +92,12 @@ fn main() {
             gfx.present();
         },
         |shared_state, events, modifiers| {
-            game.lock()
-                .unwrap()
-                .update(&mut shared_state.lock().unwrap(), events, modifiers);
+            game.lock().unwrap().update(
+                &mut shared_state.lock().unwrap(),
+                &mut pd,
+                events,
+                modifiers,
+            );
         },
     );
 

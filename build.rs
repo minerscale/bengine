@@ -1,7 +1,7 @@
 use std::{env, fs, process::Command};
 
 fn main() -> anyhow::Result<()> {
-    let paths = fs::read_dir("src/renderer/shaders/")?;
+    let paths = fs::read_dir("src/shaders/")?;
 
     let out_dir = env::var("OUT_DIR")?;
 

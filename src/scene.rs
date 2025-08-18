@@ -9,7 +9,6 @@ use rapier3d::{
 use ultraviolet::Vec3;
 
 use crate::{
-    gltf::load_gltf,
     mesh::{Mesh, Primitive, collider_from_obj},
     node::Node,
     physics::Physics,
@@ -79,18 +78,11 @@ fn scene(
     let grid_image = image!("../test-objects/grid.png");
     let grid = texture!(sampler(grid_image.mip_levels), grid_image);
 
-    let middle_grey_image = image!("../test-objects/middle-grey.png");
-    let middle_grey = texture!(sampler(middle_grey_image.mip_levels), middle_grey_image);
-
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
 
     let scene = vec![
         Node::empty()
-            .mesh(mesh!(
-                "../test-objects/icosehedron.obj",
-                middle_grey.clone(),
-                None
-            ))
+            .mesh(mesh!("../test-objects/icosehedron.obj", None, None))
             .rigid_body(
                 physics,
                 ColliderBuilder::new(collider_from_obj(
@@ -103,11 +95,7 @@ fn scene(
                     .rotation(AngVector::new(0.5, 1.2, 3.1)),
             ),
         Node::empty()
-            .mesh(mesh!(
-                "../test-objects/cube.obj",
-                middle_grey,
-                Some(cube_2_scale)
-            ))
+            .mesh(mesh!("../test-objects/cube.obj", None, Some(cube_2_scale)))
             .rigid_body(
                 physics,
                 ColliderBuilder::new(collider_from_obj(
@@ -115,20 +103,14 @@ fn scene(
                     Some(cube_2_scale),
                     None,
                 )),
-                RigidBodyBuilder::dynamic().translation(vector![0.0, 5.0, 0.0]),
+                RigidBodyBuilder::dynamic().translation(vector![-5.0, 5.0, 0.0]),
             ),
         Node::empty()
-            .mesh(mesh!("../test-objects/ground-plane.obj", grid, None))
+            .mesh(mesh!("../test-objects/ground-plane.obj", Some(grid), None))
             .collider(
                 physics,
                 ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),
             ),
-        load_gltf(
-            gfx,
-            cmd_buf,
-            Err(include_bytes!("../test-objects/Sponza.glb")),
-            0.025,
-        ),
     ];
 
     scene

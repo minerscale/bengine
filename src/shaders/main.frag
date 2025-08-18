@@ -25,7 +25,7 @@ layout( push_constant ) uniform constants
 {
     Isometry modelview;
     MaterialProperties material_properties;
-
+    float alpha;
 } push_constants;
 
 layout(set = 0, binding = 0) uniform View {
@@ -126,19 +126,16 @@ void main() {
     Isometry modelview = push_constants.modelview;
 
     vec4 modelview_direction = vec4(modelview.rx, -modelview.ry, -modelview.rz, -modelview.rw);
-    //vec4 view_direction = vec4(1.0, 0.0, 0.0, 0.0);
     vec3 sun = rotate(normalize(vec3(1.0, 1.0, 1.0)), vec4(view.rx, view.ry, view.rz, view.rw));
     vec3 view = rotor_to_vec(modelview_direction);
-
-    //vec3 sun = normalize(-vec3(1.0, 1.0, 1.0));
 
     vec4 tex = texture(tex_sampler, vec2(frag_tex_coord.x, frag_tex_coord.y));
 
     if (tex.w < push_constants.material_properties.alpha_cutoff) discard;
 
-    out_color = vec4(tex.xyz * (
+    out_color = vec4(push_constants.alpha * tex.xyz * (
                     lighting(vec3(0.0,0.0,-1.0), sun, sun_color, normal) +
                     0.05 * fill_light_color +
                     0.1 * lighting(view, vec3(-sun.x,sun.y,-sun.z), fill_light_color, normal)
-                ), tex.w);
+                ), push_constants.alpha * tex.w);
 }

@@ -56,14 +56,17 @@ impl OneTimeSubmitCommandBuffer {
 pub struct MultipleSubmitCommandBuffer {
     device: Arc<Device>,
     command_buffer: vk::CommandBuffer,
+    dependencies: Vec<DtorEntry>,
 }
 
 impl MultipleSubmitCommandBuffer {
-    pub fn begin(self) -> ActiveMultipleSubmitCommandBuffer {
+    pub fn begin(mut self) -> ActiveMultipleSubmitCommandBuffer {
         unsafe {
             self.device
                 .reset_command_buffer(self.command_buffer, vk::CommandBufferResetFlags::empty())
                 .unwrap();
+
+            self.dependencies.clear();
 
             let begin_info = vk::CommandBufferBeginInfo::default();
             self.device
@@ -73,7 +76,6 @@ impl MultipleSubmitCommandBuffer {
 
         ActiveMultipleSubmitCommandBuffer {
             command_buffer: self,
-            dependencies: vec![],
         }
     }
 
@@ -107,12 +109,11 @@ impl MultipleSubmitCommandBuffer {
 
 pub struct ActiveMultipleSubmitCommandBuffer {
     command_buffer: MultipleSubmitCommandBuffer,
-    dependencies: Vec<DtorEntry>,
 }
 
 impl ActiveCommandBuffer for ActiveMultipleSubmitCommandBuffer {
     fn add_dependency<T: Into<DtorEntry>>(&mut self, dependency: T) {
-        self.dependencies.push(dependency.into());
+        self.command_buffer.dependencies.push(dependency.into());
     }
 }
 
@@ -197,6 +198,7 @@ impl CommandPool {
         MultipleSubmitCommandBuffer {
             device: self.device.clone(),
             command_buffer,
+            dependencies: vec![],
         }
     }
 

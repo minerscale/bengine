@@ -12,20 +12,23 @@ pub struct Audio {
     pub stream: Stream,
 }
 
-const SAMPLE_RATE: u32 = 48000;
+pub const SAMPLE_RATE: u32 = 48000;
+pub const CHANNELS: usize = 2;
 const BUFFER_SIZE_SAMPLES: u32 = 2048;
-const CHANNELS: usize = 2;
+
+pub type PdEventFn = dyn Fn(&mut Pd) + Send + Sync;
 
 impl Audio {
-    pub fn process_events(&mut self, events: &mut Vec<Box<dyn Fn() -> () + Send + Sync>>) {
+    #[allow(clippy::unused_self)]
+    pub fn process_events(&mut self, pd: &mut Pd, events: &mut Vec<Box<PdEventFn>>) {
         for event in &mut *events {
-            event()
+            event(pd);
         }
 
         events.clear();
     }
 
-    pub fn new() -> Self {
+    pub fn new(pd: &mut Pd) -> Self {
         let host = cpal::default_host();
 
         let device = host
@@ -65,13 +68,6 @@ impl Audio {
 
         let err_fn = |err| eprintln!("an error occurred on the output audio stream: {err}");
 
-        let pd: &'static mut Pd = {
-            let _gag = gag::Gag::stderr().unwrap();
-            Box::leak(Box::new(
-                Pd::init_and_configure(0, 2, SAMPLE_RATE.cast()).unwrap(),
-            ))
-        };
-
         let ctx = pd.audio_context();
 
         // Let's evaluate another pd patch.
@@ -80,7 +76,7 @@ impl Audio {
 
         pd.eval_patch(patch).unwrap();
 
-        libpd_rs::functions::receive::on_print(|s| println!("{s}"));
+        pd.on_print(|s| println!("{s}")).unwrap();
 
         let callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             let ticks = calculate_ticks(2, data.len().cast());
@@ -96,7 +92,7 @@ impl Audio {
 
         stream.play().unwrap();
 
-        pd.activate_audio(true).unwrap();
+        pd.dsp_on().unwrap();
 
         Self { stream }
     }
