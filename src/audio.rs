@@ -5,30 +5,90 @@ use cpal::{
 };
 use easy_cast::Cast;
 use libpd_rs::{Pd, functions::util::calculate_ticks};
-use log::info;
+use log::{info, warn};
+use notify::Watcher;
+
+use std::{
+    io::Read,
+    path::Path,
+    sync::mpsc::{Receiver, channel},
+    time::Duration,
+};
 
 #[allow(unused)]
 pub struct Audio {
     pub stream: Stream,
+    pub pd_patch_watcher: notify::RecommendedWatcher,
+    pub pd_patch_rx: Receiver<Result<notify::Event, notify::Error>>,
+    pub pd_patch_path: &'static Path,
 }
 
 pub const SAMPLE_RATE: u32 = 48000;
 pub const CHANNELS: usize = 2;
-const BUFFER_SIZE_SAMPLES: u32 = 2048;
-
-pub type PdEventFn = dyn Fn(&mut Pd) + Send + Sync;
+const BUFFER_SIZE_SAMPLES: u32 = 1024;
 
 impl Audio {
-    #[allow(clippy::unused_self)]
-    pub fn process_events(&mut self, pd: &mut Pd, events: &mut Vec<Box<PdEventFn>>) {
-        for event in &mut *events {
-            event(pd);
+    pub fn process_events(&mut self, pd: &mut Pd) {
+        let mut reload = false;
+        while let Ok(event) = self.pd_patch_rx.try_recv() {
+            match event {
+                Ok(event) => match event.kind {
+                    notify::EventKind::Create(_) | notify::EventKind::Modify(_) => {
+                        reload = true;
+                    }
+                    _ => (),
+                },
+                Err(e) => warn!("pd patch watch error: {e:?}"),
+            }
         }
 
-        events.clear();
+        if !reload {
+            return;
+        }
+
+        let mut patch = String::new();
+        std::fs::File::open(self.pd_patch_path)
+            .unwrap()
+            .read_to_string(&mut patch)
+            .unwrap();
+
+        if !patch.is_empty() {
+            info!("hot reloaded {}", self.pd_patch_path.to_str().unwrap());
+            if pd.eval_patch(&patch).is_err() {
+                warn!("pd patch error: {patch}");
+            }
+        }
     }
 
     pub fn new(pd: &mut Pd) -> Self {
+        let (tx, pd_patch_rx) = channel();
+
+        let mut pd_patch_watcher = notify::RecommendedWatcher::new(
+            tx,
+            notify::Config::default()
+                .with_poll_interval(Duration::from_secs(1))
+                .with_compare_contents(true),
+        )
+        .unwrap();
+
+        let pd_patch_path = {
+            let first_search_path = Path::new("src/pd/patch.pd");
+            let second_search_path = Path::new("patch.pd");
+
+            if std::fs::exists(first_search_path).unwrap_or(false) {
+                Some(first_search_path)
+            } else if std::fs::exists(second_search_path).unwrap_or(false) {
+                Some(second_search_path)
+            } else {
+                None
+            }
+        }
+        .expect("please place a puredata patch named 'patch.pd' in either ./src/pd/ or .");
+
+        pd_patch_watcher
+            .watch(pd_patch_path, notify::RecursiveMode::NonRecursive)
+            .unwrap();
+
         let host = cpal::default_host();
 
         let device = host
@@ -70,11 +130,15 @@ impl Audio {
 
         let ctx = pd.audio_context();
 
-        // Let's evaluate another pd patch.
-        // We could have opened a `.pd` file also.
-        let patch = include_str!("pd/patch.pd");
+        let mut patch = String::new();
+        std::fs::File::open(pd_patch_path)
+            .unwrap()
+            .read_to_string(&mut patch)
+            .unwrap();
 
-        pd.eval_patch(patch).unwrap();
+        if pd.eval_patch(&patch).is_err() {
+            warn!("pd patch error: {patch}");
+        }
 
         pd.on_print(|s| println!("{s}")).unwrap();
 
@@ -94,6 +158,11 @@ impl Audio {
 
         pd.dsp_on().unwrap();
 
-        Self { stream }
+        Self {
+            stream,
+            pd_patch_watcher,
+            pd_patch_rx,
+            pd_patch_path,
+        }
     }
 }

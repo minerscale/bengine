@@ -14,7 +14,6 @@ pub fn create_gui() -> Box<GuiFn> {
     }
 
     let mut my_string = String::new();
-    let mut my_f32 = 0.0f32;
     let mut my_boolean = false;
     let mut my_enum = Enum::First;
 
@@ -39,12 +38,9 @@ pub fn create_gui() -> Box<GuiFn> {
                             let pos = pos * shared_state.gui_scale;
                             (pos.x, pos.y)
                         });
-                    shared_state.audio_events.push(Box::new(move |pd| {
-                        pd.send_float_to("volume", my_f32 / 100.0).unwrap();
-                    }));
                 }
-                ui.add(egui::Slider::new(&mut my_f32, 0.0..=100.0));
-                ui.add(egui::DragValue::new(&mut my_f32));
+                ui.add(egui::Slider::new(&mut shared_state.volume, 0.0..=1.0));
+                ui.add(egui::DragValue::new(&mut shared_state.volume));
 
                 ui.checkbox(&mut my_boolean, "Checkbox");
 

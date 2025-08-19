@@ -5,13 +5,11 @@ use std::{
 
 use bitfield_struct::bitfield;
 use easy_cast::Cast;
-use log_once::warn_once;
 use sdl3::event::Event;
 use tracing_mutex::stdsync::Mutex;
 use ultraviolet::Vec2;
 
 use crate::{
-    audio::PdEventFn,
     clock::FIXED_UPDATE_INTERVAL,
     game::GameState,
     gui::egui_sdl3_event::{sdl3_to_egui_event, sdl3_to_egui_modifiers},
@@ -65,8 +63,8 @@ pub struct SharedState {
     previous_game_state: GameState,
     game_state_just_changed: bool,
     pub gui_scale: f32,
+    pub volume: f32,
     pub last_mouse_position: Option<(f32, f32)>,
-    pub audio_events: Vec<Box<PdEventFn>>,
 }
 
 impl Deref for SharedState {
@@ -90,11 +88,11 @@ impl SharedState {
             previous: initial_state,
             framebuffer_resized: None,
             gui_scale,
+            volume: 0.0,
             game_state: GameState::Menu,
             previous_game_state: GameState::Menu,
             game_state_just_changed: false,
             last_mouse_position: None,
-            audio_events: Vec::new(),
         }
     }
 
@@ -106,12 +104,6 @@ impl SharedState {
         self.previous_game_state = self.game_state;
         self.game_state = new_state;
         self.game_state_just_changed = true;
-
-        self.audio_events.push(Box::new(move |pd| {
-            if pd.send_symbol_to("scene", <&str>::from(new_state)).is_err() {
-                warn_once!("pd: no reciever named 'scene'");
-            }
-        }));
     }
 
     pub fn update(&mut self, sdl_context: &sdl3::Sdl, window: &sdl3::video::Window) {

@@ -404,11 +404,11 @@ impl Game {
             );
         }
 
-        if pd.send_float_to("badness", 0.3 * badness).is_err() {
+        if pd.send_float_to("badness", badness).is_err() {
             warn_once!("pd: no reciever named 'badness'");
         }
 
-        if pd.send_float_to("distance", 0.3 * distance).is_err() {
+        if pd.send_float_to("distance", distance).is_err() {
             warn_once!("pd: no reciever named 'distance'");
         }
 
@@ -449,12 +449,23 @@ impl Game {
 
         let game_state = input.game_state();
 
+        if pd
+            .send_symbol_to("scene", <&str>::from(game_state))
+            .is_err()
+        {
+            warn_once!("pd: no reciever named 'scene'");
+        }
+
+        if pd.send_float_to("volume", input.volume).is_err() {
+            warn_once!("pd: no reciever named 'volume'");
+        }
+
         match game_state {
             GameState::Menu => (),
             GameState::Playing => self.update_playing(pd, input),
         }
 
-        self.audio.process_events(pd, &mut input.audio_events);
+        self.audio.process_events(pd);
     }
 }
 
