@@ -29,7 +29,8 @@ easy-cast = "0.5.3"
 egui = "0.32.0"
 gag = "1.0.0"
 gltf = "1.4.1"
-libpd-rs = { git = "https://github.com/minerscale/libpd-rs.git" }
+#libpd-rs = { git = "https://github.com/minerscale/libpd-rs.git" }
+libpd-rs = { path = "../libpd-rs" }
 log = "0.4.22"
 log-once = "0.4.1"
 nalgebra = "0.34.0"

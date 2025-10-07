@@ -1,4 +1,4 @@
-#N canvas 1680 24 1680 952 12;
+#N canvas -6 63 1680 952 12;
 #X obj 324 323 osc~;
 #X obj 304 429 dac~;
 #X obj 297 16 r distance;
@@ -31,11 +31,11 @@
 #X obj 214 243 line~;
 #X msg 214 218 \$1 8.3;
 #X obj 279 295 *~;
-#X obj 306 205 * 440;
 #X obj 321 46 * 0.3;
 #X obj 242 266 +~ 1;
+#X obj 306 206 * 440;
 #X connect 0 0 16 0;
-#X connect 2 0 33 0;
+#X connect 2 0 32 0;
 #X connect 3 0 5 0;
 #X connect 4 0 17 0;
 #X connect 4 0 15 0;
@@ -50,7 +50,7 @@
 #X connect 12 0 1 0;
 #X connect 12 0 1 1;
 #X connect 13 0 12 1;
-#X connect 14 0 32 0;
+#X connect 14 0 34 0;
 #X connect 15 0 14 0;
 #X connect 16 0 12 0;
 #X connect 17 0 18 0;
@@ -67,9 +67,9 @@
 #X connect 27 0 28 0;
 #X connect 28 0 16 0;
 #X connect 29 0 28 1;
-#X connect 29 0 34 0;
+#X connect 29 0 33 0;
 #X connect 30 0 29 0;
 #X connect 31 0 27 0;
-#X connect 32 0 23 0;
-#X connect 33 0 3 0;
-#X connect 34 0 31 1;
+#X connect 32 0 3 0;
+#X connect 33 0 31 1;
+#X connect 34 0 23 0;

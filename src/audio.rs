@@ -1,5 +1,5 @@
 use cpal::{
-    BufferSize, SampleFormat, Stream,
+    BufferSize, SampleFormat,
     traits::StreamTrait,
     traits::{DeviceTrait, HostTrait},
 };
@@ -17,7 +17,6 @@ use std::{
 
 #[allow(unused)]
 pub struct Audio {
-    pub stream: Stream,
     pub pd_patch_watcher: notify::RecommendedWatcher,
     pub pd_patch_rx: Receiver<Result<notify::Event, notify::Error>>,
     pub pd_patch_path: &'static Path,
@@ -150,16 +149,18 @@ impl Audio {
             ctx.process_float(ticks, &[], data);
         };
 
-        let stream = device
+        let stream = Box::new(device
             .build_output_stream(&config, callback, err_fn, None)
-            .unwrap();
+            .unwrap());
 
         stream.play().unwrap();
+
+        Box::leak(stream); // On macos, streams are not Send. To get around this, disown the stream.
 
         pd.dsp_on().unwrap();
 
         Self {
-            stream,
+            //stream,
             pd_patch_watcher,
             pd_patch_rx,
             pd_patch_path,
