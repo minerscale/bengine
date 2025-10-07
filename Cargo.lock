@@ -1015,6 +1015,7 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 [[package]]
 name = "libpd-rs"
 version = "0.2.0"
+source = "git+https://github.com/minerscale/libpd-rs.git?branch=dev#d0b4797436761f08b68be4c72423772233751a24"
 dependencies = [
  "embed-doc-image",
  "gag",
@@ -1027,6 +1028,7 @@ dependencies = [
 [[package]]
 name = "libpd-sys"
 version = "0.3.4"
+source = "git+https://github.com/minerscale/libpd-sys.git#6e82505e229b4cfa351abd70ba67b7b12036edf8"
 dependencies = [
  "bindgen",
  "cmake",
