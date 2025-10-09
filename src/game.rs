@@ -36,6 +36,7 @@ use crate::{
 pub enum GameState {
     Menu,
     Playing,
+    Splash,
 }
 
 impl From<GameState> for &str {
@@ -43,6 +44,7 @@ impl From<GameState> for &str {
         match value {
             GameState::Menu => "menu",
             GameState::Playing => "playing",
+            GameState::Splash => "splash",
         }
     }
 }
@@ -89,6 +91,7 @@ impl Game {
                                 "../test-objects/middle-grey.png"
                             ))
                             .unwrap(),
+                            true,
                             true,
                         ),
                     )
@@ -164,9 +167,6 @@ impl Game {
         uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
         image: &SwapchainImage,
     ) -> ActiveMultipleSubmitCommandBuffer {
-        let window_size = egui::Vec2::new(image.extent.width.cast(), image.extent.height.cast());
-        self.gui.window_size = window_size;
-
         let interpolation_factor = (self.clock.previous_time.elapsed().as_secs_f64()
             / FIXED_UPDATE_INTERVAL)
             .cast_approx();
@@ -195,7 +195,7 @@ impl Game {
             view_transform: camera_transform,
             time: self.clock.time.cast_approx(),
             fov: ez,
-            scale_y: window_size.x / window_size.y,
+            scale_y: (image.extent.width as f32) / (image.extent.height as f32),
         };
 
         let uniform_buffer = &mut uniform_buffers[0];
@@ -277,6 +277,9 @@ impl Game {
         uniform_buffers: &mut [MappedBuffer<UniformBufferObject>],
         image: &SwapchainImage,
     ) -> ActiveMultipleSubmitCommandBuffer {
+        self.gui.window_size =
+            egui::Vec2::new(image.extent.width.cast(), image.extent.height.cast());
+
         let command_buffer = if shared_state.game_state() == GameState::Playing {
             self.draw_playing(
                 shared_state,
@@ -461,7 +464,7 @@ impl Game {
         }
 
         match game_state {
-            GameState::Menu => (),
+            GameState::Menu | GameState::Splash => (),
             GameState::Playing => self.update_playing(pd, input),
         }
 

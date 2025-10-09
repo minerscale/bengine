@@ -62,6 +62,7 @@ pub struct SharedState {
     game_state: GameState,
     previous_game_state: GameState,
     game_state_just_changed: bool,
+    game_state_change_time: Instant,
     pub gui_scale: f32,
     pub volume: f32,
     pub last_mouse_position: Option<(f32, f32)>,
@@ -88,10 +89,11 @@ impl SharedState {
             previous: initial_state,
             framebuffer_resized: None,
             gui_scale,
-            volume: 0.0,
-            game_state: GameState::Menu,
-            previous_game_state: GameState::Menu,
+            volume: 1.0,
+            game_state: GameState::Splash,
+            previous_game_state: GameState::Splash,
             game_state_just_changed: false,
+            game_state_change_time: std::time::Instant::now(),
             last_mouse_position: None,
         }
     }
@@ -100,10 +102,15 @@ impl SharedState {
         self.game_state
     }
 
+    pub fn game_state_change_time(&self) -> Instant {
+        self.game_state_change_time
+    }
+
     pub fn set_game_state(&mut self, new_state: GameState) {
         self.previous_game_state = self.game_state;
         self.game_state = new_state;
         self.game_state_just_changed = true;
+        self.game_state_change_time = std::time::Instant::now();
     }
 
     pub fn update(&mut self, sdl_context: &sdl3::Sdl, window: &sdl3::video::Window) {
@@ -121,6 +128,9 @@ impl SharedState {
                 }
                 GameState::Playing => {
                     sdl_context.mouse().set_relative_mouse_mode(window, true);
+                }
+                GameState::Splash => {
+                    sdl_context.mouse().set_relative_mouse_mode(window, false);
                 }
             }
         }

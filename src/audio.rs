@@ -149,9 +149,11 @@ impl Audio {
             ctx.process_float(ticks, &[], data);
         };
 
-        let stream = Box::new(device
-            .build_output_stream(&config, callback, err_fn, None)
-            .unwrap());
+        let stream = Box::new(
+            device
+                .build_output_stream(&config, callback, err_fn, None)
+                .unwrap(),
+        );
 
         stream.play().unwrap();
 

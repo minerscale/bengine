@@ -117,7 +117,12 @@ pub fn load_gltf(
         })
         .collect::<Box<_>>()
         .into_iter()
-        .map(|(uri, image)| (uri, Image::from_image(&gfx.device, cmd_buf, image, true)))
+        .map(|(uri, image)| {
+            (
+                uri,
+                Image::from_image(&gfx.device, cmd_buf, image, true, true),
+            )
+        })
         .collect();
 
     let materials = document

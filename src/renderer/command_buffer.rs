@@ -39,13 +39,20 @@ impl OneTimeSubmitCommandBuffer {
 
         let command_buffer_list = [self.command_buffer];
 
+        let fence_create_info = vk::FenceCreateInfo::default();
+
+        let fence = unsafe { self.device.create_fence(&fence_create_info, None).unwrap() };
+
         let submit_info = vk::SubmitInfo::default().command_buffers(&command_buffer_list);
         unsafe {
             self.device
-                .queue_submit(queue, &[submit_info], vk::Fence::null())
+                .queue_submit(queue, &[submit_info], fence)
                 .unwrap();
 
-            self.device.queue_wait_idle(queue).unwrap();
+            self.device
+                .wait_for_fences(&[fence], true, u64::MAX)
+                .unwrap();
+            self.device.destroy_fence(fence, None);
 
             self.device
                 .free_command_buffers(**command_pool, &[self.command_buffer]);

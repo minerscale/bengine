@@ -186,6 +186,7 @@ impl Image {
         cmd_buf: &mut C,
         image: DynamicImage,
         gamma_correction: bool,
+        mipmapping: bool,
     ) -> Arc<Self> {
         let extent = image.dimensions();
         let img = image.into_rgba8().into_vec();
@@ -201,7 +202,7 @@ impl Image {
             usage: vk::ImageUsageFlags::empty(),
             memory_properties: vk::MemoryPropertyFlags::DEVICE_LOCAL,
             aspect_flags: vk::ImageAspectFlags::COLOR,
-            mipmapping: true,
+            mipmapping,
         };
 
         Self::new_staged(
@@ -223,7 +224,7 @@ impl Image {
     ) -> Arc<Self> {
         let image = ::image::load_from_memory(bytes).unwrap();
 
-        Self::from_image(device, cmd_buf, image, true)
+        Self::from_image(device, cmd_buf, image, true, true)
     }
 
     pub fn generate_mipmaps<C: ActiveCommandBuffer>(&self, device: &Device, cmd_buf: &mut C) {

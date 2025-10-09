@@ -82,7 +82,10 @@ impl Texture {
                     x: x.cast(),
                     y: y.cast(),
                 }),
-            extent: self.image.extent,
+            extent: vk::Extent2D {
+                width: image_delta.image.width().cast(),
+                height: image_delta.image.height().cast(),
+            },
         };
 
         let data = match &image_delta.image {
@@ -168,7 +171,11 @@ impl Texture {
         let width = image_delta.image.width();
         let height = image_delta.image.height();
 
-        let mip_levels = width.max(height).ilog2() + 1;
+        let mip_levels = if let Some(_mode) = image_delta.options.mipmap_mode {
+            width.max(height).ilog2() + 1
+        } else {
+            1
+        };
 
         let sampler = Arc::new(Sampler::new(
             gfx.device.clone(),
@@ -197,7 +204,13 @@ impl Texture {
         }
         .unwrap();
 
-        let image = Image::from_image(&gfx.device, command_buffer, image.into(), false);
+        let image = Image::from_image(
+            &gfx.device,
+            command_buffer,
+            image.into(),
+            false,
+            image_delta.options.mipmap_mode.is_some(),
+        );
 
         let mut descriptor_set = gfx
             .descriptor_pool
@@ -240,6 +253,35 @@ impl EguiBackend {
         };
 
         let ctx = egui::Context::default();
+
+        let mut fonts = egui::FontDefinitions::default();
+
+        // Install my own font (maybe supporting non-latin characters):
+        fonts.font_data.insert(
+            "libertinus".to_owned(),
+            std::sync::Arc::new(
+                // .ttf and .otf supported
+                egui::FontData::from_static(include_bytes!(
+                    "../../test-objects/LibertinusSerifDisplay-Regular.otf"
+                )),
+            ),
+        );
+
+        // Put my font first (highest priority):
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Proportional)
+            .unwrap()
+            .insert(0, "libertinus".to_owned());
+
+        // Put my font as last fallback for monospace:
+        fonts
+            .families
+            .get_mut(&egui::FontFamily::Monospace)
+            .unwrap()
+            .push("libertinus".to_owned());
+
+        ctx.set_fonts(fonts);
 
         ctx.set_visuals(egui::Visuals::dark());
 
@@ -301,11 +343,21 @@ impl EguiBackend {
                 for (tex_id, image_delta) in &full_output.textures_delta.set {
                     self.textures
                         .entry(*tex_id)
-                        .and_modify(|tex| tex.update(gfx, image_delta, command_buffer))
-                        .or_insert(if let Some(_pos) = image_delta.pos {
-                            todo!()
-                        } else {
-                            Texture::new(gfx, image_delta, command_buffer)
+                        .and_modify(|tex| {
+                            if image_delta.is_whole() {
+                                command_buffer.add_dependency(tex.image.clone());
+                                command_buffer.add_dependency(tex.sampler.clone());
+                                *tex = Texture::new(gfx, image_delta, command_buffer)
+                            } else {
+                                tex.update(gfx, image_delta, command_buffer)
+                            }
+                        })
+                        .or_insert_with(|| {
+                            if let Some(_pos) = image_delta.pos {
+                                unimplemented!()
+                            } else {
+                                Texture::new(gfx, image_delta, command_buffer)
+                            }
                         });
                 }
             });
@@ -395,7 +447,10 @@ impl EguiBackend {
             device.cmd_bind_pipeline(cmd_buf, vk::PipelineBindPoint::GRAPHICS, pipeline.pipeline);
         }
 
-        let vertex_index_buffer = self.vertex_index_buffer.as_ref().unwrap().buffer;
+        let vertex_index_buffer = match self.vertex_index_buffer.as_ref() {
+            Some(buf) => buf.buffer,
+            None => return,
+        };
 
         unsafe {
             device.cmd_bind_index_buffer(
@@ -507,7 +562,7 @@ impl EguiBackend {
     ) {
         self.input.screen_rect = Some(egui::Rect::from_min_size(
             egui::Pos2::default(),
-            self.window_size,
+            self.window_size / self.ctx.pixels_per_point(),
         ));
 
         self.input.time = Some(clock.time);

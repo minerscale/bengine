@@ -1,6 +1,6 @@
-#N canvas -6 63 1680 952 12;
+#N canvas 1680 24 1680 952 12;
 #X obj 324 323 osc~;
-#X obj 304 429 dac~;
+#X obj 312 453 dac~;
 #X obj 297 16 r distance;
 #X obj 302 75 + 1;
 #X obj 305 125 /;
@@ -11,11 +11,11 @@
 #X obj 491 80 symbol;
 #X msg 524 149 0, f 2;
 #X obj 491 52 t b;
-#X obj 304 403 *~;
+#X obj 315 405 *~;
 #X obj 448 257 line~;
 #X obj 305 178 pow;
 #X msg 305 153 \$1 1.5;
-#X obj 303 379 *~;
+#X obj 311 378 *~;
 #X msg 378 154 \$1 2;
 #X obj 378 179 pow;
 #X obj 491 104 select playing menu;
@@ -27,13 +27,14 @@
 #X msg 448 232 \$1 8.3;
 #X obj 164 146 r dug_object;
 #X obj 279 323 osc~;
-#X obj 279 356 *~;
+#X obj 282 349 *~;
 #X obj 214 243 line~;
 #X msg 214 218 \$1 8.3;
 #X obj 279 295 *~;
 #X obj 321 46 * 0.3;
 #X obj 242 266 +~ 1;
 #X obj 306 206 * 440;
+#X obj 315 429 *~ 0.5;
 #X connect 0 0 16 0;
 #X connect 2 0 32 0;
 #X connect 3 0 5 0;
@@ -47,8 +48,7 @@
 #X connect 9 0 19 0;
 #X connect 10 0 25 0;
 #X connect 11 0 9 0;
-#X connect 12 0 1 0;
-#X connect 12 0 1 1;
+#X connect 12 0 35 0;
 #X connect 13 0 12 1;
 #X connect 14 0 34 0;
 #X connect 15 0 14 0;
@@ -73,3 +73,5 @@
 #X connect 32 0 3 0;
 #X connect 33 0 31 1;
 #X connect 34 0 23 0;
+#X connect 35 0 1 0;
+#X connect 35 0 1 1;
