@@ -63,6 +63,7 @@ pub struct SharedState {
     previous_game_state: GameState,
     game_state_just_changed: bool,
     game_state_change_time: Instant,
+
     pub gui_scale: f32,
     pub volume: f32,
     pub last_mouse_position: Option<(f32, f32)>,
@@ -83,12 +84,12 @@ impl DerefMut for SharedState {
 }
 
 impl SharedState {
-    pub fn new(initial_state: Input, gui_scale: f32) -> Self {
+    pub fn new(initial_state: Input) -> Self {
         Self {
             inputs: initial_state.clone(),
             previous: initial_state,
             framebuffer_resized: None,
-            gui_scale,
+            gui_scale: 1.5,
             volume: 1.0,
             game_state: GameState::Splash,
             previous_game_state: GameState::Splash,
@@ -100,6 +101,10 @@ impl SharedState {
 
     pub fn game_state(&self) -> GameState {
         self.game_state
+    }
+
+    pub fn previous_game_state(&self) -> GameState {
+        self.previous_game_state
     }
 
     pub fn game_state_change_time(&self) -> Instant {
@@ -248,13 +253,12 @@ impl EventLoop {
         mut render: F,
         mut update: G,
     ) {
-        let shared_state = Mutex::new(SharedState::new(
-            Input::default().camera_rotation(Vec2::new(
+        let shared_state = Mutex::new(SharedState::new(Input::default().camera_rotation(
+            Vec2::new(
                 3.0 * std::f32::consts::FRAC_PI_4,
                 std::f32::consts::FRAC_PI_8,
-            )),
-            1.5,
-        ));
+            ),
+        )));
 
         std::thread::scope(|scope| {
             let (quit_tx, quit_rx) = std::sync::mpsc::channel::<()>();

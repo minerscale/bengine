@@ -36,6 +36,8 @@ pub struct EguiBackend {
 
     textures: HashMap<egui::TextureId, Texture>,
 
+    last_gui_scale: f32,
+
     gui_fn: Box<GuiFn>,
 }
 
@@ -208,7 +210,7 @@ impl Texture {
             &gfx.device,
             command_buffer,
             image.into(),
-            false,
+            true,
             image_delta.options.mipmap_mode.is_some(),
         );
 
@@ -227,8 +229,114 @@ impl Texture {
 }
 
 impl EguiBackend {
+    fn theme() -> egui::Visuals {
+        egui::Visuals {
+            dark_mode: true,
+            text_alpha_from_coverage: egui::epaint::AlphaFromCoverage::DARK_MODE_DEFAULT,
+            override_text_color: None,
+            weak_text_alpha: 0.6,
+            weak_text_color: None,
+            widgets: egui::style::Widgets {
+                noninteractive: egui::style::WidgetVisuals {
+                    weak_bg_fill: egui::Color32::from_gray(27),
+                    bg_fill: egui::Color32::from_gray(27),
+                    bg_stroke: egui::Stroke::new(1.0, egui::Color32::from_gray(60)), // separators, indentation lines
+                    fg_stroke: egui::Stroke::new(1.0, egui::Color32::from_rgb(178, 191, 219)), // normal text color
+                    corner_radius: egui::CornerRadius::same(2),
+                    expansion: 0.0,
+                },
+                inactive: egui::style::WidgetVisuals {
+                    weak_bg_fill: egui::Color32::from_rgb(60, 51, 35), // button background
+                    bg_fill: egui::Color32::from_rgb(60, 51, 35),      // checkbox background
+                    bg_stroke: Default::default(),
+                    fg_stroke: egui::Stroke::new(1.0, egui::Color32::from_rgb(178, 191, 219)), // button text
+                    corner_radius: egui::CornerRadius::same(2),
+                    expansion: 0.0,
+                },
+                hovered: egui::style::WidgetVisuals {
+                    weak_bg_fill: egui::Color32::from_gray(70),
+                    bg_fill: egui::Color32::from_gray(70),
+                    bg_stroke: egui::Stroke::new(1.0, egui::Color32::from_gray(150)), // e.g. hover over window edge or button
+                    fg_stroke: egui::Stroke::new(1.5, egui::Color32::from_gray(240)),
+                    corner_radius: egui::CornerRadius::same(3),
+                    expansion: 1.0,
+                },
+                active: egui::style::WidgetVisuals {
+                    weak_bg_fill: egui::Color32::from_gray(55),
+                    bg_fill: egui::Color32::from_gray(55),
+                    bg_stroke: egui::Stroke::new(1.0, egui::Color32::WHITE),
+                    fg_stroke: egui::Stroke::new(2.0, egui::Color32::WHITE),
+                    corner_radius: egui::CornerRadius::same(2),
+                    expansion: 1.0,
+                },
+                open: egui::style::WidgetVisuals {
+                    weak_bg_fill: egui::Color32::from_gray(45),
+                    bg_fill: egui::Color32::from_gray(27),
+                    bg_stroke: egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+                    fg_stroke: egui::Stroke::new(1.0, egui::Color32::from_gray(210)),
+                    corner_radius: egui::CornerRadius::same(2),
+                    expansion: 0.0,
+                },
+            },
+            selection: egui::style::Selection::default(),
+            hyperlink_color: egui::Color32::from_rgb(90, 170, 255),
+            faint_bg_color: egui::Color32::from_additive_luminance(5), // visible, but barely so
+            extreme_bg_color: egui::Color32::from_gray(10),            // e.g. TextEdit background
+            text_edit_bg_color: None, // use `extreme_bg_color` by default
+            code_bg_color: egui::Color32::from_gray(64),
+            warn_fg_color: egui::Color32::from_rgb(255, 143, 0), // orange
+            error_fg_color: egui::Color32::from_rgb(255, 0, 0),  // red
+
+            window_corner_radius: egui::CornerRadius::same(6),
+            window_shadow: egui::Shadow {
+                offset: [10, 20],
+                blur: 15,
+                spread: 0,
+                color: egui::Color32::from_black_alpha(96),
+            },
+            window_fill: egui::Color32::from_gray(27),
+            window_stroke: egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+            window_highlight_topmost: true,
+
+            menu_corner_radius: egui::CornerRadius::same(6),
+
+            panel_fill: egui::Color32::from_gray(27),
+
+            popup_shadow: egui::Shadow {
+                offset: [6, 10],
+                blur: 8,
+                spread: 0,
+                color: egui::Color32::from_black_alpha(96),
+            },
+
+            resize_corner_size: 12.0,
+
+            text_cursor: Default::default(),
+
+            clip_rect_margin: 3.0, // should be at least half the size of the widest frame stroke + max WidgetVisuals::expansion
+            button_frame: true,
+            collapsing_header_frame: false,
+            indent_has_left_vline: true,
+
+            striped: false,
+
+            slider_trailing_fill: false,
+            handle_shape: egui::style::HandleShape::Rect { aspect_ratio: 0.75 },
+
+            interact_cursor: None,
+
+            image_loading_spinners: true,
+
+            numeric_color_space: egui::style::NumericColorSpace::GammaByte,
+            disabled_alpha: 0.5,
+        }
+    }
+
     fn gui_scale(&mut self, gui_scale: f32) {
-        self.ctx.set_zoom_factor(gui_scale);
+        if gui_scale != self.last_gui_scale {
+            self.ctx.set_zoom_factor(gui_scale);
+            self.last_gui_scale = gui_scale;
+        }
     }
 
     pub fn new(gfx: &Renderer, gui_fn: Box<GuiFn>) -> Self {
@@ -283,7 +391,9 @@ impl EguiBackend {
 
         ctx.set_fonts(fonts);
 
-        ctx.set_visuals(egui::Visuals::dark());
+        ctx.set_visuals(Self::theme());
+
+        egui_extras::install_image_loaders(&ctx);
 
         Self {
             ctx,
@@ -294,6 +404,7 @@ impl EguiBackend {
             index_offset: 0,
             clipped_primitives: Vec::new(),
             vertex_index_buffer: None,
+            last_gui_scale: 1.0,
             gui_fn,
         }
     }

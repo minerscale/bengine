@@ -27,6 +27,7 @@ colored = "3.0.0"
 cpal = "0.16.0"
 easy-cast = "0.5.3"
 egui = "0.33.0"
+egui_extras = { version = "0.33.0", features = ["image"] }
 gag = "1.0.0"
 gltf = "1.4.1"
 libpd-rs = { git = "https://github.com/minerscale/libpd-rs.git", branch = "dev" }

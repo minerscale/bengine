@@ -4,7 +4,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use easy_cast::Cast;
-use libpd_rs::{Pd, functions::util::calculate_ticks};
+use libpd_rs::Pd;
 use log::{info, warn};
 use notify::Watcher;
 
@@ -98,10 +98,8 @@ impl Audio {
             .supported_output_configs()
             .expect("error while querying configs")
             .find(|c| {
-                matches!(
-                    c.sample_format(),
-                    SampleFormat::F32 | SampleFormat::I16 | SampleFormat::U16
-                ) && c.channels() == cpal::ChannelCount::try_from(CHANNELS).unwrap()
+                matches!(c.sample_format(), SampleFormat::F32)
+                    && c.channels() == cpal::ChannelCount::try_from(CHANNELS).unwrap()
                     && (c.min_sample_rate()..=c.max_sample_rate())
                         .contains(&cpal::SampleRate(SAMPLE_RATE))
                     && match c.buffer_size() {
@@ -125,6 +123,8 @@ impl Audio {
         let mut config = supported_config.config();
         config.buffer_size = BufferSize::Fixed(BUFFER_SIZE_SAMPLES);
 
+        assert_eq!(supported_config.sample_format(), SampleFormat::F32);
+
         let err_fn = |err| eprintln!("an error occurred on the output audio stream: {err}");
 
         let ctx = pd.audio_context();
@@ -141,12 +141,41 @@ impl Audio {
 
         pd.on_print(|s| println!("{s}")).unwrap();
 
+        let mut leftovers: Vec<f32> = vec![];
+        let mut dst: Vec<f32> = vec![];
         let callback = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            let ticks = calculate_ticks(2, data.len().cast());
+            let start_point = leftovers.len();
+
+            if start_point != 0 {
+                data[0..start_point].copy_from_slice(&leftovers);
+                leftovers.clear();
+            }
+
+            let block_size: usize = libpd_rs::functions::block_size().cast();
+            let quanta = block_size * CHANNELS;
+
+            let remaining = data.len() - start_point;
+            let ticks: usize = remaining / (quanta);
+
+            let main_block_end = start_point + ticks * quanta;
+            let leftover_samples = remaining - ticks * quanta;
 
             ctx.receive_messages_from_pd();
+            ctx.process_float(ticks.cast(), &[], &mut data[start_point..main_block_end]);
+            if leftover_samples != 0 {
+                if dst.len() < quanta {
+                    dst.extend((dst.len()..quanta).map(|_| 0f32));
+                } else if dst.len() > quanta {
+                    dst.drain(quanta..);
+                }
 
-            ctx.process_float(ticks, &[], data);
+                ctx.process_float(1, &[], dst.as_mut_slice());
+
+                data[main_block_end..(main_block_end + leftover_samples)]
+                    .copy_from_slice(&dst[0..leftover_samples]);
+
+                leftovers.extend_from_slice(&dst[leftover_samples..quanta]);
+            }
         };
 
         let stream = Box::new(

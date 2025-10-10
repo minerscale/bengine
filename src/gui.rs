@@ -1,3 +1,5 @@
+use core::f32;
+
 use egui_backend::GuiFn;
 
 use crate::{event_loop::SharedState, game::GameState};
@@ -5,8 +7,21 @@ use crate::{event_loop::SharedState, game::GameState};
 pub(crate) mod egui_backend;
 pub(crate) mod egui_sdl3_event;
 
+fn fade_in(t: f32, delay: f32, fade_in_time: f32) -> f32 {
+    ((t - delay) / fade_in_time).clamp(0.0, 1.0).powi(3)
+}
+
+fn fade_in_out(t: f32, delay: f32, fade_in_time: f32, hold_time: f32, fade_out_time: f32) -> f32 {
+    ((t - delay) / fade_in_time).clamp(0.0, 1.0).powi(3)
+        - (1.0
+            - (1.0 - ((t - (fade_in_time + delay + hold_time)) / fade_out_time).clamp(0.0, 1.0))
+                .powi(3))
+}
+
 pub fn create_gui() -> Box<GuiFn> {
-    let main_menu = move |ctx: &egui::Context, shared_state: &mut SharedState| {
+    let mut temp_gui_scale = 1.5;
+
+    let mut main_menu = move |ctx: &egui::Context, shared_state: &mut SharedState| {
         egui::CentralPanel::default()
             .frame(egui::Frame {
                 inner_margin: egui::Margin::symmetric(4, 4),
@@ -17,17 +32,51 @@ pub fn create_gui() -> Box<GuiFn> {
                 shadow: egui::Shadow::NONE,
             })
             .show(ctx, |ui| {
+                let total_height = ui.available_height();
+                let big_font_size = shared_state.gui_scale * total_height / 18.0;
+
                 let elapsed = (std::time::Instant::now() - shared_state.game_state_change_time())
                     .as_secs_f32();
 
-                ui.set_opacity(elapsed.clamp(0.0, 1.0).powi(3));
+                if shared_state.previous_game_state() == GameState::Splash {
+                    ui.set_opacity(fade_in(elapsed, 0.3, 1.0));
+                }
 
-                ui.add_space(ui.available_height() * 0.2);
+                {
+                    // The rect you want to fill (e.g. entire content area)
+                    let target_rect = ui.ctx().content_rect();
+
+                    let image = egui::Image::new(egui::include_image!("../test-objects/beach.png"));
+
+                    // Get texture dimensions
+                    let tex_size = image
+                        .load_and_calc_size(ui, egui::Vec2::splat(f32::INFINITY))
+                        .unwrap_or(egui::Vec2::splat(1.0));
+
+                    let image_aspect = tex_size.x / tex_size.y;
+                    let rect_aspect = target_rect.width() / target_rect.height();
+
+                    // Compute UV rect that crops to maintain aspect
+                    let uv_rect = if rect_aspect > image_aspect {
+                        // The rect is wider than the image → crop horizontally
+                        let crop = 0.5 * (1.0 - image_aspect / rect_aspect);
+                        egui::Rect::from_min_max(egui::pos2(0.0, crop), egui::pos2(1.0, 1.0 - crop))
+                    } else {
+                        // The rect is taller than the image → crop vertically
+                        let crop = 0.5 * (1.0 - rect_aspect / image_aspect);
+                        egui::Rect::from_min_max(egui::pos2(crop, 0.0), egui::pos2(1.0 - crop, 1.0))
+                    };
+
+                    // Draw cropped, aspect-preserving image
+                    image.uv(uv_rect).paint_at(ui, target_rect);
+                }
+
+                ui.add_space(ui.available_height() * 0.15);
 
                 ui.scope(|ui| {
                     ui.style_mut().text_styles.insert(
                         egui::TextStyle::Body,
-                        egui::FontId::new(32.0, egui::FontFamily::Proportional),
+                        egui::FontId::new(big_font_size, egui::FontFamily::Proportional),
                     );
 
                     ui.vertical_centered(|ui| ui.add(egui::Label::new("Sole Searching")));
@@ -37,7 +86,7 @@ pub fn create_gui() -> Box<GuiFn> {
 
                 ui.style_mut().text_styles.insert(
                     egui::TextStyle::Button,
-                    egui::FontId::new(32.0, egui::FontFamily::Proportional),
+                    egui::FontId::new(big_font_size, egui::FontFamily::Proportional),
                 );
 
                 ui.vertical_centered(|ui| {
@@ -63,6 +112,19 @@ pub fn create_gui() -> Box<GuiFn> {
                             .text("Volume")
                             .show_value(false),
                     );
+
+                    if ui
+                        .add(
+                            egui::Slider::new(&mut temp_gui_scale, 0.5..=2.0)
+                                .text("Gui Scale")
+                                .show_value(false)
+                                .logarithmic(true)
+                                .update_while_editing(false),
+                        )
+                        .drag_stopped()
+                    {
+                        shared_state.gui_scale = temp_gui_scale;
+                    };
                 });
             });
     };
@@ -86,19 +148,32 @@ pub fn create_gui() -> Box<GuiFn> {
                 shadow: egui::Shadow::NONE,
             })
             .show(ctx, |ui| {
+                // Load image early so it's avaliable in time for the main menu
+                //let _image = egui::Image::new(egui::include_image!("../test-objects/beach.png")).load_for_size(ctx, egui::Vec2::new(f32::INFINITY, f32::INFINITY));
+
+                let big_font_size = shared_state.gui_scale * ui.available_height() / 32.0;
+
                 let elapsed = (std::time::Instant::now() - shared_state.game_state_change_time())
                     .as_secs_f32();
 
-                ui.set_opacity(
-                    ((elapsed - 0.3) * 0.5).clamp(0.0, 1.0).powi(3)
-                        - (1.0 - (1.0 - ((elapsed - 3.0) * 0.3).clamp(0.0, 1.0)).powi(3)),
-                );
+                let delay_time = 1.0;
+                let fade_in_time = 2.0;
+                let hold_time = 1.0;
+                let fade_out_time = 1.0;
+
+                ui.set_opacity(fade_in_out(
+                    elapsed,
+                    delay_time,
+                    fade_in_time,
+                    hold_time,
+                    fade_out_time,
+                ));
 
                 ui.add_space(ui.available_height() * 0.4);
                 ui.scope(|ui| {
                     ui.style_mut().text_styles.insert(
                         egui::TextStyle::Body,
-                        egui::FontId::new(20.0, egui::FontFamily::Proportional),
+                        egui::FontId::new(big_font_size, egui::FontFamily::Proportional),
                     );
 
                     ui.vertical_centered(|ui| {
@@ -110,7 +185,7 @@ pub fn create_gui() -> Box<GuiFn> {
                     ui.vertical_centered(|ui| ui.add(egui::Label::new("Present")));
                 });
 
-                if elapsed > 6.0 {
+                if elapsed > delay_time + fade_in_time + hold_time + fade_out_time {
                     shared_state.set_game_state(GameState::Menu);
                 }
             });
