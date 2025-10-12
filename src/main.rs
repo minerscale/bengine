@@ -40,7 +40,7 @@ fn main() {
     let video = sdl_context.video().unwrap();
 
     let window = video
-        .window("bengine", WIDTH, HEIGHT)
+        .window("Sole Searching", WIDTH, HEIGHT)
         .vulkan()
         .position_centered()
         .resizable()

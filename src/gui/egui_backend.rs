@@ -370,7 +370,7 @@ impl EguiBackend {
             std::sync::Arc::new(
                 // .ttf and .otf supported
                 egui::FontData::from_static(include_bytes!(
-                    "../../test-objects/LibertinusSerifDisplay-Regular.otf"
+                    "../../assets/LibertinusSerifDisplay-Regular.otf"
                 )),
             ),
         );

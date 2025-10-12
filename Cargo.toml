@@ -28,10 +28,9 @@ cpal = "0.16.0"
 easy-cast = "0.5.3"
 egui = "0.33.0"
 egui_extras = { version = "0.33.0", features = ["image"] }
-gag = "1.0.0"
 gltf = "1.4.1"
+include_bytes_aligned = "0.1.4"
 libpd-rs = { git = "https://github.com/minerscale/libpd-rs.git", branch = "dev" }
-#libpd-rs = { path = "../libpd-rs" }
 log = "0.4.22"
 log-once = "0.4.1"
 nalgebra = "0.34.0"
@@ -40,6 +39,7 @@ num-traits = "0.2.19"
 rapier3d = "0.30.0"
 rayon = "1.10.0"
 replace_with = "0.1.7"
+seq-macro = "0.3.6"
 tracing-mutex = "0.3.1"
 ultraviolet = "0.10.0"
 

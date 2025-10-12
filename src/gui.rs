@@ -46,7 +46,7 @@ pub fn create_gui() -> Box<GuiFn> {
                     // The rect you want to fill (e.g. entire content area)
                     let target_rect = ui.ctx().content_rect();
 
-                    let image = egui::Image::new(egui::include_image!("../test-objects/beach.png"));
+                    let image = egui::Image::new(egui::include_image!("../assets/beach.png"));
 
                     // Get texture dimensions
                     let tex_size = image

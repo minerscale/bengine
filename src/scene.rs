@@ -75,18 +75,18 @@ fn scene(
         ))
     };
 
-    let grid_image = image!("../test-objects/grid.png");
+    let grid_image = image!("../assets/grid.png");
     let grid = texture!(sampler(grid_image.mip_levels), grid_image);
 
     let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
 
     let scene = vec![
         Node::empty()
-            .mesh(mesh!("../test-objects/icosehedron.obj", None, None))
+            .mesh(mesh!("../assets/icosehedron.obj", None, None))
             .rigid_body(
                 physics,
                 ColliderBuilder::new(collider_from_obj(
-                    raw_obj!("../test-objects/icosehedron.obj"),
+                    raw_obj!("../assets/icosehedron.obj"),
                     None,
                     None,
                 )),
@@ -95,18 +95,18 @@ fn scene(
                     .rotation(AngVector::new(0.5, 1.2, 3.1)),
             ),
         Node::empty()
-            .mesh(mesh!("../test-objects/cube.obj", None, Some(cube_2_scale)))
+            .mesh(mesh!("../assets/cube.obj", None, Some(cube_2_scale)))
             .rigid_body(
                 physics,
                 ColliderBuilder::new(collider_from_obj(
-                    raw_obj!("../test-objects/cube.obj"),
+                    raw_obj!("../assets/cube.obj"),
                     Some(cube_2_scale),
                     None,
                 )),
                 RigidBodyBuilder::dynamic().translation(vector![-5.0, 5.0, 0.0]),
             ),
         Node::empty()
-            .mesh(mesh!("../test-objects/ground-plane.obj", Some(grid), None))
+            .mesh(mesh!("../assets/ground-plane.obj", Some(grid), None))
             .collider(
                 physics,
                 ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),

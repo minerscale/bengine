@@ -8,7 +8,7 @@ use ultraviolet::{Isometry3, Lerp, Rotor3, Slerp, Vec2, Vec3};
 
 use crate::{
     FOV,
-    audio::Audio,
+    audio::{Audio, AudioParameters},
     clock::{Clock, FIXED_UPDATE_INTERVAL},
     event_loop::SharedState,
     gltf::{GltfFile, load_gltf},
@@ -37,6 +37,12 @@ pub enum GameState {
     Menu,
     Playing,
     Splash,
+}
+
+impl Default for GameState {
+    fn default() -> Self {
+        GameState::Splash
+    }
 }
 
 impl From<GameState> for &str {
@@ -88,7 +94,7 @@ impl Game {
                             &gfx.device,
                             cmd_buf,
                             image::load_from_memory(include_bytes!(
-                                "../test-objects/middle-grey.png"
+                                "../assets/middle-grey.png"
                             ))
                             .unwrap(),
                             true,
@@ -345,7 +351,7 @@ impl Game {
         // Dig up an object
         if let Some((idx, object)) = closest_object
             && input.action()
-            && distance <= 1.0
+            && distance <= 2.0
         {
             if pd.send_bang_to("dug_object").is_err() {
                 warn_once!("pd: no reciever named 'dug_object'");
@@ -415,6 +421,18 @@ impl Game {
             warn_once!("pd: no reciever named 'distance'");
         }
 
+        self.audio
+            .audio_parameters_tx
+            .send(AudioParameters {
+                distance: Some(distance),
+                scene: GameState::Playing,
+                time_since_last_scene_change: (std::time::Instant::now()
+                    - input.game_state_change_time())
+                .as_secs_f32(),
+                volume: input.volume,
+            })
+            .unwrap();
+
         let mut behaviours: Vec<(usize, Arc<Behaviour>)> = Vec::new();
         let mut to_delete: Vec<usize> = Vec::new();
 
@@ -464,7 +482,30 @@ impl Game {
         }
 
         match game_state {
-            GameState::Menu | GameState::Splash => (),
+            GameState::Menu => self
+                .audio
+                .audio_parameters_tx
+                .send(AudioParameters {
+                    distance: None,
+                    scene: GameState::Menu,
+                    time_since_last_scene_change: (std::time::Instant::now()
+                        - input.game_state_change_time())
+                    .as_secs_f32(),
+                    volume: input.volume
+                })
+                .unwrap(),
+            GameState::Splash => self
+                .audio
+                .audio_parameters_tx
+                .send(AudioParameters {
+                    distance: None,
+                    scene: GameState::Splash,
+                    time_since_last_scene_change: (std::time::Instant::now()
+                        - input.game_state_change_time())
+                    .as_secs_f32(),
+                    volume: input.volume
+                })
+                .unwrap(),
             GameState::Playing => self.update_playing(pd, input),
         }
 
@@ -498,31 +539,31 @@ const METAL_DETECTOR_MANIFESTS: [MetalDetectorManifest<'static>; 5] = [
         location: Vec2::new(8.0, -8.0),
         badness: 0.0,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../test-objects/tetrahedron.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/tetrahedron.glb")),
     },
     MetalDetectorManifest {
         location: Vec2::new(15.0, -6.0),
         badness: 0.35,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../test-objects/cube.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/cube.glb")),
     },
     MetalDetectorManifest {
         location: Vec2::new(-12.0, 9.0),
         badness: 0.5,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../test-objects/octahedron.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/octahedron.glb")),
     },
     MetalDetectorManifest {
         location: Vec2::new(-16.0, -16.0),
         badness: 0.7,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../test-objects/dodecahedron.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/dodecahedron.glb")),
     },
     MetalDetectorManifest {
         location: Vec2::new(20.0, 17.0),
         badness: 1.0,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../test-objects/icosahedron.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/icosahedron.glb")),
     },
 ];
 
