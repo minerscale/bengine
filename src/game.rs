@@ -93,10 +93,8 @@ impl Game {
                         Image::from_image(
                             &gfx.device,
                             cmd_buf,
-                            image::load_from_memory(include_bytes!(
-                                "../assets/middle-grey.png"
-                            ))
-                            .unwrap(),
+                            image::load_from_memory(include_bytes!("../assets/middle-grey.png"))
+                                .unwrap(),
                             true,
                             true,
                         ),
@@ -491,7 +489,7 @@ impl Game {
                     time_since_last_scene_change: (std::time::Instant::now()
                         - input.game_state_change_time())
                     .as_secs_f32(),
-                    volume: input.volume
+                    volume: input.volume,
                 })
                 .unwrap(),
             GameState::Splash => self
@@ -503,7 +501,7 @@ impl Game {
                     time_since_last_scene_change: (std::time::Instant::now()
                         - input.game_state_change_time())
                     .as_secs_f32(),
-                    volume: input.volume
+                    volume: input.volume,
                 })
                 .unwrap(),
             GameState::Playing => self.update_playing(pd, input),
