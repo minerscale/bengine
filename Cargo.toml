@@ -32,7 +32,6 @@ gltf = "1.4.1"
 libpd-rs = { git = "https://github.com/minerscale/libpd-rs.git", branch = "dev" }
 log = "0.4.22"
 log-once = "0.4.1"
-
 nalgebra = "0.34.0"
 notify = "8.2.0"
 num-traits = "0.2.19"
@@ -45,6 +44,7 @@ tracing-mutex = "0.3.1"
 ultraviolet = "0.10.0"
 
 [dependencies.magnum]
+git = "https://github.com/minerscale/magnum-rs.git"
 version = "1.0.1"
 default-features = false
 features = ["with_ogg"]

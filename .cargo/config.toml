@@ -1,0 +1,2 @@
+[env]
+OPUS_STATIC = "1"
