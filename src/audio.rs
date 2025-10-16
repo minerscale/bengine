@@ -146,7 +146,7 @@ impl Audio {
                     .playing_music
                     .iter_mut()
                     .fold((0.0, 0.0), |sample, (&track, info)| {
-                        if info.playhead > audio_data.music[track].len() {
+                        if info.playhead >= audio_data.music[track].len() {
                             info.playhead = 0; // loop the audio
                         }
 
