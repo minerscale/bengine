@@ -532,7 +532,7 @@ impl MetalDetectorManifest<'_> {
     }
 }
 
-const METAL_DETECTOR_MANIFESTS: [MetalDetectorManifest<'static>; 5] = [
+const METAL_DETECTOR_MANIFESTS: [MetalDetectorManifest<'static>; 6] = [
     MetalDetectorManifest {
         location: Vec2::new(8.0, -8.0),
         badness: 0.0,
@@ -562,6 +562,12 @@ const METAL_DETECTOR_MANIFESTS: [MetalDetectorManifest<'static>; 5] = [
         badness: 1.0,
         scale: 1.0,
         model: GltfFile::Bytes(include_bytes!("../assets/icosahedron.glb")),
+    },
+    MetalDetectorManifest {
+        location: Vec2::new(30.0, 0.0),
+        badness: 1.0,
+        scale: 1.0,
+        model: GltfFile::Bytes(include_bytes!("../assets/coins.glb")),
     },
 ];
 

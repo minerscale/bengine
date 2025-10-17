@@ -9,6 +9,7 @@ use std::{
 use ash::vk;
 use easy_cast::Cast;
 use gltf::Gltf;
+use image::{DynamicImage, ImageBuffer, Pixel};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use ultraviolet::Vec3;
 
@@ -128,16 +129,29 @@ pub fn load_gltf(
     let materials = document
         .materials()
         .map(|material| {
-            let image = match material
-                .pbr_metallic_roughness()
-                .base_color_texture()
-                .unwrap()
-                .texture()
-                .source()
-                .source()
-            {
-                gltf::image::Source::View { view, mime_type: _ } => &images[&get_uri(&view)],
-                gltf::image::Source::Uri { uri, mime_type: _ } => &images[uri],
+            //println!("{:?}", material.pbr_metallic_roughness().base_color_factor());
+
+            let image = match material.pbr_metallic_roughness().base_color_texture() {
+                Some(info) => match info.texture().source().source() {
+                    gltf::image::Source::View { view, mime_type: _ } => &images[&get_uri(&view)],
+                    gltf::image::Source::Uri { uri, mime_type: _ } => &images[uri],
+                },
+                None => &Image::from_image(
+                    &gfx.device,
+                    cmd_buf,
+                    DynamicImage::ImageRgba8(ImageBuffer::from_pixel(
+                        1,
+                        1,
+                        *Pixel::from_slice(
+                            &material
+                                .pbr_metallic_roughness()
+                                .base_color_factor()
+                                .map(|x| (x * 255.0) as u8),
+                        ),
+                    )),
+                    true,
+                    false,
+                ),
             };
 
             let properties = MaterialProperties {

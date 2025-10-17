@@ -6,9 +6,10 @@ use rapier3d::{
     na::vector,
     prelude::{ColliderBuilder, RigidBodyBuilder},
 };
-use ultraviolet::Vec3;
+use ultraviolet::{Isometry3, Rotor3, Vec3};
 
 use crate::{
+    gltf::{GltfFile, load_gltf},
     mesh::{Mesh, Primitive, collider_from_obj},
     node::Node,
     physics::Physics,
@@ -111,7 +112,18 @@ fn scene(
                 physics,
                 ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),
             ),
+        Node::new(Isometry3::new(Vec3::new(0.0, 0.0, 0.0), Rotor3::from_rotation_xz(std::f32::consts::FRAC_PI_2))).mesh(
+            load_gltf(
+                &gfx,
+                cmd_buf,
+                GltfFile::Bytes(include_bytes!("../assets/beach.glb")),
+                1.0,
+            )
+            .into(),
+        ),
     ];
+
+    
 
     scene
 }
