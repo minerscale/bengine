@@ -67,6 +67,7 @@ pub struct SharedState {
     pub gui_scale: f32,
     pub volume: f32,
     pub last_mouse_position: Option<(f32, f32)>,
+    pub winner: bool
 }
 
 impl Deref for SharedState {
@@ -96,6 +97,7 @@ impl SharedState {
             game_state_just_changed: false,
             game_state_change_time: std::time::Instant::now(),
             last_mouse_position: None,
+            winner: false
         }
     }
 
@@ -255,7 +257,7 @@ impl EventLoop {
     ) {
         let shared_state = Mutex::new(SharedState::new(Input::default().camera_rotation(
             Vec2::new(
-                3.0 * std::f32::consts::FRAC_PI_4,
+                -3.0 * std::f32::consts::FRAC_PI_4,
                 std::f32::consts::FRAC_PI_8,
             ),
         )));

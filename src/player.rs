@@ -52,7 +52,7 @@ impl Player {
 
         let rigid_body_handle = physics.rigid_body_set.insert(
             RigidBodyBuilder::dynamic()
-                .translation(vector![0.0, HALF_HEIGHT + RADIUS, 0.0])
+                .translation(vector![-12.26462, HALF_HEIGHT + RADIUS + 2.0, 105.88154])
                 .lock_rotations(),
         );
 
@@ -130,8 +130,12 @@ impl Player {
                             let velocity = -(linvel.dot(normal) * normal);
 
                             let summed = velocity + linvel;
-                            let normalised =
-                                (summed * (linvel.magnitude() / summed.magnitude())) - linvel;
+
+                            let normalised = if summed.magnitude() > 0.001 {
+                                (summed * (linvel.magnitude() / summed.magnitude())) - linvel
+                            } else {
+                                -linvel
+                            };
 
                             (normalised * 1.0 * rigid_body.mass(), *normal)
                         })

@@ -10,6 +10,10 @@ use ash::vk;
 use easy_cast::Cast;
 use gltf::Gltf;
 use image::{DynamicImage, ImageBuffer, Pixel};
+use rapier3d::{
+    math::{Point, Real},
+    prelude::{ColliderBuilder, TriMeshFlags},
+};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use ultraviolet::Vec3;
 
@@ -55,15 +59,48 @@ pub enum GltfFile<'a> {
     Bytes(&'a [u8]),
 }
 
-pub fn load_gltf(
-    gfx: &Renderer,
-    cmd_buf: &mut OneTimeSubmitCommandBuffer,
-    file: GltfFile,
-    scale: f32,
-) -> Mesh {
+pub fn get_trimesh_from_gltf(file: GltfFile) -> ColliderBuilder {
+    let (root, gltf) = open_gltf(file);
+
+    let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
+    let document = gltf.document;
+
+    let shapes = document.meshes().flat_map(|mesh| mesh.primitives()).fold(
+        (Vec::new(), Vec::new()),
+        |mut acc, primitive| {
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+            let mut indices = reader.read_indices().unwrap().into_u32();
+
+            let offset: u32 = acc.0.len().cast();
+            while let (Some(a), Some(b), Some(c)) = (indices.next(), indices.next(), indices.next())
+            {
+                acc.1.push([a + offset, b + offset, c + offset]);
+            }
+
+            assert!(indices.next().is_none());
+
+            acc.0.extend(
+                reader
+                    .read_positions()
+                    .unwrap()
+                    .map(|x| Point::<Real>::from(x)),
+            );
+
+            acc
+        },
+    );
+
+    //ColliderBuilder::convex_decomposition_with_params(&shapes.0, &shapes.1).into()
+    ColliderBuilder::trimesh_with_flags(shapes.0, shapes.1, TriMeshFlags::all())
+        .unwrap()
+        .into()
+}
+
+fn open_gltf(file: GltfFile<'_>) -> (&'_ Path, Gltf) {
     let current_dir = Path::new(".");
 
-    let (root, gltf) = match file {
+    match file {
         GltfFile::Filename(filename) => {
             let root = Path::new(filename)
                 .parent()
@@ -77,7 +114,16 @@ pub fn load_gltf(
             (root, gltf)
         }
         GltfFile::Bytes(bytes) => (current_dir, Gltf::from_slice(bytes).unwrap()),
-    };
+    }
+}
+
+pub fn load_gltf(
+    gfx: &Renderer,
+    cmd_buf: &mut OneTimeSubmitCommandBuffer,
+    file: GltfFile,
+    scale: f32,
+) -> Mesh {
+    let (root, gltf) = open_gltf(file);
 
     let buffers = gltf::import_buffers(&gltf.document, Some(root), gltf.blob).unwrap();
     let document = gltf.document;
@@ -129,8 +175,6 @@ pub fn load_gltf(
     let materials = document
         .materials()
         .map(|material| {
-            //println!("{:?}", material.pbr_metallic_roughness().base_color_factor());
-
             let image = match material.pbr_metallic_roughness().base_color_texture() {
                 Some(info) => match info.texture().source().source() {
                     gltf::image::Source::View { view, mime_type: _ } => &images[&get_uri(&view)],
@@ -154,8 +198,11 @@ pub fn load_gltf(
                 ),
             };
 
+            let name = material.name().map(|s| s.to_owned());
+
             let properties = MaterialProperties {
                 alpha_cutoff: material.alpha_cutoff().unwrap_or(0.0),
+                is_water: name.as_ref().is_some_and(|s| s == "water").into(),
             };
 
             Arc::new(Material::new(
@@ -169,6 +216,7 @@ pub fn load_gltf(
                     true,
                     Some((vk::SamplerMipmapMode::LINEAR, image.mip_levels)),
                 )),
+                name,
                 properties,
                 &gfx.descriptor_pool,
                 &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],

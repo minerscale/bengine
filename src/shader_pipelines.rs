@@ -7,8 +7,8 @@ use ultraviolet::{Isometry3, Vec2};
 #[repr(C)]
 pub struct PushConstants {
     pub model_transform: Isometry3,
-    pub material_properties: MaterialProperties,
     pub alpha: f32,
+    pub material_properties: MaterialProperties,
 }
 
 use crate::{

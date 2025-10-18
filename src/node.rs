@@ -5,6 +5,7 @@ use ultraviolet::Isometry3;
 
 use crate::{clock::Clock, mesh::Mesh, physics::Physics};
 
+#[allow(unused)]
 pub enum Object {
     Mesh(Arc<Mesh>),
     RigidBody((ColliderHandle, RigidBodyHandle)),
@@ -23,6 +24,7 @@ pub struct Node {
 }
 
 impl Node {
+    #[allow(unused)]
     pub fn empty() -> Self {
         Self {
             transform: Isometry3::identity(),
@@ -70,6 +72,7 @@ impl Node {
         self
     }
 
+    #[allow(unused)]
     pub fn rigid_body<T: Into<Collider>, U: Into<RigidBody>>(
         mut self,
         physics: &mut Physics,

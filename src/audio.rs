@@ -51,6 +51,7 @@ pub struct AudioParameters {
     pub scene: GameState,
     pub time_since_last_scene_change: f32,
     pub volume: f32,
+    pub sfx: Option<usize>
 }
 
 impl Default for AudioParameters {
@@ -60,6 +61,7 @@ impl Default for AudioParameters {
             scene: GameState::default(),
             time_since_last_scene_change: 0.0,
             volume: 0.0,
+            sfx: None
         }
     }
 }
@@ -77,6 +79,7 @@ macro_rules! load_prefixed_files {
 struct AudioData {
     trombone_sounds: Vec<Vec<f32>>,
     music: Vec<Vec<[f32; 2]>>,
+    sfx: Vec<Vec<[f32; 2]>>,
 }
 
 struct PlaybackInfo {
@@ -90,6 +93,9 @@ struct AudioScratchpad {
     last_sample: Option<(usize, usize, f64, usize)>,
     current_sample: Option<(usize, usize)>,
     playing_music: HashMap<usize, PlaybackInfo>,
+    current_playing_track: bool,
+    current_sfx: Option<usize>,
+    sfx_playhead: usize,
 }
 
 const ENABLE_PD: bool = false;
@@ -120,14 +126,38 @@ impl Audio {
         let fade_time = 0.1;
 
         let current_music = if parameters.scene == GameState::Playing {
-            1
+            if scratchpad.current_playing_track {
+                2
+            } else {
+                1
+            }
         } else {
             0
         };
 
+        if let Some(sfx) = parameters.sfx {
+            scratchpad.current_sfx = Some(sfx);
+            scratchpad.sfx_playhead = 0;
+        }
+
         let music_fade_time = 1.0;
 
         for (i, sample) in data.chunks_mut(2).enumerate() {
+            let sfx_sample = if let Some(sfx) = scratchpad.current_sfx {
+                if scratchpad.sfx_playhead >= audio_data.sfx[sfx].len() {
+                    scratchpad.current_sfx = None;
+                    scratchpad.sfx_playhead = 0;
+                    [0.0, 0.0]
+                } else {
+                    let sample = audio_data.sfx[sfx][scratchpad.sfx_playhead];
+                    scratchpad.sfx_playhead += 1;
+
+                    sample
+                }
+            } else {
+                [0.0, 0.0]
+            };
+
             if !(parameters.scene == GameState::Splash
                 && parameters.time_since_last_scene_change <= 1.0)
             {
@@ -148,6 +178,11 @@ impl Audio {
                     .fold((0.0, 0.0), |sample, (&track, info)| {
                         if info.playhead >= audio_data.music[track].len() {
                             info.playhead = 0; // loop the audio
+
+                            if track == 1 || track == 2 {
+                                scratchpad.current_playing_track =
+                                    !scratchpad.current_playing_track;
+                            }
                         }
 
                         let out = (
@@ -241,9 +276,9 @@ impl Audio {
             }
 
             sample[0] = parameters.volume
-                * (0.5 * detector_volume * (mono_sample + fading_sample) + 0.5 * music_sample.0);
+                * (0.16 * detector_volume * (mono_sample + fading_sample) + 0.36 * music_sample.0) + 0.48 * sfx_sample[0];
             sample[1] = parameters.volume
-                * (0.5 * detector_volume * (mono_sample + fading_sample) + 0.5 * music_sample.1);
+                * (0.16 * detector_volume * (mono_sample + fading_sample) + 0.36 * music_sample.1) + 0.48 * sfx_sample[1];
         }
     }
 
@@ -285,24 +320,15 @@ impl Audio {
         let opus_file = OpusSourceOgg::new(file).unwrap();
 
         let resample_params = SincInterpolationParameters {
-            sinc_len: 256,
-            f_cutoff: 0.95,
+            sinc_len: 48,
+            f_cutoff: 0.90,
             interpolation: SincInterpolationType::Linear,
-            oversampling_factor: 256,
-            window: WindowFunction::BlackmanHarris2,
+            oversampling_factor: 64,
+            window: WindowFunction::Hann,
         };
 
-        let mut resampler = SincFixedIn::<f32>::new(
-            (SAMPLE_RATE as f64) / (opus_file.metadata.sample_rate as f64),
-            2.0,
-            resample_params,
-            BUFFER_SIZE_SAMPLES.cast(),
-            N,
-        )
-        .unwrap();
-
-        assert_eq!(opus_file.metadata.channel_count, N as u8);
-
+        let sample_rate = opus_file.metadata.sample_rate as f64;
+        let channel_count = opus_file.metadata.channel_count;
         let mut decompressed = [const { Vec::new() }; N];
         for (i, sample) in opus_file.enumerate() {
             let channel = i % N;
@@ -310,41 +336,67 @@ impl Audio {
             decompressed[channel].push(sample);
         }
 
-        resampler.process(&decompressed, None).unwrap();
+        assert_eq!(channel_count, N as u8);
 
-        (0..decompressed[0].len())
-            .map(|i| std::array::from_fn(|j| decompressed[j][i]))
+        let mut resampler = SincFixedIn::<f32>::new(
+            (SAMPLE_RATE as f64) / sample_rate,
+            2.0,
+            resample_params,
+            decompressed[0].len(),
+            N,
+        )
+        .unwrap();
+
+        let result = resampler.process(&decompressed, None).unwrap();
+
+        (0..result[0].len())
+            .map(|i| std::array::from_fn(|j| result[j][i]))
             .collect()
     }
 
     pub fn new(pd: &mut Pd) -> Self {
-        let (trombone_sounds, music) = rayon::join(
-            || {
-                load_prefixed_files!("../assets/music/trombone/", ".opus", 20)
+        let ((trombone_sounds, music), sfx) = rayon::join(||
+            rayon::join(
+                || {
+                    load_prefixed_files!("../assets/music/trombone/", ".opus", 20)
+                        .par_iter()
+                        .map(|file| {
+                            Self::decompress_opus::<1, Cursor<&[u8]>>(Cursor::new(file))
+                                .into_iter()
+                                .map(|[x]| x)
+                                .collect()
+                        })
+                        .collect()
+                },
+                || {
+                    [
+                        include_bytes!("../assets/music/solesearching.opus").as_slice(),
+                        include_bytes!("../assets/music/smp_searching.opus").as_slice(),
+                        include_bytes!("../assets/music/smpdanger.opus").as_slice(),
+                    ]
                     .par_iter()
-                    .map(|data| {
-                        Self::decompress_opus::<1, Cursor<&[u8]>>(Cursor::new(data))
-                            .into_iter()
-                            .map(|[x]| x)
-                            .collect()
-                    })
+                    .map(|file| Self::decompress_opus::<2, _>(Cursor::new(file)))
                     .collect()
-            },
+                },
+            ),
             || {
                 [
-                    include_bytes!("../assets/music/solesearching.opus").as_slice(),
-                    include_bytes!("../assets/music/smp_searching.opus").as_slice(),
-                    include_bytes!("../assets/music/smpdanger.opus").as_slice(),
+                    include_bytes!("../assets/sfx/shoe.opus").as_slice(),
+                    include_bytes!("../assets/sfx/ring.opus").as_slice(),
+                    include_bytes!("../assets/sfx/beer-bottle-lids.opus").as_slice(),
+                    include_bytes!("../assets/sfx/soda-can.opus").as_slice(),
+                    include_bytes!("../assets/sfx/coins-dropping.opus").as_slice(),
                 ]
                 .par_iter()
-                .map(|file| Self::decompress_opus::<2, _>(Cursor::new(file)))
-                .collect()
+                    .map(|file| Self::decompress_opus::<2, _>(Cursor::new(file)))
+                    .collect()
             },
         );
 
         let audio_data = AudioData {
             trombone_sounds,
             music,
+            sfx
         };
 
         let (tx, pd_patch_rx) = channel();
@@ -487,6 +539,7 @@ impl Audio {
                 }
             }
 
+            let mut candidate_send_sfx = None;
             while let Ok(parameters) = audio_parameters_rx.try_recv() {
                 if let Some(distance) = parameters.distance {
                     audio_parameters.distance = Some(distance);
@@ -497,7 +550,13 @@ impl Audio {
                     parameters.time_since_last_scene_change;
 
                 audio_parameters.volume = parameters.volume;
+
+                if let Some(sfx) = parameters.sfx {
+                    candidate_send_sfx = Some(sfx);
+                }
             }
+
+            audio_parameters.sfx = candidate_send_sfx;
 
             Audio::process_audio(&audio_data, &mut scratchpad, audio_parameters, data);
         };

@@ -9,15 +9,19 @@ use crate::renderer::{
 
 pub const MAX_TEXTURES: u32 = 40;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct MaterialProperties {
     pub alpha_cutoff: f32,
+    pub is_water: u32,
 }
 
 impl Default for MaterialProperties {
     fn default() -> Self {
-        Self { alpha_cutoff: 0.0 }
+        Self {
+            alpha_cutoff: 0.0,
+            is_water: 0,
+        }
     }
 }
 
@@ -25,6 +29,7 @@ impl Default for MaterialProperties {
 pub struct Material {
     pub descriptor_set: DescriptorSet,
     pub properties: MaterialProperties,
+    pub name: Option<String>,
 }
 
 impl Material {
@@ -32,6 +37,7 @@ impl Material {
         device: &Device,
         image: Arc<Image>,
         sampler: Arc<Sampler>,
+        name: Option<String>,
         properties: MaterialProperties,
         descriptor_pool: &DescriptorPool,
         descriptor_set_layout: &DescriptorSetLayout,
@@ -43,6 +49,7 @@ impl Material {
         Self {
             descriptor_set,
             properties,
+            name,
         }
     }
 }

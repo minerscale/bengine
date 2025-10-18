@@ -105,7 +105,11 @@ impl Game {
             &gfx.device,
             default_image,
             Sampler::default(gfx.device.clone()).into(),
-            MaterialProperties { alpha_cutoff: 0.0 },
+            None,
+            MaterialProperties {
+                alpha_cutoff: 0.0,
+                is_water: false.into(),
+            },
             &gfx.descriptor_pool,
             &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],
         ));
@@ -346,11 +350,15 @@ impl Game {
 
         let distance = closest_object.map_or(f32::MAX, distance_tuple);
 
+        input.winner = self.metal_detector_objects.len() == 0;
+
         // Dig up an object
-        if let Some((idx, object)) = closest_object
+        let picked_up_sfx = if let Some((idx, object)) = closest_object
             && input.action()
-            && distance <= 2.0
+            && distance <= 2.5
         {
+            let sfx = object.sfx;
+
             if pd.send_bang_to("dug_object").is_err() {
                 warn_once!("pd: no reciever named 'dug_object'");
             }
@@ -361,7 +369,8 @@ impl Game {
             let behaviour = move |this: &mut Node, clock: &Clock| {
                 let total_time: f32 = (clock.time - start_time).cast_approx();
 
-                let delete_time = 4.0;
+                let (a, b) = (5.0, 4.0);
+                let delete_time = a + b;
                 if total_time > delete_time {
                     this.to_delete = true;
                 }
@@ -371,7 +380,6 @@ impl Game {
                     unreachable!()
                 };
 
-                let (a, b) = (2.0, 2.0);
                 let alpha = (if total_time < a {
                     1.0
                 } else if total_time - a < b {
@@ -384,11 +392,11 @@ impl Game {
                 mesh.alpha
                     .store(alpha, std::sync::atomic::Ordering::Relaxed);
 
-                let (a, b, c) = (4.0, 0.5, 1.0);
+                let (a, b, c) = (6.0, 1.0, 1.0);
 
                 let rotation = a * (total_time / b + 1.0).ln() + c;
 
-                let altitude = 2.0 * (-(total_time + 1.0).powi(2).recip() + 1.0);
+                let altitude = 2.5 * (-(total_time * 0.68 + 1.0).powi(2).recip() + 1.0);
 
                 let t = this.transform.translation;
                 let translation = Vec3::new(t.x, start_altitude + altitude, t.z);
@@ -409,7 +417,11 @@ impl Game {
                 .mesh(self.metal_detector_objects.remove(idx).mesh)
                 .behaviour(Arc::new(behaviour)),
             );
-        }
+
+            Some(sfx)
+        } else {
+            None
+        };
 
         if pd.send_float_to("badness", badness).is_err() {
             warn_once!("pd: no reciever named 'badness'");
@@ -428,6 +440,7 @@ impl Game {
                     - input.game_state_change_time())
                 .as_secs_f32(),
                 volume: input.volume,
+                sfx: picked_up_sfx
             })
             .unwrap();
 
@@ -490,6 +503,7 @@ impl Game {
                         - input.game_state_change_time())
                     .as_secs_f32(),
                     volume: input.volume,
+                    sfx: None
                 })
                 .unwrap(),
             GameState::Splash => self
@@ -502,6 +516,7 @@ impl Game {
                         - input.game_state_change_time())
                     .as_secs_f32(),
                     volume: input.volume,
+                    sfx: None
                 })
                 .unwrap(),
             GameState::Playing => self.update_playing(pd, input),
@@ -516,6 +531,7 @@ struct MetalDetectorManifest<'a> {
     badness: f32,
     scale: f32,
     model: GltfFile<'a>,
+    sfx: usize,
 }
 
 impl MetalDetectorManifest<'_> {
@@ -528,46 +544,81 @@ impl MetalDetectorManifest<'_> {
             location: self.location,
             badness: self.badness,
             mesh: load_gltf(renderer, cmd_buf, self.model, self.scale).into(),
+            sfx: self.sfx,
         }
     }
 }
 
-const METAL_DETECTOR_MANIFESTS: [MetalDetectorManifest<'static>; 6] = [
+// list of sfx:
+// 0: shoe
+// 1: ring
+// 2: beer bottle lids
+// 3: soda can
+// 4: coins dropping
+
+const METAL_DETECTOR_MANIFESTS: [MetalDetectorManifest<'static>; 9] = [
     MetalDetectorManifest {
-        location: Vec2::new(8.0, -8.0),
+        location: Vec2::new(3.5033622, 94.19876),
         badness: 0.0,
         scale: 1.0,
         model: GltfFile::Bytes(include_bytes!("../assets/tetrahedron.glb")),
+        sfx: 0,
     },
     MetalDetectorManifest {
-        location: Vec2::new(15.0, -6.0),
+        location: Vec2::new(-9.392658, 75.621346),
         badness: 0.35,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../assets/cube.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/coins.glb")),
+        sfx: 4,
     },
     MetalDetectorManifest {
-        location: Vec2::new(-12.0, 9.0),
+        location: Vec2::new(7.0732403, 10.298769),
         badness: 0.5,
         scale: 1.0,
         model: GltfFile::Bytes(include_bytes!("../assets/octahedron.glb")),
+        sfx: 2,
     },
     MetalDetectorManifest {
-        location: Vec2::new(-16.0, -16.0),
+        location: Vec2::new(-0.18031196, -0.6933934),
         badness: 0.7,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../assets/dodecahedron.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/monstah.glb")),
+        sfx: 3,
     },
     MetalDetectorManifest {
-        location: Vec2::new(20.0, 17.0),
+        location: Vec2::new(-2.2707856, -20.908241),
         badness: 1.0,
         scale: 1.0,
         model: GltfFile::Bytes(include_bytes!("../assets/icosahedron.glb")),
+        sfx: 0,
     },
     MetalDetectorManifest {
-        location: Vec2::new(30.0, 0.0),
+        location: Vec2::new(5.6533327, -33.07895),
         badness: 1.0,
         scale: 1.0,
-        model: GltfFile::Bytes(include_bytes!("../assets/coins.glb")),
+        model: GltfFile::Bytes(include_bytes!("../assets/cube.glb")),
+        sfx: 0,
+    },
+    MetalDetectorManifest {
+        location: Vec2::new(-5.945053, -65.42419),
+        badness: 1.0,
+        scale: 1.0,
+        model: GltfFile::Bytes(include_bytes!("../assets/ring.glb")),
+        sfx: 1,
+    },
+    MetalDetectorManifest {
+        location: Vec2::new(-10.992047, -80.46025),
+        badness: 1.0,
+        scale: 1.0,
+        model: GltfFile::Bytes(include_bytes!("../assets/dodecahedron.glb")),
+        sfx: 2,
+    },
+    MetalDetectorManifest {
+        location: Vec2::new(2.632866, -94.46079),
+        badness: 1.0,
+        scale: 1.0,
+        model: GltfFile::Bytes(include_bytes!("../assets/donut.glb")),
+        sfx: 1,
     },
 ];
 
@@ -575,4 +626,5 @@ struct MetalDetectorObject {
     location: Vec2,
     badness: f32,
     mesh: Arc<Mesh>,
+    sfx: usize,
 }

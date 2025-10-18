@@ -172,6 +172,7 @@ impl Skybox {
             &gfx.device,
             image.clone(),
             skybox_sampler,
+            None,
             MaterialProperties::default(),
             &gfx.descriptor_pool,
             &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],

@@ -1,26 +1,14 @@
-use std::{io::Cursor, sync::Arc};
-
-use ash::vk;
 use rapier3d::{
-    math::AngVector,
-    na::vector,
-    prelude::{ColliderBuilder, RigidBodyBuilder},
+    math::{AngVector, Vector},
+    prelude::ColliderBuilder,
 };
 use ultraviolet::{Isometry3, Rotor3, Vec3};
 
 use crate::{
-    gltf::{GltfFile, load_gltf},
-    mesh::{Mesh, Primitive, collider_from_obj},
+    gltf::{GltfFile, get_trimesh_from_gltf, load_gltf},
     node::Node,
     physics::Physics,
-    renderer::{
-        Renderer,
-        command_buffer::OneTimeSubmitCommandBuffer,
-        image::Image,
-        material::{Material, MaterialProperties},
-        sampler::Sampler,
-    },
-    shader_pipelines::MATERIAL_LAYOUT,
+    renderer::{Renderer, command_buffer::OneTimeSubmitCommandBuffer},
 };
 
 fn scene(
@@ -28,102 +16,25 @@ fn scene(
     cmd_buf: &mut OneTimeSubmitCommandBuffer,
     physics: &mut Physics,
 ) -> Vec<Node> {
-    macro_rules! image {
-        ($filename:literal) => {
-            Image::from_bytes(&gfx.device, cmd_buf, include_bytes!($filename))
-        };
-    }
+    let beach_glb = GltfFile::Bytes(include_bytes!("../assets/beach.glb"));
 
-    macro_rules! mesh {
-        ($filename:literal, $material:expr, $scale:expr) => {
-            Arc::new(Mesh::new(Box::new([Primitive::from_obj(
-                &gfx.device,
-                Cursor::new(include_bytes!($filename)),
-                cmd_buf,
-                $material,
-                $scale,
-            )])))
-        };
-    }
-
-    macro_rules! texture {
-        ($sampler:expr, $texture:expr) => {
-            Arc::new(Material::new(
-                &gfx.device,
-                $texture.clone(),
-                $sampler.clone(),
-                MaterialProperties::default(),
-                &gfx.descriptor_pool,
-                &gfx.descriptor_set_layouts[MATERIAL_LAYOUT],
-            ))
-        };
-    }
-
-    macro_rules! raw_obj {
-        ($filename:literal) => {
-            &obj::raw::parse_obj(&include_bytes!($filename)[..]).unwrap()
-        };
-    }
-
-    let sampler = |mip_levels: u32| {
-        Arc::new(Sampler::new(
-            gfx.device.clone(),
-            vk::SamplerAddressMode::REPEAT,
-            vk::Filter::LINEAR,
-            vk::Filter::LINEAR,
-            true,
-            Some((vk::SamplerMipmapMode::LINEAR, mip_levels)),
-        ))
-    };
-
-    let grid_image = image!("../assets/grid.png");
-    let grid = texture!(sampler(grid_image.mip_levels), grid_image);
-
-    let cube_2_scale = Vec3::new(1.0, 0.4, 1.0);
+    let beach_rotation = std::f32::consts::FRAC_PI_2;
 
     let scene = vec![
-        Node::empty()
-            .mesh(mesh!("../assets/icosehedron.obj", None, None))
-            .rigid_body(
-                physics,
-                ColliderBuilder::new(collider_from_obj(
-                    raw_obj!("../assets/icosehedron.obj"),
-                    None,
-                    None,
-                )),
-                RigidBodyBuilder::dynamic()
-                    .translation(vector![3.0, 10.0, 0.0])
-                    .rotation(AngVector::new(0.5, 1.2, 3.1)),
-            ),
-        Node::empty()
-            .mesh(mesh!("../assets/cube.obj", None, Some(cube_2_scale)))
-            .rigid_body(
-                physics,
-                ColliderBuilder::new(collider_from_obj(
-                    raw_obj!("../assets/cube.obj"),
-                    Some(cube_2_scale),
-                    None,
-                )),
-                RigidBodyBuilder::dynamic().translation(vector![-5.0, 5.0, 0.0]),
-            ),
-        Node::empty()
-            .mesh(mesh!("../assets/ground-plane.obj", Some(grid), None))
-            .collider(
-                physics,
-                ColliderBuilder::cuboid(100.0, 0.1, 100.0).translation(vector![0.0, -0.1, 0.0]),
-            ),
-        Node::new(Isometry3::new(Vec3::new(0.0, 0.0, 0.0), Rotor3::from_rotation_xz(std::f32::consts::FRAC_PI_2))).mesh(
-            load_gltf(
-                &gfx,
-                cmd_buf,
-                GltfFile::Bytes(include_bytes!("../assets/beach.glb")),
-                1.0,
-            )
-            .into(),
+        Node::new(Isometry3::new(
+            Vec3::new(0.0, 0.0, 0.0),
+            Rotor3::from_rotation_xz(beach_rotation),
+        ))
+        .mesh(load_gltf(&gfx, cmd_buf, beach_glb, 1.0).into())
+        .collider(
+            physics,
+            get_trimesh_from_gltf(beach_glb).rotation(AngVector::new(0.0, -beach_rotation, 0.0)),
+        ),
+        Node::empty().collider(
+            physics,
+            ColliderBuilder::cuboid(1.0, 20.0, 400.0).translation(Vector::new(16.0, 15.0, 0.0)),
         ),
     ];
-
-    
 
     scene
 }

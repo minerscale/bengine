@@ -135,6 +135,39 @@ pub fn create_gui() -> Box<GuiFn> {
                 shared_state.set_game_state(GameState::Menu);
             }
         });
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame {
+                inner_margin: egui::Margin::symmetric(4, 4),
+                fill: egui::Color32::from_black_alpha(0),
+                stroke: egui::Stroke::NONE,
+                corner_radius: egui::CornerRadius::ZERO,
+                outer_margin: egui::Margin::ZERO,
+                shadow: egui::Shadow::NONE,
+            })
+            .show(ctx, |ui| {
+                let big_font_size = shared_state.gui_scale * ui.available_height() / 32.0;
+
+                if shared_state.winner {
+                    ui.set_opacity(1.0);
+                } else {
+                    ui.set_opacity(0.0);
+                }
+                
+                ui.add_space(ui.available_height() * 0.4);
+                ui.scope(|ui| {
+                    ui.style_mut().text_styles.insert(
+                        egui::TextStyle::Body,
+                        egui::FontId::new(big_font_size, egui::FontFamily::Proportional),
+                    );
+
+                    ui.vertical_centered(|ui| {
+                        ui.add(egui::Label::new(
+                            "You're Winner!",
+                        ))
+                    });
+                });
+            });
     };
 
     let splash_screen = move |ctx: &egui::Context, shared_state: &mut SharedState| {

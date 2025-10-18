@@ -7,8 +7,7 @@ use std::{
 
 use ash::vk;
 use easy_cast::Cast;
-use obj::{Obj, load_obj, raw::RawObj};
-use rapier3d::{na, prelude::ColliderShape};
+use obj::{Obj, load_obj};
 use ultraviolet::{Isometry3, Vec3};
 
 use crate::{
@@ -90,7 +89,7 @@ impl Mesh {
 
                 command_buffer.add_dependency(material.clone());
 
-                let material_properties = material.properties;
+                let material_properties = material.properties.clone();
 
                 let descriptor_sets = [*material.descriptor_set];
 
@@ -216,28 +215,4 @@ impl Primitive {
             material,
         }
     }
-}
-
-pub fn collider_from_obj(
-    mesh: &RawObj,
-    scale: Option<Vec3>,
-    transform: Option<Vec3>,
-) -> ColliderShape {
-    type Point = na::Point<f32, 3>;
-
-    let vertices: Box<[Point]> = mesh
-        .positions
-        .iter()
-        .map(|v| {
-            Point::from_slice(
-                transform
-                    .unwrap_or_else(|| {
-                        Vec3::zero() + scale.unwrap_or_else(Vec3::one) * Vec3::new(v.0, v.1, v.2)
-                    })
-                    .as_array(),
-            )
-        })
-        .collect();
-
-    ColliderShape::convex_hull(&vertices).unwrap()
 }
