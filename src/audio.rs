@@ -40,7 +40,7 @@ pub struct Audio {
     pub audio_parameters_tx: Sender<AudioParameters>,
 }
 
-pub const SAMPLE_RATE: u32 = 44100;
+pub const SAMPLE_RATE: u32 = 48000;
 pub const CHANNELS: usize = 2;
 const BUFFER_SIZE_SAMPLES: u32 = 1024;
 

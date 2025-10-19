@@ -134,7 +134,7 @@ vec4 textureBicubic(sampler2D tex, vec2 texCoords){
 // 0 = No antialiasing
 // 1 = 2x2 supersampling antialiasing
 #define ANTIALIAS 0
-#define MAX_SAMPLES 16.0
+#define MAX_SAMPLES 4.0
 
 // 0 = Do not distort the water texture
 // 1 = Apply lateral distortion to the water texture
